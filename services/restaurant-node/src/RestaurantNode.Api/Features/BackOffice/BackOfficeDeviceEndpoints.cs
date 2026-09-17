@@ -24,7 +24,7 @@ public static class BackOfficeDeviceEndpoints
 
             var printers = await db.Printers
                 .AsNoTracking()
-                .Where(x => x.RestaurantId == restaurantId)
+                .Where(x => x.RestaurantId == restaurantId && x.IsConfigured)
                 .OrderByDescending(x => x.IsActive)
                 .ThenBy(x => x.Name)
                 .ToListAsync(ct);
@@ -66,13 +66,14 @@ public static class BackOfficeDeviceEndpoints
                 printers = printers.Select(printer => new
                 {
                     id = printer.Id,
+                    hostDeviceId = printer.HostDeviceId,
                     name = printer.Name,
                     connectionType = printer.ConnectionType.ToString(),
                     address = printer.Address,
                     port = printer.Port,
                     isActive = printer.IsActive,
                     lastSeenAt = printer.LastSeenAt,
-                    isOnline = IsOnline(printer.LastSeenAt),
+                    isOnline = printer.ConnectionType == PrinterConnectionType.Network || IsOnline(printer.LastSeenAt),
                     kitchenStationCount = stations.Count(x => x.PrinterId == printer.Id),
                     posDeviceCount = devices.Count(x => x.Type == DeviceType.Pos && x.ReceiptPrinterId == printer.Id)
                 }),
@@ -103,10 +104,10 @@ public static class BackOfficeDeviceEndpoints
                 return validation.Error;
 
             var duplicate = await db.Printers.AnyAsync(
-                x => x.RestaurantId == restaurantId && x.Name.ToLower() == validation.Name!.ToLower(),
+                x => x.RestaurantId == restaurantId && x.IsConfigured && x.Name.ToLower() == validation.Name!.ToLower(),
                 ct);
             if (duplicate)
-                return Results.Conflict(new { message = "A printer with this name already exists." });
+                return Results.Conflict(new { message = "A configured printer with this name already exists." });
 
             var printer = new Printer
             {
@@ -115,6 +116,7 @@ public static class BackOfficeDeviceEndpoints
                 ConnectionType = validation.ConnectionType!.Value,
                 Address = validation.Address!,
                 Port = validation.Port,
+                IsConfigured = true,
                 IsActive = true
             };
 
@@ -143,7 +145,7 @@ public static class BackOfficeDeviceEndpoints
                 return Results.Unauthorized();
 
             var printer = await db.Printers.FirstOrDefaultAsync(
-                x => x.Id == printerId && x.RestaurantId == restaurantId,
+                x => x.Id == printerId && x.RestaurantId == restaurantId && x.IsConfigured,
                 ct);
             if (printer is null)
                 return Results.NotFound();
@@ -153,10 +155,10 @@ public static class BackOfficeDeviceEndpoints
                 return validation.Error;
 
             var duplicate = await db.Printers.AnyAsync(
-                x => x.RestaurantId == restaurantId && x.Id != printerId && x.Name.ToLower() == validation.Name!.ToLower(),
+                x => x.RestaurantId == restaurantId && x.IsConfigured && x.Id != printerId && x.Name.ToLower() == validation.Name!.ToLower(),
                 ct);
             if (duplicate)
-                return Results.Conflict(new { message = "A printer with this name already exists." });
+                return Results.Conflict(new { message = "A configured printer with this name already exists." });
 
             if (printer.IsActive && !request.IsActive)
             {
@@ -318,10 +320,13 @@ public static class BackOfficeDeviceEndpoints
             if (request.PrinterId.HasValue)
             {
                 var printerExists = await db.Printers.AnyAsync(
-                    x => x.Id == request.PrinterId.Value && x.RestaurantId == restaurantId && x.IsActive,
+                    x => x.Id == request.PrinterId.Value &&
+                         x.RestaurantId == restaurantId &&
+                         x.IsConfigured &&
+                         x.IsActive,
                     ct);
                 if (!printerExists)
-                    return Results.BadRequest(new { message = "Active printer was not found." });
+                    return Results.BadRequest(new { message = "Active configured printer was not found." });
             }
 
             station.PrinterId = request.PrinterId;
@@ -390,10 +395,13 @@ public static class BackOfficeDeviceEndpoints
         if (receiptPrinterId.HasValue)
         {
             var printerExists = await db.Printers.AnyAsync(
-                x => x.Id == receiptPrinterId.Value && x.RestaurantId == restaurantId && x.IsActive,
+                x => x.Id == receiptPrinterId.Value &&
+                     x.RestaurantId == restaurantId &&
+                     x.IsConfigured &&
+                     x.IsActive,
                 ct);
             if (!printerExists)
-                return DeviceValidationResult.Fail(Results.BadRequest(new { message = "Active receipt printer was not found." }));
+                return DeviceValidationResult.Fail(Results.BadRequest(new { message = "Active configured receipt printer was not found." }));
         }
 
         return DeviceValidationResult.Ok(name, type, receiptPrinterId);
