@@ -45,12 +45,27 @@ public sealed class Employee : Entity
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class Printer : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public Restaurant? Restaurant { get; set; }
+    public required string Name { get; set; }
+    public PrinterConnectionType ConnectionType { get; set; } = PrinterConnectionType.Network;
+    public required string Address { get; set; }
+    public int? Port { get; set; } = 9100;
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset? LastSeenAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class Device : Entity
 {
     public Guid RestaurantId { get; set; }
     public Restaurant? Restaurant { get; set; }
     public required string Name { get; set; }
     public DeviceType Type { get; set; }
+    public Guid? ReceiptPrinterId { get; set; }
+    public Printer? ReceiptPrinter { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTimeOffset? LastSeenAt { get; set; }
 }
@@ -88,6 +103,8 @@ public sealed class KitchenStation : Entity
 {
     public Guid RestaurantId { get; set; }
     public required string Name { get; set; }
+    public Guid? PrinterId { get; set; }
+    public Printer? Printer { get; set; }
     public bool IsActive { get; set; } = true;
 }
 
