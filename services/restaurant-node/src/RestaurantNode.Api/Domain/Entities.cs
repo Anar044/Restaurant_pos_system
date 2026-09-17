@@ -49,6 +49,8 @@ public sealed class Printer : Entity
 {
     public Guid RestaurantId { get; set; }
     public Restaurant? Restaurant { get; set; }
+    public Guid? HostDeviceId { get; set; }
+    public Device? HostDevice { get; set; }
     public required string Name { get; set; }
     public PrinterConnectionType ConnectionType { get; set; } = PrinterConnectionType.Network;
     public required string Address { get; set; }
