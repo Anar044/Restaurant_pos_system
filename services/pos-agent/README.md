@@ -8,7 +8,16 @@ Its responsibilities are intentionally local:
 - send a heartbeat and discovered queue names to Restaurant Node;
 - cache the POS receipt-printer assignment locally;
 - expose local-only HTTP endpoints on `127.0.0.1:8791` for the Flutter POS client;
-- later: execute local print jobs even if Restaurant Node is temporarily unavailable.
+- print locally even when Restaurant Node is temporarily unavailable.
+
+## Printing modes
+
+Configured printers use two different paths:
+
+- `WindowsQueue` -> Windows printer driver / GDI. This is the normal path for printers installed in Windows, including laser printers and receipt printers with a Windows driver. Unicode text is rendered by Windows.
+- `Network` -> direct TCP/IP RAW printing, default port `9100`. The current test payload uses ESC/POS and is intended for compatible thermal receipt/kitchen printers.
+
+Windows queues are not sent ESC/POS RAW bytes anymore.
 
 ## Development run
 
@@ -39,9 +48,12 @@ For a real restaurant where Restaurant Node is on another machine, replace `127.
 - `GET http://127.0.0.1:8791/api/v1/printers`
 - `GET http://127.0.0.1:8791/api/v1/config`
 - `GET http://127.0.0.1:8791/api/v1/status`
+- `POST http://127.0.0.1:8791/api/v1/print/test-receipt`
 
 The agent only listens on localhost. The BackOffice never connects directly to a POS Agent; the agent reports its state to Restaurant Node instead.
 
 ## Offline behavior
 
-The most recent receipt-printer assignment is cached locally. A future print endpoint will use that cached Windows queue, so local receipt printing will not require internet or a live Restaurant Node connection.
+The most recent receipt-printer assignment is cached locally. The local test-print endpoint reads that cache, so after a successful sync the print step does not require internet or a live Restaurant Node connection.
+
+Full order/payment operation while Restaurant Node is down is a separate future feature and is not implied by local printing.
