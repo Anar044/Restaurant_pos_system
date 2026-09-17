@@ -56,21 +56,23 @@ public static class PosAgentEndpoints
                 .Select(group => group.First())
                 .ToList();
 
-            var existingPrinters = await db.Printers
+            var windowsPrinters = await db.Printers
                 .Where(x => x.RestaurantId == request.RestaurantId &&
                             x.HostDeviceId == deviceId &&
                             x.ConnectionType == PrinterConnectionType.WindowsQueue)
                 .ToListAsync(ct);
 
-            var byQueue = existingPrinters.ToDictionary(x => x.Address, StringComparer.OrdinalIgnoreCase);
+            var byQueue = windowsPrinters.ToDictionary(x => x.Address, StringComparer.OrdinalIgnoreCase);
 
             foreach (var discovered in normalizedQueues)
             {
                 var queueName = discovered.QueueName!;
                 if (byQueue.TryGetValue(queueName, out var existing))
                 {
-                    existing.Name = queueName;
+                    if (!existing.IsConfigured)
+                        existing.Name = queueName;
                     existing.Address = queueName;
+                    existing.IsDefault = discovered.IsDefault;
                     existing.LastSeenAt = now;
                     continue;
                 }
@@ -83,18 +85,28 @@ public static class PosAgentEndpoints
                     ConnectionType = PrinterConnectionType.WindowsQueue,
                     Address = queueName,
                     Port = null,
+                    IsConfigured = false,
+                    IsDefault = discovered.IsDefault,
                     IsActive = true,
                     LastSeenAt = now
                 };
                 db.Printers.Add(printer);
-                existingPrinters.Add(printer);
+                windowsPrinters.Add(printer);
                 byQueue[queueName] = printer;
             }
 
             await db.SaveChangesAsync(ct);
 
             var selectedReceiptPrinter = device.ReceiptPrinterId.HasValue
-                ? existingPrinters.FirstOrDefault(x => x.Id == device.ReceiptPrinterId.Value && x.IsActive)
+                ? await db.Printers
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(
+                        x => x.Id == device.ReceiptPrinterId.Value &&
+                             x.RestaurantId == request.RestaurantId &&
+                             x.HostDeviceId == deviceId &&
+                             x.IsConfigured &&
+                             x.IsActive,
+                        ct)
                 : null;
 
             return Results.Ok(new
@@ -110,7 +122,9 @@ public static class PosAgentEndpoints
                     : new
                     {
                         id = selectedReceiptPrinter.Id,
-                        queueName = selectedReceiptPrinter.Address
+                        queueName = selectedReceiptPrinter.ConnectionType == PrinterConnectionType.WindowsQueue
+                            ? selectedReceiptPrinter.Address
+                            : null
                     }
             });
         });
