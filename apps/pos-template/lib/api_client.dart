@@ -60,20 +60,38 @@ class PosApiClient {
     return auth;
   }
 
+  Future<List<HallDto>> getHalls() async {
+    final response = await _http.get(_uri('/api/v1/halls'), headers: _headers);
+    final data = _decode(response);
+    return (data['halls'] as List<dynamic>)
+        .map((e) => HallDto.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<MenuCategory>> getMenu() async {
     final response = await _http.get(_uri('/api/v1/menu'), headers: _headers);
     final data = _decode(response);
-    final categories = data['categories'] as List<dynamic>;
-    return categories
+    return (data['categories'] as List<dynamic>)
         .map((e) => MenuCategory.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
-  Future<OrderDto> createOrder({int guestCount = 1}) async {
+  Future<OrderDto> getOrder(String orderId) async {
+    final response = await _http.get(
+      _uri('/api/v1/orders/$orderId'),
+      headers: _headers,
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> createOrder({int guestCount = 1, String? tableId}) async {
     final response = await _http.post(
       _uri('/api/v1/orders'),
       headers: _headers,
-      body: jsonEncode({'guestCount': guestCount}),
+      body: jsonEncode({
+        'guestCount': guestCount,
+        if (tableId != null) 'tableId': tableId,
+      }),
     );
     return OrderDto.fromJson(_decode(response));
   }
@@ -83,6 +101,14 @@ class PosApiClient {
       _uri('/api/v1/orders/$orderId/items'),
       headers: _headers,
       body: jsonEncode({'productId': productId, 'quantity': 1}),
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> deleteItem(String orderId, String itemId) async {
+    final response = await _http.delete(
+      _uri('/api/v1/orders/$orderId/items/$itemId'),
+      headers: _headers,
     );
     return OrderDto.fromJson(_decode(response));
   }
@@ -101,6 +127,74 @@ class PosApiClient {
     }
     return data;
   }
+}
+
+class HallDto {
+  const HallDto({required this.id, required this.name, required this.tables});
+  final String id;
+  final String name;
+  final List<DiningTableDto> tables;
+
+  factory HallDto.fromJson(Map<String, dynamic> json) => HallDto(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        tables: (json['tables'] as List<dynamic>)
+            .map((e) => DiningTableDto.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+class DiningTableDto {
+  const DiningTableDto({
+    required this.id,
+    required this.name,
+    required this.seats,
+    required this.occupied,
+    this.openOrder,
+  });
+
+  final String id;
+  final String name;
+  final int seats;
+  final bool occupied;
+  final OpenOrderSummary? openOrder;
+
+  factory DiningTableDto.fromJson(Map<String, dynamic> json) => DiningTableDto(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        seats: (json['seats'] as num).toInt(),
+        occupied: json['occupied'] as bool? ?? false,
+        openOrder: json['openOrder'] == null
+            ? null
+            : OpenOrderSummary.fromJson(
+                json['openOrder'] as Map<String, dynamic>,
+              ),
+      );
+}
+
+class OpenOrderSummary {
+  const OpenOrderSummary({
+    required this.id,
+    required this.displayNumber,
+    required this.status,
+    required this.total,
+    required this.guestCount,
+  });
+
+  final String id;
+  final int displayNumber;
+  final String status;
+  final double total;
+  final int guestCount;
+
+  factory OpenOrderSummary.fromJson(Map<String, dynamic> json) =>
+      OpenOrderSummary(
+        id: json['id'] as String,
+        displayNumber: (json['displayNumber'] as num).toInt(),
+        status: json['status'] as String,
+        total: (json['total'] as num).toDouble(),
+        guestCount: (json['guestCount'] as num).toInt(),
+      );
 }
 
 class MenuCategory {
@@ -141,23 +235,30 @@ class MenuProduct {
 class OrderLineDto {
   const OrderLineDto({
     required this.id,
+    required this.productId,
     required this.productName,
     required this.quantity,
     required this.unitPrice,
     required this.lineTotal,
+    required this.status,
   });
+
   final String id;
+  final String productId;
   final String productName;
   final double quantity;
   final double unitPrice;
   final double lineTotal;
+  final String status;
 
   factory OrderLineDto.fromJson(Map<String, dynamic> json) => OrderLineDto(
         id: json['id'] as String,
+        productId: json['productId'] as String,
         productName: json['productName'] as String,
         quantity: (json['quantity'] as num).toDouble(),
         unitPrice: (json['unitPrice'] as num).toDouble(),
         lineTotal: (json['lineTotal'] as num).toDouble(),
+        status: json['status'] as String,
       );
 }
 
@@ -169,10 +270,15 @@ class OrderDto {
     required this.total,
     required this.version,
     required this.items,
+    required this.guestCount,
+    this.tableId,
   });
+
   final String id;
   final int displayNumber;
   final String status;
+  final String? tableId;
+  final int guestCount;
   final double total;
   final int version;
   final List<OrderLineDto> items;
@@ -181,6 +287,8 @@ class OrderDto {
         id: json['id'] as String,
         displayNumber: (json['displayNumber'] as num).toInt(),
         status: json['status'] as String,
+        tableId: json['tableId'] as String?,
+        guestCount: (json['guestCount'] as num).toInt(),
         total: (json['total'] as num).toDouble(),
         version: (json['version'] as num).toInt(),
         items: (json['items'] as List<dynamic>)
