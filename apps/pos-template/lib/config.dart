@@ -9,6 +9,16 @@ class AppConfig {
     defaultValue: 'http://127.0.0.1:8791',
   );
 
+  static const restaurantDisplayName = String.fromEnvironment(
+    'RESTAURANT_NAME',
+    defaultValue: 'Demo Restaurant',
+  );
+
+  static const currencyCode = String.fromEnvironment(
+    'CURRENCY_CODE',
+    defaultValue: 'AZN',
+  );
+
   // Development seed restaurant only. Later this comes from device provisioning.
   static const developmentRestaurantId =
       '11111111-1111-1111-1111-111111111111';
