@@ -137,6 +137,35 @@ export type UpdateProductInput = {
   isActive: boolean;
 };
 
+export type KitchenProductSummary = {
+  id: string;
+  name: string;
+  sku: string | null;
+  isActive: boolean;
+  categoryId: string;
+  categoryName: string | null;
+};
+
+export type BackOfficeKitchenStation = KitchenStation & {
+  activeProductCount: number;
+  totalProductCount: number;
+  products: KitchenProductSummary[];
+};
+
+export type BackOfficeKitchen = {
+  stations: BackOfficeKitchenStation[];
+  unassignedProducts: KitchenProductSummary[];
+};
+
+export type CreateKitchenStationInput = {
+  name: string;
+};
+
+export type UpdateKitchenStationInput = {
+  name: string;
+  isActive: boolean;
+};
+
 async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { message?: string; title?: string };
@@ -284,5 +313,30 @@ export async function updateProductPrice(
   return request(`/api/v1/backoffice/menu/products/${productId}/price`, {
     method: 'PUT',
     body: JSON.stringify({ amount }),
+  }, token);
+}
+
+export async function getBackOfficeKitchen(token: string): Promise<BackOfficeKitchen> {
+  return request<BackOfficeKitchen>('/api/v1/backoffice/kitchen', {}, token);
+}
+
+export async function createKitchenStation(
+  token: string,
+  input: CreateKitchenStationInput,
+): Promise<BackOfficeKitchenStation> {
+  return request('/api/v1/backoffice/kitchen/stations', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateKitchenStation(
+  token: string,
+  stationId: string,
+  input: UpdateKitchenStationInput,
+): Promise<KitchenStation> {
+  return request(`/api/v1/backoffice/kitchen/stations/${stationId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
   }, token);
 }
