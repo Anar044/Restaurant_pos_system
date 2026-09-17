@@ -8,7 +8,7 @@ namespace RestaurantNode.Api.Security;
 
 public sealed class JwtTokenService(IConfiguration configuration)
 {
-    public (string Token, DateTimeOffset ExpiresAt) Create(Employee employee, Role role)
+    public (string Token, DateTimeOffset ExpiresAt) Create(Employee employee, Role role, Guid organizationId)
     {
         var key = configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is required.");
         var issuer = configuration["Jwt:Issuer"] ?? "restaurant-node";
@@ -19,6 +19,7 @@ public sealed class JwtTokenService(IConfiguration configuration)
         {
             new(JwtRegisteredClaimNames.Sub, employee.Id.ToString()),
             new("employee_id", employee.Id.ToString()),
+            new("organization_id", organizationId.ToString()),
             new("restaurant_id", employee.RestaurantId.ToString()),
             new(ClaimTypes.Name, employee.Name),
             new(ClaimTypes.Role, role.Name)
