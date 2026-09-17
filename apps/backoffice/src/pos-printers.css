@@ -1,0 +1,91 @@
+.pos-selection-bar {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+  border: 1px solid #eaecf0;
+  border-radius: 14px;
+  background: #f9fafb;
+}
+.pos-selection-bar label { flex: 1; margin: 0; }
+.pos-selection-bar label > span { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 750; color: #344054; }
+.pos-selection-bar select { margin: 0; }
+
+.pos-selected-card {
+  padding: 18px;
+  border: 1px solid #e4e7ec;
+  border-radius: 16px;
+  background: #fff;
+}
+.pos-summary-badges { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+.configured-printers-header {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #f2f4f7;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+.configured-printers-header > div strong,
+.configured-printers-header > div span { display: block; }
+.configured-printers-header > div strong { color: #101828; font-size: 13px; }
+.configured-printers-header > div span { margin-top: 4px; color: #98a2b3; font-size: 11px; }
+
+.configured-printer-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+.configured-printer-card {
+  min-height: 150px;
+  padding: 14px;
+  border: 1px solid #e4e7ec;
+  border-radius: 14px;
+  background: #fcfcfd;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.configured-printer-card > strong { margin-top: 8px; color: #101828; font-size: 14px; }
+.configured-printer-card > span { margin-top: 5px; color: #475467; font-size: 11px; word-break: break-word; }
+.configured-printer-card > small { margin-top: 4px; color: #98a2b3; }
+.printer-card-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+.pos-agent-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+.title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.title-row h3 { margin: 0; font-size: 17px; color: #101828; }
+.pos-device-id-row { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pos-device-id-row code { padding: 5px 7px; background: #f2f4f7; border-radius: 7px; font-size: 10px; color: #475467; }
+.mini-action { border: 0; background: #eef2ff; color: #4f46e5; border-radius: 7px; padding: 5px 8px; font-size: 10px; cursor: pointer; }
+
+.pos-agent-empty {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px dashed #d0d5dd;
+  border-radius: 12px;
+  background: #fcfcfd;
+}
+.pos-agent-empty strong,
+.pos-agent-empty span { display: block; }
+.pos-agent-empty strong { color: #344054; font-size: 12px; }
+.pos-agent-empty span { margin-top: 4px; color: #98a2b3; font-size: 11px; }
+
+.pos-receipt-select { display: block; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f2f4f7; }
+.pos-receipt-select > span { display: block; margin-bottom: 7px; color: #344054; font-weight: 750; font-size: 12px; }
+.pos-receipt-select select { margin: 0; }
+.pos-receipt-select small { display: block; margin-top: 6px; color: #98a2b3; font-size: 10px; }
+
+@media (max-width: 760px) {
+  .pos-selection-bar,
+  .configured-printers-header,
+  .pos-agent-card-header { flex-direction: column; align-items: stretch; }
+  .pos-summary-badges { justify-content: flex-start; }
+}
