@@ -5,6 +5,7 @@ namespace RestaurantNode.Api.Infrastructure;
 
 public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> options) : DbContext(options)
 {
+    public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<Restaurant> Restaurants => Set<Restaurant>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<Employee> Employees => Set<Employee>();
@@ -34,6 +35,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     {
         modelBuilder.HasSequence<long>("order_display_number_seq").StartsAt(1);
 
+        modelBuilder.Entity<Organization>().ToTable("organizations");
         modelBuilder.Entity<Restaurant>().ToTable("restaurants");
         modelBuilder.Entity<Role>().ToTable("roles");
         modelBuilder.Entity<Employee>().ToTable("employees");
@@ -98,6 +100,8 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .HasDefaultValueSql("nextval('order_display_number_seq')")
             .ValueGeneratedOnAdd();
 
+        modelBuilder.Entity<Organization>().HasIndex(x => x.Name);
+        modelBuilder.Entity<Restaurant>().HasIndex(x => new { x.OrganizationId, x.Name });
         modelBuilder.Entity<Employee>().HasIndex(x => new { x.RestaurantId, x.Name });
         modelBuilder.Entity<Device>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<Hall>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
@@ -111,6 +115,12 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
 
         modelBuilder.Entity<ProductModifierGroup>().HasKey(x => new { x.ProductId, x.ModifierGroupId });
         modelBuilder.Entity<ModifierGroupModifier>().HasKey(x => new { x.ModifierGroupId, x.ModifierId });
+
+        modelBuilder.Entity<Restaurant>()
+            .HasOne(x => x.Organization)
+            .WithMany()
+            .HasForeignKey(x => x.OrganizationId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<Order>()
             .HasMany(x => x.Items)
