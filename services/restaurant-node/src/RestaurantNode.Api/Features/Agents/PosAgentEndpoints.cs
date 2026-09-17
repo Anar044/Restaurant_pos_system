@@ -122,9 +122,10 @@ public static class PosAgentEndpoints
                     : new
                     {
                         id = selectedReceiptPrinter.Id,
-                        queueName = selectedReceiptPrinter.ConnectionType == PrinterConnectionType.WindowsQueue
-                            ? selectedReceiptPrinter.Address
-                            : null
+                        name = selectedReceiptPrinter.Name,
+                        connectionType = selectedReceiptPrinter.ConnectionType.ToString(),
+                        address = selectedReceiptPrinter.Address,
+                        port = selectedReceiptPrinter.Port
                     }
             });
         });
