@@ -98,7 +98,14 @@ public static class OrderEndpoints
             order.Version++;
             order.UpdatedAt = now;
 
-            db.AuditEvents.Add(Audit(restaurantId, employeeId, "ITEM_ADDED", "Order", order.Id, new { line.Id, product.Id, product.Name, request.Quantity, unitPrice = price.Amount }));
+            db.AuditEvents.Add(Audit(restaurantId, employeeId, "ITEM_ADDED", "Order", order.Id, new
+            {
+                lineId = line.Id,
+                productId = product.Id,
+                productName = product.Name,
+                request.Quantity,
+                unitPrice = price.Amount
+            }));
             db.OutboxEvents.Add(Outbox(restaurantId, "ORDER_CHANGED", "Order", order.Id, new { order.Id, order.Version }));
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
