@@ -84,7 +84,7 @@ app.MapOrderEndpoints();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<RestaurantDbContext>();
-    await db.Database.EnsureCreatedAsync();
+    await db.Database.MigrateAsync();
     await SeedData.EnsureDevelopmentSeedAsync(scope.ServiceProvider, db, app.Environment);
 }
 
