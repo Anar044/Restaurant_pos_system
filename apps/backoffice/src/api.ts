@@ -69,6 +69,74 @@ export type UpdateTableInput = CreateTableInput & {
   isActive: boolean;
 };
 
+export type ProductPrice = {
+  id: string;
+  amount: number;
+  currencyCode: string;
+  validFrom: string;
+  validTo: string | null;
+};
+
+export type KitchenStation = {
+  id: string;
+  name: string;
+  isActive: boolean;
+};
+
+export type MenuProduct = {
+  id: string;
+  categoryId: string;
+  kitchenStationId: string | null;
+  kitchenStationName: string | null;
+  name: string;
+  sku: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  currentPrice: ProductPrice | null;
+  priceHistory: ProductPrice[];
+};
+
+export type MenuCategory = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+  products: MenuProduct[];
+};
+
+export type BackOfficeMenu = {
+  currencyCode: string;
+  kitchenStations: KitchenStation[];
+  categories: MenuCategory[];
+};
+
+export type CreateCategoryInput = {
+  name: string;
+  sortOrder: number;
+};
+
+export type UpdateCategoryInput = CreateCategoryInput & {
+  isActive: boolean;
+};
+
+export type CreateProductInput = {
+  categoryId: string;
+  kitchenStationId: string | null;
+  name: string;
+  sku: string | null;
+  sortOrder: number;
+  price: number;
+};
+
+export type UpdateProductInput = {
+  categoryId: string;
+  kitchenStationId: string | null;
+  name: string;
+  sku: string | null;
+  sortOrder: number;
+  isActive: boolean;
+};
+
 async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { message?: string; title?: string };
@@ -159,5 +227,62 @@ export async function updateTable(
   return request(`/api/v1/backoffice/tables/${tableId}`, {
     method: 'PUT',
     body: JSON.stringify(input),
+  }, token);
+}
+
+export async function getBackOfficeMenu(token: string): Promise<BackOfficeMenu> {
+  return request<BackOfficeMenu>('/api/v1/backoffice/menu', {}, token);
+}
+
+export async function createCategory(
+  token: string,
+  input: CreateCategoryInput,
+): Promise<Omit<MenuCategory, 'products'>> {
+  return request('/api/v1/backoffice/menu/categories', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateCategory(
+  token: string,
+  categoryId: string,
+  input: UpdateCategoryInput,
+): Promise<Omit<MenuCategory, 'products'>> {
+  return request(`/api/v1/backoffice/menu/categories/${categoryId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createProduct(
+  token: string,
+  input: CreateProductInput,
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/menu/products', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateProduct(
+  token: string,
+  productId: string,
+  input: UpdateProductInput,
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/menu/products/${productId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateProductPrice(
+  token: string,
+  productId: string,
+  amount: number,
+): Promise<ProductPrice> {
+  return request(`/api/v1/backoffice/menu/products/${productId}/price`, {
+    method: 'PUT',
+    body: JSON.stringify({ amount }),
   }, token);
 }
