@@ -10,6 +10,7 @@ import {
   updateDevice,
   updatePrinter,
 } from './api';
+import { PosPrinterAssignment } from './PosPrinterAssignment';
 import './devices.css';
 
 type EditorState =
@@ -51,6 +52,11 @@ export function DevicesPage({ token }: { token: string }) {
     void refresh();
   }, [token]);
 
+  const networkPrinters = useMemo(
+    () => data?.printers.filter((printer) => printer.connectionType === 'Network') ?? [],
+    [data],
+  );
+
   const stats = useMemo(() => {
     const devices = data?.devices ?? [];
     const printers = data?.printers ?? [];
@@ -85,12 +91,12 @@ export function DevicesPage({ token }: { token: string }) {
         <div>
           <div className="eyebrow">ИНФРАСТРУКТУРА РЕСТОРАНА</div>
           <h1>Оборудование</h1>
-          <p>Управляйте терминалами, экранами, принтерами и маршрутами печати кухни.</p>
+          <p>Управляйте POS, локальными Windows-принтерами, сетевыми принтерами и маршрутами печати.</p>
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>Обновить</button>
           <button className="secondary-button" onClick={() => setEditor({ kind: 'device-create' })}>+ Устройство</button>
-          <button className="primary-button" onClick={() => setEditor({ kind: 'printer-create' })}>+ Принтер</button>
+          <button className="primary-button" onClick={() => setEditor({ kind: 'printer-create' })}>+ Сетевой принтер</button>
         </div>
       </div>
 
@@ -103,24 +109,26 @@ export function DevicesPage({ token }: { token: string }) {
 
       <div className="stats-grid">
         <EquipmentStat label="Активные устройства" value={stats.devices} detail={`${data?.devices.length ?? 0} всего`} />
-        <EquipmentStat label="Активные принтеры" value={stats.printers} detail={`${data?.printers.length ?? 0} всего`} />
+        <EquipmentStat label="Известные принтеры" value={stats.printers} detail="локальные + сетевые" />
         <EquipmentStat label="Станции без принтера" value={stats.unassignedStations} detail={stats.unassignedStations ? 'требуют настройки' : 'всё настроено'} warning={stats.unassignedStations > 0} />
       </div>
+
+      <PosPrinterAssignment token={token} onChanged={refresh} />
 
       <div className="equipment-section">
         <div className="equipment-section-header">
           <div>
-            <h2>Принтеры</h2>
-            <p>Сетевые ESC/POS-принтеры и Windows-очереди. Физическая печать будет подключена следующим этапом.</p>
+            <h2>Сетевые принтеры</h2>
+            <p>Принтеры с собственным IP/hostname. Windows-принтеры теперь автоматически обнаруживает POS Agent.</p>
           </div>
-          <button className="primary-button compact" onClick={() => setEditor({ kind: 'printer-create' })}>+ Принтер</button>
+          <button className="primary-button compact" onClick={() => setEditor({ kind: 'printer-create' })}>+ Сетевой принтер</button>
         </div>
 
-        {(data?.printers.length ?? 0) === 0 ? (
-          <div className="equipment-empty">Принтеров пока нет. Добавьте первый принтер для кухни или кассы.</div>
+        {networkPrinters.length === 0 ? (
+          <div className="equipment-empty">Сетевых принтеров пока нет. Локальные Windows-принтеры появятся выше автоматически после запуска POS Agent.</div>
         ) : (
           <div className="printer-grid">
-            {data?.printers.map((printer) => (
+            {networkPrinters.map((printer) => (
               <button
                 key={printer.id}
                 className={`printer-card ${!printer.isActive ? 'inactive-card' : ''}`}
@@ -131,8 +139,8 @@ export function DevicesPage({ token }: { token: string }) {
                   <span className={`badge ${printer.isActive ? 'success' : 'neutral'}`}>{printer.isActive ? 'Активен' : 'Отключён'}</span>
                 </div>
                 <strong>{printer.name}</strong>
-                <span>{printer.connectionType === 'Network' ? `${printer.address}:${printer.port ?? 9100}` : printer.address}</span>
-                <small>{printer.connectionType === 'Network' ? 'Сетевой принтер' : 'Windows очередь'}</small>
+                <span>{printer.address}:{printer.port ?? 9100}</span>
+                <small>Сетевой принтер TCP/IP</small>
                 <div className="printer-links">
                   <span>Кухня: {printer.kitchenStationCount}</span>
                   <span>POS: {printer.posDeviceCount}</span>
@@ -264,17 +272,15 @@ function EquipmentEditor({
   const editing = editor.kind.endsWith('edit');
 
   const [name, setName] = useState(printer?.name ?? device?.name ?? '');
-  const [connectionType, setConnectionType] = useState(printer?.connectionType ?? data.printerConnectionTypes[0] ?? 'Network');
   const [address, setAddress] = useState(printer?.address ?? '');
   const [port, setPort] = useState<number>(printer?.port ?? 9100);
   const [type, setType] = useState(device?.type ?? data.deviceTypes[0] ?? 'Pos');
-  const [receiptPrinterId, setReceiptPrinterId] = useState(device?.receiptPrinterId ?? '');
   const [isActive, setIsActive] = useState(printer?.isActive ?? device?.isActive ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const title = editor.kind === 'printer-create' ? 'Новый принтер' :
-    editor.kind === 'printer-edit' ? 'Настройки принтера' :
+  const title = editor.kind === 'printer-create' ? 'Новый сетевой принтер' :
+    editor.kind === 'printer-edit' ? 'Настройки сетевого принтера' :
     editor.kind === 'device-create' ? 'Новое устройство' :
     'Настройки устройства';
 
@@ -286,29 +292,29 @@ function EquipmentEditor({
       if (editor.kind === 'printer-create') {
         await createPrinter(token, {
           name: name.trim(),
-          connectionType,
+          connectionType: 'Network',
           address: address.trim(),
-          port: connectionType === 'Network' ? port : null,
+          port,
         });
       } else if (editor.kind === 'printer-edit') {
         await updatePrinter(token, editor.printer.id, {
           name: name.trim(),
-          connectionType,
+          connectionType: 'Network',
           address: address.trim(),
-          port: connectionType === 'Network' ? port : null,
+          port,
           isActive,
         });
       } else if (editor.kind === 'device-create') {
         await createDevice(token, {
           name: name.trim(),
           type,
-          receiptPrinterId: type === 'Pos' ? (receiptPrinterId || null) : null,
+          receiptPrinterId: null,
         });
       } else {
         await updateDevice(token, editor.device.id, {
           name: name.trim(),
           type,
-          receiptPrinterId: type === 'Pos' ? (receiptPrinterId || null) : null,
+          receiptPrinterId: type === 'Pos' ? editor.device.receiptPrinterId : null,
           isActive,
         });
       }
@@ -325,7 +331,7 @@ function EquipmentEditor({
       <form className="modal-card equipment-modal" onSubmit={submit}>
         <div className="modal-header">
           <div>
-            <div className="eyebrow">{isPrinter ? 'ПРИНТЕР' : 'УСТРОЙСТВО'}</div>
+            <div className="eyebrow">{isPrinter ? 'СЕТЕВОЙ ПРИНТЕР' : 'УСТРОЙСТВО'}</div>
             <h2>{title}</h2>
           </div>
           <button type="button" className="close-button" onClick={onClose}>×</button>
@@ -338,24 +344,14 @@ function EquipmentEditor({
 
         {isPrinter ? (
           <div className="form-grid">
-            <label className="full-field">
-              <span>Подключение</span>
-              <select value={connectionType} onChange={(e) => setConnectionType(e.target.value)}>
-                {data.printerConnectionTypes.map((item) => (
-                  <option value={item} key={item}>{item === 'Network' ? 'Сеть TCP/IP' : 'Windows очередь'}</option>
-                ))}
-              </select>
+            <label>
+              <span>IP / Hostname</span>
+              <input value={address} onChange={(e) => setAddress(e.target.value)} maxLength={250} placeholder="192.168.1.50" />
             </label>
-            <label className={connectionType === 'Network' ? '' : 'full-field'}>
-              <span>{connectionType === 'Network' ? 'IP / Hostname' : 'Имя Windows-принтера'}</span>
-              <input value={address} onChange={(e) => setAddress(e.target.value)} maxLength={250} placeholder={connectionType === 'Network' ? '192.168.1.50' : 'EPSON TM-T20III'} />
+            <label>
+              <span>Порт</span>
+              <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(Number(e.target.value))} />
             </label>
-            {connectionType === 'Network' && (
-              <label>
-                <span>Порт</span>
-                <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(Number(e.target.value))} />
-              </label>
-            )}
           </div>
         ) : (
           <div className="form-grid">
@@ -366,13 +362,10 @@ function EquipmentEditor({
               </select>
             </label>
             {type === 'Pos' && (
-              <label className="full-field">
-                <span>Чековый принтер</span>
-                <select value={receiptPrinterId} onChange={(e) => setReceiptPrinterId(e.target.value)}>
-                  <option value="">Не назначен</option>
-                  {data.printers.filter((x) => x.isActive).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
-                </select>
-              </label>
+              <div className="full-field pos-agent-info-box">
+                <strong>Чековый принтер назначается после подключения POS Agent</strong>
+                <span>Сохраните POS, скопируйте его Device ID в разделе выше и запустите Agent на нужном Windows-компьютере.</span>
+              </div>
             )}
           </div>
         )}
