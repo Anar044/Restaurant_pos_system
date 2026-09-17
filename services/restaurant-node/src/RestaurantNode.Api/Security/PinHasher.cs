@@ -8,7 +8,7 @@ public sealed class PinHasher
     private const int Iterations = 210_000;
     private const int SaltSize = 16;
     private const int HashSize = 32;
-    private const string V2Prefix = "pin-v2$";
+    public const string LookupMarker = "pin-v2$";
     private readonly byte[] lookupKey;
 
     public PinHasher(IConfiguration configuration)
@@ -24,20 +24,20 @@ public sealed class PinHasher
         var salt = RandomNumberGenerator.GetBytes(SaltSize);
         var hash = Rfc2898DeriveBytes.Pbkdf2(pin, salt, Iterations, HashAlgorithmName.SHA256, HashSize);
         var lookup = ComputeLookup(restaurantId, pin);
-        return $"{V2Prefix}{lookup}$pbkdf2-sha256${Iterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
+        return $"{LookupMarker}{lookup}$pbkdf2-sha256${Iterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
     }
 
     public string LookupPrefix(Guid restaurantId, string pin) =>
-        $"{V2Prefix}{ComputeLookup(restaurantId, pin)}$";
+        $"{LookupMarker}{ComputeLookup(restaurantId, pin)}$";
 
     public bool IsLookupOptimized(string encoded) =>
-        encoded.StartsWith(V2Prefix, StringComparison.Ordinal);
+        encoded.StartsWith(LookupMarker, StringComparison.Ordinal);
 
     public bool Verify(string pin, string encoded)
     {
         try
         {
-            if (encoded.StartsWith(V2Prefix, StringComparison.Ordinal))
+            if (encoded.StartsWith(LookupMarker, StringComparison.Ordinal))
             {
                 var parts = encoded.Split('$');
                 if (parts.Length != 6 || parts[0] != "pin-v2" || parts[2] != "pbkdf2-sha256") return false;
