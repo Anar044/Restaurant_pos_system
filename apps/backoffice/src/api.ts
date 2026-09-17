@@ -166,6 +166,49 @@ export type UpdateKitchenStationInput = {
   isActive: boolean;
 };
 
+export type EmployeeRole = {
+  id: string;
+  name: string;
+  permissions: string[];
+  employeeCount: number;
+  activeEmployeeCount: number;
+};
+
+export type BackOfficeEmployee = {
+  id: string;
+  name: string;
+  roleId: string;
+  roleName: string | null;
+  isActive: boolean;
+  createdAt: string;
+};
+
+export type BackOfficeEmployees = {
+  employees: BackOfficeEmployee[];
+  roles: EmployeeRole[];
+  availablePermissions: string[];
+};
+
+export type CreateRoleInput = {
+  name: string;
+  permissions: string[];
+};
+
+export type UpdateRoleInput = CreateRoleInput;
+
+export type CreateEmployeeInput = {
+  name: string;
+  roleId: string;
+  pin: string;
+};
+
+export type UpdateEmployeeInput = {
+  name: string;
+  roleId: string;
+  isActive: boolean;
+  newPin: string | null;
+};
+
 async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { message?: string; title?: string };
@@ -336,6 +379,52 @@ export async function updateKitchenStation(
   input: UpdateKitchenStationInput,
 ): Promise<KitchenStation> {
   return request(`/api/v1/backoffice/kitchen/stations/${stationId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function getBackOfficeEmployees(token: string): Promise<BackOfficeEmployees> {
+  return request<BackOfficeEmployees>('/api/v1/backoffice/employees', {}, token);
+}
+
+export async function createRole(
+  token: string,
+  input: CreateRoleInput,
+): Promise<EmployeeRole> {
+  return request('/api/v1/backoffice/employees/roles', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateRole(
+  token: string,
+  roleId: string,
+  input: UpdateRoleInput,
+): Promise<EmployeeRole> {
+  return request(`/api/v1/backoffice/employees/roles/${roleId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createEmployee(
+  token: string,
+  input: CreateEmployeeInput,
+): Promise<BackOfficeEmployee> {
+  return request('/api/v1/backoffice/employees', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateEmployee(
+  token: string,
+  employeeId: string,
+  input: UpdateEmployeeInput,
+): Promise<BackOfficeEmployee> {
+  return request(`/api/v1/backoffice/employees/${employeeId}`, {
     method: 'PUT',
     body: JSON.stringify(input),
   }, token);
