@@ -55,6 +55,8 @@ public sealed class Printer : Entity
     public PrinterConnectionType ConnectionType { get; set; } = PrinterConnectionType.Network;
     public required string Address { get; set; }
     public int? Port { get; set; } = 9100;
+    public bool IsConfigured { get; set; } = true;
+    public bool IsDefault { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTimeOffset? LastSeenAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
