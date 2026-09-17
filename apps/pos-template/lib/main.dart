@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'config.dart';
+import 'local_print_client.dart';
 
 void main() {
   runApp(const RestaurantPosApp());
@@ -16,6 +17,7 @@ class RestaurantPosApp extends StatefulWidget {
 
 class _RestaurantPosAppState extends State<RestaurantPosApp> {
   late final PosApiClient api = PosApiClient(AppConfig.apiBaseUrl);
+  late final PosAgentClient printer = PosAgentClient(AppConfig.posAgentBaseUrl);
   AuthSession? session;
 
   @override
@@ -36,7 +38,11 @@ class _RestaurantPosAppState extends State<RestaurantPosApp> {
               api: api,
               onLoggedIn: (value) => setState(() => session = value),
             )
-          : HallSelectionPage(api: api, session: session!),
+          : HallSelectionPage(
+              api: api,
+              printer: printer,
+              session: session!,
+            ),
     );
   }
 }
@@ -164,9 +170,15 @@ class _LoginPageState extends State<LoginPage> {
 }
 
 class HallSelectionPage extends StatefulWidget {
-  const HallSelectionPage({super.key, required this.api, required this.session});
+  const HallSelectionPage({
+    super.key,
+    required this.api,
+    required this.printer,
+    required this.session,
+  });
 
   final PosApiClient api;
+  final PosAgentClient printer;
   final AuthSession session;
 
   @override
@@ -188,7 +200,7 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
     setState(() => hallsFuture = widget.api.getHalls());
   }
 
-  Future<void> openTable(DiningTableDto table) async {
+  Future<void> openTable(HallDto hall, DiningTableDto table) async {
     if (loadingTableId != null) return;
     setState(() => loadingTableId = table.id);
     try {
@@ -201,7 +213,9 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
         MaterialPageRoute(
           builder: (_) => OrderPage(
             api: widget.api,
+            printer: widget.printer,
             session: widget.session,
+            hallName: hall.name,
             table: table,
             initialOrder: existingOrder,
           ),
@@ -304,7 +318,7 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
                       return _TableCard(
                         table: table,
                         loading: loadingTableId == table.id,
-                        onTap: () => openTable(table),
+                        onTap: () => openTable(selectedHall, table),
                       );
                     },
                   ),
@@ -401,13 +415,17 @@ class OrderPage extends StatefulWidget {
   const OrderPage({
     super.key,
     required this.api,
+    required this.printer,
     required this.session,
+    required this.hallName,
     required this.table,
     this.initialOrder,
   });
 
   final PosApiClient api;
+  final PosAgentClient printer;
   final AuthSession session;
+  final String hallName;
   final DiningTableDto table;
   final OrderDto? initialOrder;
 
@@ -420,6 +438,7 @@ class _OrderPageState extends State<OrderPage> {
   late OrderDto? order;
   String? selectedCategoryId;
   bool mutating = false;
+  bool printing = false;
   String? error;
 
   @override
@@ -430,7 +449,7 @@ class _OrderPageState extends State<OrderPage> {
   }
 
   Future<void> addProduct(MenuProduct product) async {
-    if (mutating) return;
+    if (mutating || printing) return;
     setState(() {
       mutating = true;
       error = null;
@@ -447,7 +466,7 @@ class _OrderPageState extends State<OrderPage> {
   }
 
   Future<void> incrementGroup(CartGroup group) async {
-    if (mutating || order == null) return;
+    if (mutating || printing || order == null) return;
     setState(() {
       mutating = true;
       error = null;
@@ -463,7 +482,7 @@ class _OrderPageState extends State<OrderPage> {
   }
 
   Future<void> decrementGroup(CartGroup group) async {
-    if (mutating || order == null) return;
+    if (mutating || printing || order == null) return;
     OrderLineDto? removable;
     for (final line in group.lines.reversed) {
       if (line.status == 'NEW') {
@@ -484,6 +503,53 @@ class _OrderPageState extends State<OrderPage> {
       if (mounted) setState(() => error = e.toString());
     } finally {
       if (mounted) setState(() => mutating = false);
+    }
+  }
+
+  Future<void> printPrecheck() async {
+    final current = order;
+    if (current == null || current.items.isEmpty || mutating || printing) return;
+
+    setState(() {
+      printing = true;
+      error = null;
+    });
+
+    try {
+      final groups = CartGroup.fromOrder(current);
+      final result = await widget.printer.printReceipt(
+        restaurantName: AppConfig.restaurantDisplayName,
+        orderNumber: current.displayNumber,
+        hallName: widget.hallName,
+        tableName: widget.table.name,
+        cashierName: widget.session.employeeName,
+        guestCount: current.guestCount,
+        currencyCode: AppConfig.currencyCode,
+        total: current.total,
+        items: groups
+            .map(
+              (group) => ReceiptPrintItem(
+                name: group.productName,
+                quantity: group.quantity,
+                unitPrice: group.unitPrice,
+                lineTotal: group.total,
+              ),
+            )
+            .toList(),
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Предчек #${result.orderNumber} отправлен на ${result.printerName}',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) setState(() => error = 'Печать: $e');
+    } finally {
+      if (mounted) setState(() => printing = false);
     }
   }
 
@@ -527,6 +593,7 @@ class _OrderPageState extends State<OrderPage> {
             }
           }
 
+          final busy = mutating || printing;
           return LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= 1000;
@@ -536,14 +603,16 @@ class _OrderPageState extends State<OrderPage> {
                 onCategory: (category) =>
                     setState(() => selectedCategoryId = category.id),
                 onProduct: addProduct,
-                disabled: mutating,
+                disabled: busy,
               );
               final cart = _OrderPane(
                 order: order,
-                busy: mutating,
+                busy: busy,
+                printing: printing,
                 error: error,
                 onPlus: incrementGroup,
                 onMinus: decrementGroup,
+                onPrintPrecheck: printPrecheck,
               );
 
               return wide
@@ -556,7 +625,7 @@ class _OrderPageState extends State<OrderPage> {
                   : Column(
                       children: [
                         Expanded(child: menu),
-                        SizedBox(height: 310, child: cart),
+                        SizedBox(height: 350, child: cart),
                       ],
                     );
             },
@@ -657,16 +726,20 @@ class _OrderPane extends StatelessWidget {
   const _OrderPane({
     required this.order,
     required this.busy,
+    required this.printing,
     required this.error,
     required this.onPlus,
     required this.onMinus,
+    required this.onPrintPrecheck,
   });
 
   final OrderDto? order;
   final bool busy;
+  final bool printing;
   final String? error;
   final ValueChanged<CartGroup> onPlus;
   final ValueChanged<CartGroup> onMinus;
+  final VoidCallback onPrintPrecheck;
 
   @override
   Widget build(BuildContext context) {
@@ -760,6 +833,17 @@ class _OrderPane extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: busy || order == null || order!.items.isEmpty
+                  ? null
+                  : onPrintPrecheck,
+              icon: const Icon(Icons.print_outlined),
+              label: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(printing ? 'Печатаем…' : 'Печать предчека'),
+              ),
+            ),
+            const SizedBox(height: 8),
             FilledButton.icon(
               onPressed: null,
               icon: const Icon(Icons.payments_outlined),
