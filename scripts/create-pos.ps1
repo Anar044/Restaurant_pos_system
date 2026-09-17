@@ -139,14 +139,13 @@ $mainText = Replace-Required $mainText $paymentBlock $kitchenAndPaymentBlock 'ki
 # Show the item state clearly in the cart. NEW lines can still be changed; SENT lines cannot.
 $equationBlock = @(
     '                                    Text(',
-    '                                      ''${group.quantity.g} × ${group.unitPrice.toStringAsFixed(2)} = ${group.total.toStringAsFixed(2)}'',' ,',
+    "                                      '`${group.quantity.g} × `${group.unitPrice.toStringAsFixed(2)} = `${group.total.toStringAsFixed(2)}',",
     '                                    ),'
 ) -join "`n"
-$equationBlock = $equationBlock.Replace("'',", "',").Replace("' ,", "'")
 
 $statusBlock = @(
     '                                    Text(',
-    '                                      ''${group.quantity.g} × ${group.unitPrice.toStringAsFixed(2)} = ${group.total.toStringAsFixed(2)}'',' ,',
+    "                                      '`${group.quantity.g} × `${group.unitPrice.toStringAsFixed(2)} = `${group.total.toStringAsFixed(2)}',",
     '                                    ),',
     '                                    const SizedBox(height: 3),',
     '                                    Text(',
@@ -160,7 +159,6 @@ $statusBlock = @(
     '                                      ),',
     '                                    ),'
 ) -join "`n"
-$statusBlock = $statusBlock.Replace("'',", "',").Replace("' ,", "'")
 
 $mainText = Replace-Required $mainText $equationBlock $statusBlock 'cart item kitchen status'
 
