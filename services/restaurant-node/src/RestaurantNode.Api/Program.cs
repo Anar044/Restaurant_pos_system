@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using RestaurantNode.Api.Features.Auth;
+using RestaurantNode.Api.Features.Halls;
 using RestaurantNode.Api.Features.Menu;
 using RestaurantNode.Api.Features.Orders;
 using RestaurantNode.Api.Infrastructure;
@@ -76,6 +77,7 @@ app.UseAuthorization();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "restaurant-node", utc = DateTimeOffset.UtcNow }));
 
 app.MapAuthEndpoints();
+app.MapHallEndpoints();
 app.MapMenuEndpoints();
 app.MapOrderEndpoints();
 
