@@ -9,6 +9,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<Restaurant> Restaurants => Set<Restaurant>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<Employee> Employees => Set<Employee>();
+    public DbSet<Printer> Printers => Set<Printer>();
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<Hall> Halls => Set<Hall>();
     public DbSet<DiningTable> DiningTables => Set<DiningTable>();
@@ -39,6 +40,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Restaurant>().ToTable("restaurants");
         modelBuilder.Entity<Role>().ToTable("roles");
         modelBuilder.Entity<Employee>().ToTable("employees");
+        modelBuilder.Entity<Printer>().ToTable("printers");
         modelBuilder.Entity<Device>().ToTable("devices");
         modelBuilder.Entity<Hall>().ToTable("halls");
         modelBuilder.Entity<DiningTable>().ToTable("dining_tables");
@@ -66,6 +68,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<AuditEvent>().Property(x => x.PayloadJson).HasColumnType("jsonb");
         modelBuilder.Entity<OutboxEvent>().Property(x => x.PayloadJson).HasColumnType("jsonb");
 
+        modelBuilder.Entity<Printer>().Property(x => x.ConnectionType).HasConversion<string>();
         modelBuilder.Entity<Device>().Property(x => x.Type).HasConversion<string>();
         modelBuilder.Entity<Order>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<OrderItem>().Property(x => x.Status).HasConversion<string>();
@@ -103,6 +106,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Organization>().HasIndex(x => x.Name);
         modelBuilder.Entity<Restaurant>().HasIndex(x => new { x.OrganizationId, x.Name });
         modelBuilder.Entity<Employee>().HasIndex(x => new { x.RestaurantId, x.Name });
+        modelBuilder.Entity<Printer>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<Device>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<Hall>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<DiningTable>().HasIndex(x => new { x.HallId, x.Name }).IsUnique();
@@ -121,6 +125,18 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .WithMany()
             .HasForeignKey(x => x.OrganizationId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Device>()
+            .HasOne(x => x.ReceiptPrinter)
+            .WithMany()
+            .HasForeignKey(x => x.ReceiptPrinterId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<KitchenStation>()
+            .HasOne(x => x.Printer)
+            .WithMany()
+            .HasForeignKey(x => x.PrinterId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<Order>()
             .HasMany(x => x.Items)
