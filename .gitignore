@@ -11,6 +11,7 @@
 .packages
 .pub-cache/
 build/
+apps/pos/
 
 # IDE
 .vscode/
