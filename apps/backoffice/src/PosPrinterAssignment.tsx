@@ -6,6 +6,7 @@ import {
   configurePosPrinter,
   getBackOfficePosPrinters,
 } from './posPrintersApi';
+import './pos-printers.css';
 
 export function PosPrinterAssignment({
   token,
