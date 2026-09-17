@@ -80,6 +80,7 @@ app.MapAuthEndpoints();
 app.MapBackOfficeEndpoints();
 app.MapBackOfficeHallEndpoints();
 app.MapBackOfficeMenuEndpoints();
+app.MapBackOfficeKitchenEndpoints();
 app.MapHallEndpoints();
 app.MapMenuEndpoints();
 app.MapOrderEndpoints();
