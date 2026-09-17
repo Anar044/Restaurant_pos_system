@@ -18,24 +18,37 @@ public static class SeedData
     {
         if (!environment.IsDevelopment()) return;
 
+        var pinHasher = services.GetRequiredService<PinHasher>();
+        var configuration = services.GetRequiredService<IConfiguration>();
+        var pin = configuration["Seed:AdminPin"] ?? "1234";
+
         var existingRestaurant = await db.Restaurants
             .AsNoTracking()
             .AnyAsync(x => x.Id == RestaurantId);
 
         if (existingRestaurant)
         {
+            var changed = false;
             var existingAdminRole = await db.Roles.FirstOrDefaultAsync(x => x.Id == AdminRoleId);
             if (existingAdminRole is not null)
             {
                 existingAdminRole.Permissions = Permissions.All;
-                await db.SaveChangesAsync();
+                changed = true;
             }
+
+            var existingAdmin = await db.Employees.FirstOrDefaultAsync(x => x.Id == AdminEmployeeId);
+            if (existingAdmin is not null &&
+                !pinHasher.IsLookupOptimized(existingAdmin.PinHash) &&
+                pinHasher.Verify(pin, existingAdmin.PinHash))
+            {
+                existingAdmin.PinHash = pinHasher.Hash(RestaurantId, pin);
+                changed = true;
+            }
+
+            if (changed)
+                await db.SaveChangesAsync();
             return;
         }
-
-        var pinHasher = services.GetRequiredService<PinHasher>();
-        var configuration = services.GetRequiredService<IConfiguration>();
-        var pin = configuration["Seed:AdminPin"] ?? "1234";
 
         var organization = new Organization
         {
@@ -64,7 +77,7 @@ public static class SeedData
             RestaurantId = RestaurantId,
             RoleId = AdminRoleId,
             Name = "Administrator",
-            PinHash = pinHasher.Hash(pin)
+            PinHash = pinHasher.Hash(RestaurantId, pin)
         };
 
         var hall = new Hall { RestaurantId = RestaurantId, Name = "Main Hall", SortOrder = 1 };
