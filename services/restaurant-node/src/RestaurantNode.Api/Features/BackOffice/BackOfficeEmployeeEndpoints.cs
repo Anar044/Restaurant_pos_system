@@ -202,7 +202,7 @@ public static class BackOfficeEmployeeEndpoints
                 RestaurantId = restaurantId,
                 RoleId = role.Id,
                 Name = name,
-                PinHash = pinHasher.Hash(request.Pin),
+                PinHash = pinHasher.Hash(restaurantId, request.Pin),
                 IsActive = true
             };
 
@@ -285,7 +285,7 @@ public static class BackOfficeEmployeeEndpoints
             employee.RoleId = role.Id;
             employee.IsActive = request.IsActive;
             if (pinChanged)
-                employee.PinHash = pinHasher.Hash(request.NewPin!);
+                employee.PinHash = pinHasher.Hash(restaurantId, request.NewPin!);
 
             AddAudit(db, user, restaurantId, "EMPLOYEE_UPDATED", "Employee", employee.Id, new
             {
@@ -311,9 +311,12 @@ public static class BackOfficeEmployeeEndpoints
         Guid? excludeEmployeeId,
         CancellationToken ct)
     {
+        var lookupPrefix = pinHasher.LookupPrefix(restaurantId, pin);
         var hashes = await db.Employees
             .AsNoTracking()
-            .Where(x => x.RestaurantId == restaurantId && (!excludeEmployeeId.HasValue || x.Id != excludeEmployeeId.Value))
+            .Where(x => x.RestaurantId == restaurantId &&
+                        (!excludeEmployeeId.HasValue || x.Id != excludeEmployeeId.Value) &&
+                        (x.PinHash.StartsWith(lookupPrefix) || !x.PinHash.StartsWith(PinHasher.LookupMarker)))
             .Select(x => x.PinHash)
             .ToListAsync(ct);
 
