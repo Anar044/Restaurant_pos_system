@@ -6,6 +6,7 @@ namespace RestaurantNode.Api.Infrastructure;
 
 public static class SeedData
 {
+    public static readonly Guid OrganizationId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     public static readonly Guid RestaurantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     public static readonly Guid AdminRoleId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     public static readonly Guid AdminEmployeeId = Guid.Parse("33333333-3333-3333-3333-333333333333");
@@ -22,9 +23,16 @@ public static class SeedData
         var configuration = services.GetRequiredService<IConfiguration>();
         var pin = configuration["Seed:AdminPin"] ?? "1234";
 
+        var organization = new Organization
+        {
+            Id = OrganizationId,
+            Name = "Demo Organization"
+        };
         var restaurant = new Restaurant
         {
             Id = RestaurantId,
+            OrganizationId = OrganizationId,
+            Organization = organization,
             Name = "Demo Restaurant",
             CurrencyCode = "AZN",
             TimeZone = "Asia/Baku"
@@ -60,7 +68,7 @@ public static class SeedData
         var cola = new Product { RestaurantId = RestaurantId, CategoryId = drinksCategory.Id, KitchenStationId = bar.Id, Name = "Cola", SortOrder = 1 };
         var water = new Product { RestaurantId = RestaurantId, CategoryId = drinksCategory.Id, KitchenStationId = bar.Id, Name = "Water", SortOrder = 2 };
 
-        db.AddRange(restaurant, adminRole, admin, hall, hot, bar, foodCategory, drinksCategory);
+        db.AddRange(organization, restaurant, adminRole, admin, hall, hot, bar, foodCategory, drinksCategory);
         db.AddRange(tables);
         db.AddRange(burger, pasta, cola, water);
         db.AddRange(
