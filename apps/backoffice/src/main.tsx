@@ -11,6 +11,7 @@ import {
   loginWithPin,
 } from './api';
 import { HallsPage } from './HallsPage';
+import { KitchenPage } from './KitchenPage';
 import { MenuPage } from './MenuPage';
 import './styles.css';
 
@@ -152,7 +153,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'overview', label: 'Обзор', icon: '⌂' },
     { key: 'halls', label: 'Залы и столы', icon: '▦', ready: true },
     { key: 'menu', label: 'Меню', icon: '≡', ready: true },
-    { key: 'kitchen', label: 'Кухня', icon: '◫' },
+    { key: 'kitchen', label: 'Кухня', icon: '◫', ready: true },
     { key: 'employees', label: 'Сотрудники', icon: '◎' },
     { key: 'devices', label: 'Оборудование', icon: '◇' },
   ];
@@ -227,6 +228,8 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             />
           ) : page === 'menu' ? (
             <MenuPage token={session.token} />
+          ) : page === 'kitchen' ? (
+            <KitchenPage token={session.token} />
           ) : (
             <ComingSoon page={navItems.find((x) => x.key === page)?.label ?? 'Раздел'} />
           )}
