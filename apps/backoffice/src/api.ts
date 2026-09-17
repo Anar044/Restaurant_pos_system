@@ -270,6 +270,38 @@ export type UpdateDeviceInput = CreateDeviceInput & {
   isActive: boolean;
 };
 
+export type PosWindowsPrinter = {
+  id: string;
+  name: string;
+  queueName: string;
+  isActive: boolean;
+  lastSeenAt: string | null;
+  isOnline: boolean;
+  isSelectedReceipt: boolean;
+};
+
+export type PosPrinterDevice = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  lastSeenAt: string | null;
+  isOnline: boolean;
+  receiptPrinterId: string | null;
+  windowsPrinters: PosWindowsPrinter[];
+};
+
+export type PosNetworkPrinter = {
+  id: string;
+  name: string;
+  address: string;
+  port: number | null;
+};
+
+export type BackOfficePosPrinters = {
+  posDevices: PosPrinterDevice[];
+  networkPrinters: PosNetworkPrinter[];
+};
+
 async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { message?: string; title?: string };
@@ -543,6 +575,21 @@ export async function assignKitchenPrinter(
   printerId: string | null,
 ): Promise<{ id: string; printerId: string | null }> {
   return request(`/api/v1/backoffice/devices/kitchen-stations/${stationId}/printer`, {
+    method: 'PUT',
+    body: JSON.stringify({ printerId }),
+  }, token);
+}
+
+export async function getBackOfficePosPrinters(token: string): Promise<BackOfficePosPrinters> {
+  return request<BackOfficePosPrinters>('/api/v1/backoffice/pos-printers', {}, token);
+}
+
+export async function assignPosReceiptPrinter(
+  token: string,
+  deviceId: string,
+  printerId: string | null,
+): Promise<{ id: string; receiptPrinterId: string | null; receiptPrinterName: string | null }> {
+  return request(`/api/v1/backoffice/pos-printers/${deviceId}/receipt-printer`, {
     method: 'PUT',
     body: JSON.stringify({ printerId }),
   }, token);
