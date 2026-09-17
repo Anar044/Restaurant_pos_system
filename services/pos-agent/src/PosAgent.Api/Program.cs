@@ -101,4 +101,46 @@ app.MapPost("/api/v1/print/test-receipt", async (
     }
 });
 
+app.MapPost("/api/v1/print/receipt", async (
+    ReceiptPrintRequest request,
+    LocalReceiptPrinter printer,
+    CancellationToken ct) =>
+{
+    try
+    {
+        var result = await printer.PrintReceiptAsync(request, ct);
+        return Results.Ok(new
+        {
+            status = "printed",
+            result.OrderNumber,
+            result.PrinterId,
+            result.PrinterName,
+            result.ConnectionType,
+            result.Address,
+            result.Port,
+            result.PrintMode,
+            result.PrintedAt
+        });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { message = ex.Message });
+    }
+    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+    {
+        return Results.StatusCode(499);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(
+            title: "Local receipt print failed.",
+            detail: ex.Message,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
+});
+
 app.Run();
