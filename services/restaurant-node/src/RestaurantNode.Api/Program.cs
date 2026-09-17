@@ -82,6 +82,7 @@ app.MapBackOfficeHallEndpoints();
 app.MapBackOfficeMenuEndpoints();
 app.MapBackOfficeKitchenEndpoints();
 app.MapBackOfficeEmployeeEndpoints();
+app.MapBackOfficeDeviceEndpoints();
 app.MapHallEndpoints();
 app.MapMenuEndpoints();
 app.MapOrderEndpoints();
