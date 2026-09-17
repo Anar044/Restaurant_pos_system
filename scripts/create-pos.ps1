@@ -19,9 +19,8 @@ Copy-Item (Join-Path $template "pubspec.yaml") (Join-Path $target "pubspec.yaml"
 Remove-Item -Recurse -Force (Join-Path $target "lib")
 Copy-Item (Join-Path $template "lib") (Join-Path $target "lib") -Recurse -Force
 
-# Apply small generated-client patches until they are folded into the template source.
-# Explicit UTF-8 handling is required because Windows PowerShell 5.1 otherwise
-# corrupts Cyrillic UI strings.
+# Keep this script ASCII-only so Windows PowerShell 5.1 can parse it reliably.
+# The Dart source itself is read and written explicitly as UTF-8.
 $mainFile = Join-Path $target "lib\main.dart"
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $mainText = [System.IO.File]::ReadAllText($mainFile, [System.Text.Encoding]::UTF8)
@@ -34,6 +33,7 @@ function Replace-Required([string]$text, [string]$oldValue, [string]$newValue, [
     return $text.Replace($oldValue, $newValue)
 }
 
+# Flutter setState callbacks must not return a Future.
 $mainText = Replace-Required $mainText `
     'setState(() => hallsFuture = widget.api.getHalls());' `
     "setState(() {`n      hallsFuture = widget.api.getHalls();`n    });" `
@@ -44,7 +44,7 @@ $mainText = Replace-Required $mainText `
     "onRetry: () {`n                setState(() {`n                  menuFuture = widget.api.getMenu();`n                });`n              }," `
     'menu retry'
 
-# Add send-to-kitchen action to the order screen.
+# Add send-to-kitchen method to OrderPage. Unicode UI text is written as Dart escapes.
 $orderBuildAnchor = @(
     '  @override',
     '  Widget build(BuildContext context) {',
@@ -66,7 +66,7 @@ $sendMethodAndAnchor = @(
     '      if (mounted) {',
     '        setState(() => order = updated);',
     '        ScaffoldMessenger.of(context).showSnackBar(',
-    "          const SnackBar(content: Text('Заказ отправлен на кухню')),",
+    "          const SnackBar(content: Text('\\u0417\\u0430\\u043A\\u0430\\u0437 \\u043E\\u0442\\u043F\\u0440\\u0430\\u0432\\u043B\\u0435\\u043D \\u043D\\u0430 \\u043A\\u0443\\u0445\\u043D\\u044E')),",
     '        );',
     '      }',
     '    } catch (e) {',
@@ -84,12 +84,12 @@ $sendMethodAndAnchor = @(
     '          order == null'
 ) -join "`n"
 
-$mainText = Replace-Required $mainText $orderBuildAnchor $sendMethodAndAnchor 'send-to-kitchen method'
+$mainText = Replace-Required $mainText $orderBuildAnchor $sendMethodAndAnchor 'send method'
 
 $mainText = Replace-Required $mainText `
     '                onMinus: decrementGroup,' `
     "                onMinus: decrementGroup,`n                onSend: sendToKitchen," `
-    'order pane send callback'
+    'order pane callback'
 
 $mainText = Replace-Required $mainText `
     '    required this.onMinus,' `
@@ -99,20 +99,16 @@ $mainText = Replace-Required $mainText `
 $mainText = Replace-Required $mainText `
     '  final ValueChanged<CartGroup> onMinus;' `
     "  final ValueChanged<CartGroup> onMinus;`n  final Future<void> Function() onSend;" `
-    'order pane send field'
+    'order pane field'
 
-$paymentBlock = @(
+# Insert the kitchen button immediately before the existing payment button.
+$paymentAnchor = @(
     '            FilledButton.icon(',
     '              onPressed: null,',
-    '              icon: const Icon(Icons.payments_outlined),',
-    '              label: const Padding(',
-    '                padding: EdgeInsets.symmetric(vertical: 14),',
-    "                child: Text('Оплата — следующий этап'),",
-    '              ),',
-    '            ),'
+    '              icon: const Icon(Icons.payments_outlined),'
 ) -join "`n"
 
-$kitchenAndPaymentBlock = @(
+$kitchenAndPaymentAnchor = @(
     '            FilledButton.icon(',
     '              onPressed: busy || order == null || !order!.hasNewItems',
     '                  ? null',
@@ -120,47 +116,41 @@ $kitchenAndPaymentBlock = @(
     '              icon: const Icon(Icons.soup_kitchen_outlined),',
     '              label: const Padding(',
     '                padding: EdgeInsets.symmetric(vertical: 14),',
-    "                child: Text('Отправить на кухню'),",
+    "                child: Text('\\u041E\\u0442\\u043F\\u0440\\u0430\\u0432\\u0438\\u0442\\u044C \\u043D\\u0430 \\u043A\\u0443\\u0445\\u043D\\u044E'),",
     '              ),',
     '            ),',
     '            const SizedBox(height: 10),',
     '            FilledButton.icon(',
     '              onPressed: null,',
-    '              icon: const Icon(Icons.payments_outlined),',
-    '              label: const Padding(',
-    '                padding: EdgeInsets.symmetric(vertical: 14),',
-    "                child: Text('Оплата — следующий этап'),",
-    '              ),',
-    '            ),'
+    '              icon: const Icon(Icons.payments_outlined),'
 ) -join "`n"
 
-$mainText = Replace-Required $mainText $paymentBlock $kitchenAndPaymentBlock 'kitchen button'
+$mainText = Replace-Required $mainText $paymentAnchor $kitchenAndPaymentAnchor 'kitchen button'
 
-# Show the item state clearly in the cart. NEW lines can still be changed; SENT lines cannot.
-$equationBlock = @(
-    '                                    Text(',
-    "                                      '`${group.quantity.g} × `${group.unitPrice.toStringAsFixed(2)} = `${group.total.toStringAsFixed(2)}',",
-    '                                    ),'
+# Add a compact NEW/SENT indicator without widening the cart too much.
+$minusAnchor = @(
+    '                              IconButton.filledTonal(',
+    '                                onPressed: busy || !canRemove ? null : () => onMinus(group),'
 ) -join "`n"
 
-$statusBlock = @(
-    '                                    Text(',
-    "                                      '`${group.quantity.g} × `${group.unitPrice.toStringAsFixed(2)} = `${group.total.toStringAsFixed(2)}',",
-    '                                    ),',
-    '                                    const SizedBox(height: 3),',
-    '                                    Text(',
-    "                                      group.status == 'SENT' ? 'Отправлено на кухню' : 'Не отправлено',",
-    '                                      style: TextStyle(',
-    "                                        color: group.status == 'SENT'",
-    '                                            ? Theme.of(context).colorScheme.primary',
-    '                                            : Theme.of(context).colorScheme.tertiary,',
-    '                                        fontSize: 12,',
-    '                                        fontWeight: FontWeight.w600,',
-    '                                      ),',
-    '                                    ),'
+$statusAndMinusAnchor = @(
+    "                              Tooltip(",
+    "                                message: group.status == 'SENT'",
+    "                                    ? '\\u041E\\u0442\\u043F\\u0440\\u0430\\u0432\\u043B\\u0435\\u043D\\u043E \\u043D\\u0430 \\u043A\\u0443\\u0445\\u043D\\u044E'",
+    "                                    : '\\u041D\\u0435 \\u043E\\u0442\\u043F\\u0440\\u0430\\u0432\\u043B\\u0435\\u043D\\u043E',",
+    "                                child: Icon(",
+    "                                  group.status == 'SENT'",
+    '                                      ? Icons.check_circle_outline',
+    '                                      : Icons.schedule_send_outlined,',
+    '                                  size: 18,',
+    '                                ),',
+    '                              ),',
+    '                              const SizedBox(width: 4),',
+    '                              IconButton.filledTonal(',
+    '                                onPressed: busy || !canRemove ? null : () => onMinus(group),'
 ) -join "`n"
 
-$mainText = Replace-Required $mainText $equationBlock $statusBlock 'cart item kitchen status'
+$mainText = Replace-Required $mainText $minusAnchor $statusAndMinusAnchor 'item status indicator'
 
 [System.IO.File]::WriteAllText($mainFile, $mainText, $utf8NoBom)
 
