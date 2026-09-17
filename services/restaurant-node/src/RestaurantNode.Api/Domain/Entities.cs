@@ -7,8 +7,17 @@ public abstract class Entity
     public Guid Id { get; set; } = Ids.New();
 }
 
+public sealed class Organization : Entity
+{
+    public required string Name { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class Restaurant : Entity
 {
+    public Guid OrganizationId { get; set; }
+    public Organization? Organization { get; set; }
     public required string Name { get; set; }
     public string CurrencyCode { get; set; } = "AZN";
     public string TimeZone { get; set; } = "Asia/Baku";
