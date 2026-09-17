@@ -113,6 +113,14 @@ class PosApiClient {
     return OrderDto.fromJson(_decode(response));
   }
 
+  Future<OrderDto> sendOrderToKitchen(String orderId) async {
+    final response = await _http.post(
+      _uri('/api/v1/orders/$orderId/send'),
+      headers: _headers,
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
   Map<String, dynamic> _decode(http.Response response) {
     Map<String, dynamic> data = {};
     if (response.body.isNotEmpty) {
@@ -241,6 +249,7 @@ class OrderLineDto {
     required this.unitPrice,
     required this.lineTotal,
     required this.status,
+    this.sentAt,
   });
 
   final String id;
@@ -250,6 +259,7 @@ class OrderLineDto {
   final double unitPrice;
   final double lineTotal;
   final String status;
+  final DateTime? sentAt;
 
   factory OrderLineDto.fromJson(Map<String, dynamic> json) => OrderLineDto(
         id: json['id'] as String,
@@ -259,6 +269,9 @@ class OrderLineDto {
         unitPrice: (json['unitPrice'] as num).toDouble(),
         lineTotal: (json['lineTotal'] as num).toDouble(),
         status: json['status'] as String,
+        sentAt: json['sentAt'] == null
+            ? null
+            : DateTime.tryParse(json['sentAt'] as String),
       );
 }
 
@@ -282,6 +295,8 @@ class OrderDto {
   final double total;
   final int version;
   final List<OrderLineDto> items;
+
+  bool get hasNewItems => items.any((item) => item.status == 'NEW');
 
   factory OrderDto.fromJson(Map<String, dynamic> json) => OrderDto(
         id: json['id'] as String,
