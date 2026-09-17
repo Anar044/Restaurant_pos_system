@@ -32,12 +32,16 @@ public sealed class AgentSyncWorker(
                 {
                     var printers = printerDiscovery.GetInstalledPrinters();
                     var response = await nodeClient.SyncAsync(restaurantId, deviceId, printers, stoppingToken);
+                    var receiptPrinter = response.ReceiptPrinter;
 
                     await cacheStore.WriteAsync(new AgentLocalConfig(
                         response.DeviceId,
                         response.DeviceName,
-                        response.ReceiptPrinter?.Id,
-                        response.ReceiptPrinter?.QueueName,
+                        receiptPrinter?.Id,
+                        receiptPrinter?.Name,
+                        receiptPrinter?.ConnectionType,
+                        receiptPrinter?.Address,
+                        receiptPrinter?.Port,
                         response.SyncedAt), stoppingToken);
 
                     logger.LogInformation(
@@ -45,7 +49,9 @@ public sealed class AgentSyncWorker(
                         printers.Count,
                         response.DeviceName,
                         response.DeviceId,
-                        response.ReceiptPrinter?.QueueName ?? "not assigned");
+                        receiptPrinter is null
+                            ? "not assigned"
+                            : $"{receiptPrinter.Name} ({receiptPrinter.ConnectionType}: {receiptPrinter.Address})");
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
