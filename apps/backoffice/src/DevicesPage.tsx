@@ -2,20 +2,15 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   type BackOfficeEquipment,
   type EquipmentDevice,
-  type EquipmentPrinter,
   assignKitchenPrinter,
   createDevice,
-  createPrinter,
   getBackOfficeEquipment,
   updateDevice,
-  updatePrinter,
 } from './api';
 import { PosPrinterAssignment } from './PosPrinterAssignment';
 import './devices.css';
 
 type EditorState =
-  | { kind: 'printer-create' }
-  | { kind: 'printer-edit'; printer: EquipmentPrinter }
   | { kind: 'device-create' }
   | { kind: 'device-edit'; device: EquipmentDevice }
   | null;
@@ -52,11 +47,6 @@ export function DevicesPage({ token }: { token: string }) {
     void refresh();
   }, [token]);
 
-  const networkPrinters = useMemo(
-    () => data?.printers.filter((printer) => printer.connectionType === 'Network') ?? [],
-    [data],
-  );
-
   const stats = useMemo(() => {
     const devices = data?.devices ?? [];
     const printers = data?.printers ?? [];
@@ -91,12 +81,11 @@ export function DevicesPage({ token }: { token: string }) {
         <div>
           <div className="eyebrow">ИНФРАСТРУКТУРА РЕСТОРАНА</div>
           <h1>Оборудование</h1>
-          <p>Управляйте POS, локальными Windows-принтерами, сетевыми принтерами и маршрутами печати.</p>
+          <p>Сначала выберите POS, затем добавляйте и настраивайте все его принтеры.</p>
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>Обновить</button>
-          <button className="secondary-button" onClick={() => setEditor({ kind: 'device-create' })}>+ Устройство</button>
-          <button className="primary-button" onClick={() => setEditor({ kind: 'printer-create' })}>+ Сетевой принтер</button>
+          <button className="primary-button" onClick={() => setEditor({ kind: 'device-create' })}>+ Устройство</button>
         </div>
       </div>
 
@@ -109,7 +98,7 @@ export function DevicesPage({ token }: { token: string }) {
 
       <div className="stats-grid">
         <EquipmentStat label="Активные устройства" value={stats.devices} detail={`${data?.devices.length ?? 0} всего`} />
-        <EquipmentStat label="Известные принтеры" value={stats.printers} detail="локальные + сетевые" />
+        <EquipmentStat label="Настроенные принтеры" value={stats.printers} detail="по всем POS" />
         <EquipmentStat label="Станции без принтера" value={stats.unassignedStations} detail={stats.unassignedStations ? 'требуют настройки' : 'всё настроено'} warning={stats.unassignedStations > 0} />
       </div>
 
@@ -118,44 +107,8 @@ export function DevicesPage({ token }: { token: string }) {
       <div className="equipment-section">
         <div className="equipment-section-header">
           <div>
-            <h2>Сетевые принтеры</h2>
-            <p>Принтеры с собственным IP/hostname. Windows-принтеры теперь автоматически обнаруживает POS Agent.</p>
-          </div>
-          <button className="primary-button compact" onClick={() => setEditor({ kind: 'printer-create' })}>+ Сетевой принтер</button>
-        </div>
-
-        {networkPrinters.length === 0 ? (
-          <div className="equipment-empty">Сетевых принтеров пока нет. Локальные Windows-принтеры появятся выше автоматически после запуска POS Agent.</div>
-        ) : (
-          <div className="printer-grid">
-            {networkPrinters.map((printer) => (
-              <button
-                key={printer.id}
-                className={`printer-card ${!printer.isActive ? 'inactive-card' : ''}`}
-                onClick={() => setEditor({ kind: 'printer-edit', printer })}
-              >
-                <div className="printer-card-top">
-                  <span className="equipment-icon">P</span>
-                  <span className={`badge ${printer.isActive ? 'success' : 'neutral'}`}>{printer.isActive ? 'Активен' : 'Отключён'}</span>
-                </div>
-                <strong>{printer.name}</strong>
-                <span>{printer.address}:{printer.port ?? 9100}</span>
-                <small>Сетевой принтер TCP/IP</small>
-                <div className="printer-links">
-                  <span>Кухня: {printer.kitchenStationCount}</span>
-                  <span>POS: {printer.posDeviceCount}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="equipment-section">
-        <div className="equipment-section-header">
-          <div>
-            <h2>Устройства</h2>
-            <p>Кассы, планшеты, KDS, киоски, экраны покупателя и Restaurant Node.</p>
+            <h2>Другие устройства</h2>
+            <p>POS, планшеты, KDS, киоски, экраны покупателя и Restaurant Node.</p>
           </div>
           <button className="secondary-button compact" onClick={() => setEditor({ kind: 'device-create' })}>+ Устройство</button>
         </div>
@@ -200,7 +153,7 @@ export function DevicesPage({ token }: { token: string }) {
         <div className="equipment-section-header">
           <div>
             <h2>Маршруты кухонной печати</h2>
-            <p>Укажите физический принтер для каждой кухонной станции.</p>
+            <p>После настройки принтеров на POS назначьте нужный принтер каждой кухонной станции.</p>
           </div>
         </div>
 
@@ -229,7 +182,7 @@ export function DevicesPage({ token }: { token: string }) {
       </div>
 
       {editor && data && (
-        <EquipmentEditor
+        <DeviceEditor
           editor={editor}
           data={data}
           token={token}
@@ -253,7 +206,7 @@ function EquipmentStat({ label, value, detail, warning = false }: { label: strin
   );
 }
 
-function EquipmentEditor({
+function DeviceEditor({
   editor,
   data,
   token,
@@ -266,45 +219,21 @@ function EquipmentEditor({
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
-  const isPrinter = editor.kind.startsWith('printer');
-  const printer = editor.kind === 'printer-edit' ? editor.printer : null;
   const device = editor.kind === 'device-edit' ? editor.device : null;
-  const editing = editor.kind.endsWith('edit');
+  const editing = editor.kind === 'device-edit';
 
-  const [name, setName] = useState(printer?.name ?? device?.name ?? '');
-  const [address, setAddress] = useState(printer?.address ?? '');
-  const [port, setPort] = useState<number>(printer?.port ?? 9100);
+  const [name, setName] = useState(device?.name ?? '');
   const [type, setType] = useState(device?.type ?? data.deviceTypes[0] ?? 'Pos');
-  const [isActive, setIsActive] = useState(printer?.isActive ?? device?.isActive ?? true);
+  const [isActive, setIsActive] = useState(device?.isActive ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const title = editor.kind === 'printer-create' ? 'Новый сетевой принтер' :
-    editor.kind === 'printer-edit' ? 'Настройки сетевого принтера' :
-    editor.kind === 'device-create' ? 'Новое устройство' :
-    'Настройки устройства';
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      if (editor.kind === 'printer-create') {
-        await createPrinter(token, {
-          name: name.trim(),
-          connectionType: 'Network',
-          address: address.trim(),
-          port,
-        });
-      } else if (editor.kind === 'printer-edit') {
-        await updatePrinter(token, editor.printer.id, {
-          name: name.trim(),
-          connectionType: 'Network',
-          address: address.trim(),
-          port,
-          isActive,
-        });
-      } else if (editor.kind === 'device-create') {
+      if (editor.kind === 'device-create') {
         await createDevice(token, {
           name: name.trim(),
           type,
@@ -320,7 +249,7 @@ function EquipmentEditor({
       }
       await onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось сохранить оборудование');
+      setError(e instanceof Error ? e.message : 'Не удалось сохранить устройство');
     } finally {
       setSaving(false);
     }
@@ -331,8 +260,8 @@ function EquipmentEditor({
       <form className="modal-card equipment-modal" onSubmit={submit}>
         <div className="modal-header">
           <div>
-            <div className="eyebrow">{isPrinter ? 'СЕТЕВОЙ ПРИНТЕР' : 'УСТРОЙСТВО'}</div>
-            <h2>{title}</h2>
+            <div className="eyebrow">УСТРОЙСТВО</div>
+            <h2>{editing ? 'Настройки устройства' : 'Новое устройство'}</h2>
           </div>
           <button type="button" className="close-button" onClick={onClose}>×</button>
         </div>
@@ -342,39 +271,26 @@ function EquipmentEditor({
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} autoFocus />
         </label>
 
-        {isPrinter ? (
-          <div className="form-grid">
-            <label>
-              <span>IP / Hostname</span>
-              <input value={address} onChange={(e) => setAddress(e.target.value)} maxLength={250} placeholder="192.168.1.50" />
-            </label>
-            <label>
-              <span>Порт</span>
-              <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(Number(e.target.value))} />
-            </label>
-          </div>
-        ) : (
-          <div className="form-grid">
-            <label className="full-field">
-              <span>Тип устройства</span>
-              <select value={type} onChange={(e) => setType(e.target.value)}>
-                {data.deviceTypes.map((item) => <option value={item} key={item}>{deviceLabels[item] ?? item}</option>)}
-              </select>
-            </label>
-            {type === 'Pos' && (
-              <div className="full-field pos-agent-info-box">
-                <strong>Чековый принтер назначается после подключения POS Agent</strong>
-                <span>Сохраните POS, скопируйте его Device ID в разделе выше и запустите Agent на нужном Windows-компьютере.</span>
-              </div>
-            )}
-          </div>
-        )}
+        <div className="form-grid">
+          <label className="full-field">
+            <span>Тип устройства</span>
+            <select value={type} onChange={(e) => setType(e.target.value)}>
+              {data.deviceTypes.map((item) => <option value={item} key={item}>{deviceLabels[item] ?? item}</option>)}
+            </select>
+          </label>
+          {type === 'Pos' && (
+            <div className="full-field pos-agent-info-box">
+              <strong>Принтеры настраиваются внутри выбранного POS</strong>
+              <span>После запуска POS Agent Windows-принтеры этой кассы появятся в списке автоматически.</span>
+            </div>
+          )}
+        </div>
 
         {editing && (
           <label className="toggle-row">
             <span>
               <strong>Активно</strong>
-              <small>{isPrinter ? 'Принтер доступен для маршрутизации' : 'Устройство разрешено для работы'}</small>
+              <small>Устройство разрешено для работы</small>
             </span>
             <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
           </label>
@@ -384,7 +300,7 @@ function EquipmentEditor({
 
         <div className="modal-actions">
           <button type="button" className="secondary-button" onClick={onClose}>Отмена</button>
-          <button className="primary-button" disabled={saving || !name.trim() || (isPrinter && !address.trim())}>
+          <button className="primary-button" disabled={saving || !name.trim()}>
             {saving ? 'Сохраняем…' : editing ? 'Сохранить' : 'Создать'}
           </button>
         </div>
