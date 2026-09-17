@@ -15,6 +15,7 @@ import {
   updateHall,
   updateTable,
 } from './api';
+import { MenuPage } from './MenuPage';
 import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
@@ -115,7 +116,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (session: AuthSession) => voi
             maxLength={12}
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-            placeholder="••••"
+            placeholder="Введите PIN"
             autoFocus
           />
         </label>
@@ -162,7 +163,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
   const navItems: Array<{ key: PageKey; label: string; icon: string; ready?: boolean }> = [
     { key: 'overview', label: 'Обзор', icon: '⌂' },
     { key: 'halls', label: 'Залы и столы', icon: '▦', ready: true },
-    { key: 'menu', label: 'Меню', icon: '≡' },
+    { key: 'menu', label: 'Меню', icon: '≡', ready: true },
     { key: 'kitchen', label: 'Кухня', icon: '◫' },
     { key: 'employees', label: 'Сотрудники', icon: '◎' },
     { key: 'devices', label: 'Оборудование', icon: '◇' },
@@ -236,6 +237,8 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
               onRefresh={() => void refresh()}
               onEdit={setEditor}
             />
+          ) : page === 'menu' ? (
+            <MenuPage token={session.token} />
           ) : (
             <ComingSoon page={navItems.find((x) => x.key === page)?.label ?? 'Раздел'} />
           )}
