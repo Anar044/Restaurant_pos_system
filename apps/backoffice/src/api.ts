@@ -209,6 +209,67 @@ export type UpdateEmployeeInput = {
   newPin: string | null;
 };
 
+export type EquipmentDevice = {
+  id: string;
+  name: string;
+  type: string;
+  receiptPrinterId: string | null;
+  receiptPrinterName: string | null;
+  isActive: boolean;
+  lastSeenAt: string | null;
+  isOnline: boolean;
+};
+
+export type EquipmentPrinter = {
+  id: string;
+  name: string;
+  connectionType: string;
+  address: string;
+  port: number | null;
+  isActive: boolean;
+  lastSeenAt: string | null;
+  isOnline: boolean;
+  kitchenStationCount: number;
+  posDeviceCount: number;
+};
+
+export type EquipmentKitchenStation = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  printerId: string | null;
+  printerName: string | null;
+};
+
+export type BackOfficeEquipment = {
+  deviceTypes: string[];
+  printerConnectionTypes: string[];
+  devices: EquipmentDevice[];
+  printers: EquipmentPrinter[];
+  kitchenStations: EquipmentKitchenStation[];
+};
+
+export type CreatePrinterInput = {
+  name: string;
+  connectionType: string;
+  address: string;
+  port: number | null;
+};
+
+export type UpdatePrinterInput = CreatePrinterInput & {
+  isActive: boolean;
+};
+
+export type CreateDeviceInput = {
+  name: string;
+  type: string;
+  receiptPrinterId: string | null;
+};
+
+export type UpdateDeviceInput = CreateDeviceInput & {
+  isActive: boolean;
+};
+
 async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { message?: string; title?: string };
@@ -427,5 +488,62 @@ export async function updateEmployee(
   return request(`/api/v1/backoffice/employees/${employeeId}`, {
     method: 'PUT',
     body: JSON.stringify(input),
+  }, token);
+}
+
+export async function getBackOfficeEquipment(token: string): Promise<BackOfficeEquipment> {
+  return request<BackOfficeEquipment>('/api/v1/backoffice/devices', {}, token);
+}
+
+export async function createPrinter(
+  token: string,
+  input: CreatePrinterInput,
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/devices/printers', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updatePrinter(
+  token: string,
+  printerId: string,
+  input: UpdatePrinterInput,
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/devices/printers/${printerId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createDevice(
+  token: string,
+  input: CreateDeviceInput,
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/devices/terminals', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateDevice(
+  token: string,
+  deviceId: string,
+  input: UpdateDeviceInput,
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/devices/terminals/${deviceId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function assignKitchenPrinter(
+  token: string,
+  stationId: string,
+  printerId: string | null,
+): Promise<{ id: string; printerId: string | null }> {
+  return request(`/api/v1/backoffice/devices/kitchen-stations/${stationId}/printer`, {
+    method: 'PUT',
+    body: JSON.stringify({ printerId }),
   }, token);
 }
