@@ -28,10 +28,13 @@ public static class AuthEndpoints
             if (restaurant is null)
                 return Results.Unauthorized();
 
+            var lookupPrefix = pinHasher.LookupPrefix(request.RestaurantId, request.Pin);
             var employees = await db.Employees
                 .AsNoTracking()
                 .Include(x => x.Role)
-                .Where(x => x.RestaurantId == request.RestaurantId && x.IsActive)
+                .Where(x => x.RestaurantId == request.RestaurantId &&
+                            x.IsActive &&
+                            (x.PinHash.StartsWith(lookupPrefix) || !x.PinHash.StartsWith(PinHasher.LookupMarker)))
                 .ToListAsync(ct);
 
             var employee = employees.FirstOrDefault(x => pinHasher.Verify(request.Pin, x.PinHash));
