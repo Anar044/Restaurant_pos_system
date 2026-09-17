@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using RestaurantNode.Api.Features.Agents;
 using RestaurantNode.Api.Features.Auth;
 using RestaurantNode.Api.Features.BackOffice;
 using RestaurantNode.Api.Features.Halls;
@@ -77,6 +78,7 @@ app.UseAuthorization();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "restaurant-node", utc = DateTimeOffset.UtcNow }));
 
 app.MapAuthEndpoints();
+app.MapPosAgentEndpoints();
 app.MapBackOfficeEndpoints();
 app.MapBackOfficeHallEndpoints();
 app.MapBackOfficeMenuEndpoints();
