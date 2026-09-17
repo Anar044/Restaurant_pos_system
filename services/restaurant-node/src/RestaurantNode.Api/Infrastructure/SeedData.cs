@@ -17,7 +17,21 @@ public static class SeedData
         IHostEnvironment environment)
     {
         if (!environment.IsDevelopment()) return;
-        if (await db.Restaurants.AnyAsync(x => x.Id == RestaurantId)) return;
+
+        var existingRestaurant = await db.Restaurants
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == RestaurantId);
+
+        if (existingRestaurant)
+        {
+            var existingAdminRole = await db.Roles.FirstOrDefaultAsync(x => x.Id == AdminRoleId);
+            if (existingAdminRole is not null)
+            {
+                existingAdminRole.Permissions = Permissions.All;
+                await db.SaveChangesAsync();
+            }
+            return;
+        }
 
         var pinHasher = services.GetRequiredService<PinHasher>();
         var configuration = services.GetRequiredService<IConfiguration>();
@@ -42,7 +56,7 @@ public static class SeedData
             Id = AdminRoleId,
             RestaurantId = RestaurantId,
             Name = "Administrator",
-            Permissions = ["orders.read", "orders.write", "orders.void", "menu.read", "shifts.manage", "payments.write"]
+            Permissions = Permissions.All
         };
         var admin = new Employee
         {
