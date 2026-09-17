@@ -13,6 +13,10 @@
 build/
 apps/pos/
 
+# Node / web
+**/node_modules/
+**/dist/
+
 # IDE
 .vscode/
 .idea/
