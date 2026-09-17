@@ -66,7 +66,7 @@ $sendMethodAndAnchor = @(
     '      if (mounted) {',
     '        setState(() => order = updated);',
     '        ScaffoldMessenger.of(context).showSnackBar(',
-    "          const SnackBar(content: Text('\\u0417\\u0430\\u043A\\u0430\\u0437 \\u043E\\u0442\\u043F\\u0440\\u0430\\u0432\\u043B\\u0435\\u043D \\u043D\\u0430 \\u043A\\u0443\\u0445\\u043D\\u044E')),",
+    "          const SnackBar(content: Text('\u0417\u0430\u043A\u0430\u0437 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D \u043D\u0430 \u043A\u0443\u0445\u043D\u044E')),",
     '        );',
     '      }',
     '    } catch (e) {',
@@ -116,7 +116,7 @@ $kitchenAndPaymentAnchor = @(
     '              icon: const Icon(Icons.soup_kitchen_outlined),',
     '              label: const Padding(',
     '                padding: EdgeInsets.symmetric(vertical: 14),',
-    "                child: Text('\\u041E\\u0442\\u043F\\u0440\\u0430\\u0432\\u0438\\u0442\\u044C \\u043D\\u0430 \\u043A\\u0443\\u0445\\u043D\\u044E'),",
+    "                child: Text('\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043A\u0443\u0445\u043D\u044E'),",
     '              ),',
     '            ),',
     '            const SizedBox(height: 10),',
@@ -134,11 +134,11 @@ $minusAnchor = @(
 ) -join "`n"
 
 $statusAndMinusAnchor = @(
-    "                              Tooltip(",
+    '                              Tooltip(',
     "                                message: group.status == 'SENT'",
-    "                                    ? '\\u041E\\u0442\\u043F\\u0440\\u0430\\u0432\\u043B\\u0435\\u043D\\u043E \\u043D\\u0430 \\u043A\\u0443\\u0445\\u043D\\u044E'",
-    "                                    : '\\u041D\\u0435 \\u043E\\u0442\\u043F\\u0440\\u0430\\u0432\\u043B\\u0435\\u043D\\u043E',",
-    "                                child: Icon(",
+    "                                    ? '\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E \u043D\u0430 \u043A\u0443\u0445\u043D\u044E'",
+    "                                    : '\u041D\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E',",
+    '                                child: Icon(',
     "                                  group.status == 'SENT'",
     '                                      ? Icons.check_circle_outline',
     '                                      : Icons.schedule_send_outlined,',
