@@ -24,7 +24,11 @@ class _RestaurantPosAppState extends State<RestaurantPosApp> {
       debugShowCheckedModeBanner: false,
       title: 'Restaurant POS',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF243447)),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF243447),
+          brightness: Brightness.light,
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF4F6FA),
         useMaterial3: true,
       ),
       home: session == null
@@ -32,13 +36,14 @@ class _RestaurantPosAppState extends State<RestaurantPosApp> {
               api: api,
               onLoggedIn: (value) => setState(() => session = value),
             )
-          : PosPage(api: api, session: session!),
+          : HallSelectionPage(api: api, session: session!),
     );
   }
 }
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.api, required this.onLoggedIn});
+
   final PosApiClient api;
   final ValueChanged<AuthSession> onLoggedIn;
 
@@ -81,41 +86,75 @@ class _LoginPageState extends State<LoginPage> {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.point_of_sale_rounded, size: 64),
-                const SizedBox(height: 16),
-                Text('Restaurant POS', style: Theme.of(context).textTheme.headlineMedium),
-                const SizedBox(height: 8),
-                Text('Введите PIN', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 18),
-                Text(List.filled(pin.length, '•').join(' '), style: Theme.of(context).textTheme.headlineLarge),
-                if (error != null) ...[
-                  const SizedBox(height: 8),
-                  Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                ],
-                const SizedBox(height: 20),
-                GridView.count(
-                  shrinkWrap: true,
-                  crossAxisCount: 3,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                  childAspectRatio: 1.6,
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: [
-                    for (final d in ['1','2','3','4','5','6','7','8','9'])
-                      FilledButton.tonal(onPressed: () => digit(d), child: Text(d, style: const TextStyle(fontSize: 22))),
-                    OutlinedButton(onPressed: () => setState(() => pin = ''), child: const Icon(Icons.clear)),
-                    FilledButton.tonal(onPressed: () => digit('0'), child: const Text('0', style: TextStyle(fontSize: 22))),
-                    FilledButton(onPressed: loading ? null : submit, child: loading ? const CircularProgressIndicator() : const Icon(Icons.arrow_forward)),
+          child: Card(
+            margin: const EdgeInsets.all(24),
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.point_of_sale_rounded, size: 64),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Restaurant POS',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Text('Введите PIN', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    height: 48,
+                    child: Center(
+                      child: Text(
+                        List.filled(pin.length, '•').join(' '),
+                        style: Theme.of(context).textTheme.headlineLarge,
+                      ),
+                    ),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      error!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    ),
                   ],
-                ),
-                const SizedBox(height: 16),
-                Text('API: ${AppConfig.apiBaseUrl}', style: Theme.of(context).textTheme.bodySmall),
-              ],
+                  const SizedBox(height: 18),
+                  GridView.count(
+                    shrinkWrap: true,
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 1.7,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [
+                      for (final d in ['1', '2', '3', '4', '5', '6', '7', '8', '9'])
+                        FilledButton.tonal(
+                          onPressed: () => digit(d),
+                          child: Text(d, style: const TextStyle(fontSize: 22)),
+                        ),
+                      OutlinedButton(
+                        onPressed: () => setState(() => pin = ''),
+                        child: const Icon(Icons.clear),
+                      ),
+                      FilledButton.tonal(
+                        onPressed: () => digit('0'),
+                        child: const Text('0', style: TextStyle(fontSize: 22)),
+                      ),
+                      FilledButton(
+                        onPressed: loading ? null : submit,
+                        child: loading
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.arrow_forward),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -124,39 +163,325 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-class PosPage extends StatefulWidget {
-  const PosPage({super.key, required this.api, required this.session});
+class HallSelectionPage extends StatefulWidget {
+  const HallSelectionPage({super.key, required this.api, required this.session});
+
   final PosApiClient api;
   final AuthSession session;
 
   @override
-  State<PosPage> createState() => _PosPageState();
+  State<HallSelectionPage> createState() => _HallSelectionPageState();
 }
 
-class _PosPageState extends State<PosPage> {
+class _HallSelectionPageState extends State<HallSelectionPage> {
+  late Future<List<HallDto>> hallsFuture;
+  String? selectedHallId;
+  String? loadingTableId;
+
+  @override
+  void initState() {
+    super.initState();
+    hallsFuture = widget.api.getHalls();
+  }
+
+  void refresh() {
+    setState(() => hallsFuture = widget.api.getHalls());
+  }
+
+  Future<void> openTable(DiningTableDto table) async {
+    if (loadingTableId != null) return;
+    setState(() => loadingTableId = table.id);
+    try {
+      OrderDto? existingOrder;
+      if (table.openOrder != null) {
+        existingOrder = await widget.api.getOrder(table.openOrder!.id);
+      }
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => OrderPage(
+            api: widget.api,
+            session: widget.session,
+            table: table,
+            initialOrder: existingOrder,
+          ),
+        ),
+      );
+      if (mounted) refresh();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => loadingTableId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Залы и столы'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Center(
+              child: Text(
+                '${widget.session.employeeName} · ${widget.session.roleName}',
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<HallDto>>(
+        future: hallsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return _ErrorPane(message: snapshot.error.toString(), onRetry: refresh);
+          }
+
+          final halls = snapshot.data ?? const <HallDto>[];
+          if (halls.isEmpty) {
+            return const Center(child: Text('Нет доступных залов'));
+          }
+
+          HallDto selectedHall = halls.first;
+          for (final hall in halls) {
+            if (hall.id == selectedHallId) {
+              selectedHall = hall;
+              break;
+            }
+          }
+
+          return Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final hall in halls)
+                      ChoiceChip(
+                        label: Text(hall.name),
+                        selected: hall.id == selectedHall.id,
+                        onSelected: (_) => setState(() => selectedHallId = hall.id),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Text(
+                      selectedHall.name,
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    const Spacer(),
+                    const _LegendDot(label: 'Свободен', occupied: false),
+                    const SizedBox(width: 18),
+                    const _LegendDot(label: 'Занят', occupied: true),
+                    const SizedBox(width: 8),
+                    IconButton(onPressed: refresh, icon: const Icon(Icons.refresh)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: GridView.builder(
+                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 240,
+                      childAspectRatio: 1.35,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                    ),
+                    itemCount: selectedHall.tables.length,
+                    itemBuilder: (context, index) {
+                      final table = selectedHall.tables[index];
+                      return _TableCard(
+                        table: table,
+                        loading: loadingTableId == table.id,
+                        onTap: () => openTable(table),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({required this.label, required this.occupied});
+
+  final String label;
+  final bool occupied;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = occupied
+        ? Theme.of(context).colorScheme.primary
+        : Theme.of(context).colorScheme.outlineVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(label),
+      ],
+    );
+  }
+}
+
+class _TableCard extends StatelessWidget {
+  const _TableCard({required this.table, required this.loading, required this.onTap});
+
+  final DiningTableDto table;
+  final bool loading;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final occupied = table.occupied;
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      elevation: occupied ? 2 : 0,
+      color: occupied ? scheme.primaryContainer : scheme.surface,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: loading ? null : onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(occupied ? Icons.table_restaurant : Icons.event_seat_outlined),
+                  const Spacer(),
+                  if (loading)
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                ],
+              ),
+              const Spacer(),
+              Text('Стол ${table.name}', style: Theme.of(context).textTheme.titleLarge),
+              Text('${table.seats} мест'),
+              const SizedBox(height: 8),
+              if (table.openOrder != null)
+                Text(
+                  'Заказ #${table.openOrder!.displayNumber} · ${table.openOrder!.total.toStringAsFixed(2)} AZN',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                )
+              else
+                const Text('Свободен'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class OrderPage extends StatefulWidget {
+  const OrderPage({
+    super.key,
+    required this.api,
+    required this.session,
+    required this.table,
+    this.initialOrder,
+  });
+
+  final PosApiClient api;
+  final AuthSession session;
+  final DiningTableDto table;
+  final OrderDto? initialOrder;
+
+  @override
+  State<OrderPage> createState() => _OrderPageState();
+}
+
+class _OrderPageState extends State<OrderPage> {
   late Future<List<MenuCategory>> menuFuture;
-  OrderDto? order;
+  late OrderDto? order;
+  String? selectedCategoryId;
   bool mutating = false;
   String? error;
 
   @override
   void initState() {
     super.initState();
+    order = widget.initialOrder;
     menuFuture = widget.api.getMenu();
   }
 
-  Future<void> ensureOrderAndAdd(MenuProduct product) async {
+  Future<void> addProduct(MenuProduct product) async {
     if (mutating) return;
     setState(() {
       mutating = true;
       error = null;
     });
     try {
-      var current = order ?? await widget.api.createOrder();
+      var current = order ?? await widget.api.createOrder(tableId: widget.table.id);
       current = await widget.api.addItem(current.id, product.id);
-      setState(() => order = current);
+      if (mounted) setState(() => order = current);
     } catch (e) {
-      setState(() => error = e.toString());
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => mutating = false);
+    }
+  }
+
+  Future<void> incrementGroup(CartGroup group) async {
+    if (mutating || order == null) return;
+    setState(() {
+      mutating = true;
+      error = null;
+    });
+    try {
+      final updated = await widget.api.addItem(order!.id, group.productId);
+      if (mounted) setState(() => order = updated);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => mutating = false);
+    }
+  }
+
+  Future<void> decrementGroup(CartGroup group) async {
+    if (mutating || order == null) return;
+    OrderLineDto? removable;
+    for (final line in group.lines.reversed) {
+      if (line.status == 'NEW') {
+        removable = line;
+        break;
+      }
+    }
+    if (removable == null) return;
+
+    setState(() {
+      mutating = true;
+      error = null;
+    });
+    try {
+      final updated = await widget.api.deleteItem(order!.id, removable.id);
+      if (mounted) setState(() => order = updated);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
     } finally {
       if (mounted) setState(() => mutating = false);
     }
@@ -166,11 +491,15 @@ class _PosPageState extends State<PosPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('POS'),
+        title: Text(
+          order == null
+              ? 'Стол ${widget.table.name} · Новый заказ'
+              : 'Стол ${widget.table.name} · Заказ #${order!.displayNumber}',
+        ),
         actions: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Center(child: Text('${widget.session.employeeName} · ${widget.session.roleName}')),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Center(child: Text(widget.session.employeeName)),
           ),
         ],
       ),
@@ -180,16 +509,56 @@ class _PosPageState extends State<PosPage> {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snapshot.hasError) return Center(child: Text(snapshot.error.toString()));
+          if (snapshot.hasError) {
+            return _ErrorPane(
+              message: snapshot.error.toString(),
+              onRetry: () => setState(() => menuFuture = widget.api.getMenu()),
+            );
+          }
+
           final categories = snapshot.data ?? const <MenuCategory>[];
+          if (categories.isEmpty) return const Center(child: Text('Меню пустое'));
+
+          MenuCategory selectedCategory = categories.first;
+          for (final category in categories) {
+            if (category.id == selectedCategoryId) {
+              selectedCategory = category;
+              break;
+            }
+          }
+
           return LayoutBuilder(
             builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 900;
-              final menu = MenuPane(categories: categories, onProduct: ensureOrderAndAdd);
-              final cart = OrderPane(order: order, busy: mutating, error: error);
+              final wide = constraints.maxWidth >= 1000;
+              final menu = _MenuArea(
+                categories: categories,
+                selectedCategory: selectedCategory,
+                onCategory: (category) =>
+                    setState(() => selectedCategoryId = category.id),
+                onProduct: addProduct,
+                disabled: mutating,
+              );
+              final cart = _OrderPane(
+                order: order,
+                busy: mutating,
+                error: error,
+                onPlus: incrementGroup,
+                onMinus: decrementGroup,
+              );
+
               return wide
-                  ? Row(children: [Expanded(flex: 2, child: menu), SizedBox(width: 360, child: cart)])
-                  : Column(children: [Expanded(child: menu), SizedBox(height: 220, child: cart)]);
+                  ? Row(
+                      children: [
+                        Expanded(child: menu),
+                        SizedBox(width: 430, child: cart),
+                      ],
+                    )
+                  : Column(
+                      children: [
+                        Expanded(child: menu),
+                        SizedBox(height: 310, child: cart),
+                      ],
+                    );
             },
           );
         },
@@ -198,97 +567,270 @@ class _PosPageState extends State<PosPage> {
   }
 }
 
-class MenuPane extends StatelessWidget {
-  const MenuPane({super.key, required this.categories, required this.onProduct});
+class _MenuArea extends StatelessWidget {
+  const _MenuArea({
+    required this.categories,
+    required this.selectedCategory,
+    required this.onCategory,
+    required this.onProduct,
+    required this.disabled,
+  });
+
   final List<MenuCategory> categories;
+  final MenuCategory selectedCategory;
+  final ValueChanged<MenuCategory> onCategory;
   final ValueChanged<MenuProduct> onProduct;
+  final bool disabled;
 
   @override
   Widget build(BuildContext context) {
-    final products = categories.expand((c) => c.products).toList();
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: GridView.builder(
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 220,
-          childAspectRatio: 1.35,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: products.length,
-        itemBuilder: (context, index) {
-          final p = products[index];
-          return Card(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => onProduct(p),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: Text(p.name, style: Theme.of(context).textTheme.titleMedium)),
-                    Text('${p.price.toStringAsFixed(2)} ${p.currencyCode}', style: Theme.of(context).textTheme.titleSmall),
-                  ],
-                ),
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 48,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: categories.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final category = categories[index];
+                return ChoiceChip(
+                  label: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(category.name),
+                  ),
+                  selected: category.id == selectedCategory.id,
+                  onSelected: (_) => onCategory(category),
+                );
+              },
             ),
-          );
-        },
+          ),
+          const SizedBox(height: 14),
+          Expanded(
+            child: GridView.builder(
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 220,
+                childAspectRatio: 1.35,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
+              itemCount: selectedCategory.products.length,
+              itemBuilder: (context, index) {
+                final product = selectedCategory.products[index];
+                return Card(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: disabled ? null : () => onProduct(product),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              product.name,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          Text(
+                            '${product.price.toStringAsFixed(2)} ${product.currencyCode}',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class OrderPane extends StatelessWidget {
-  const OrderPane({super.key, required this.order, required this.busy, required this.error});
+class _OrderPane extends StatelessWidget {
+  const _OrderPane({
+    required this.order,
+    required this.busy,
+    required this.error,
+    required this.onPlus,
+    required this.onMinus,
+  });
+
   final OrderDto? order;
   final bool busy;
   final String? error;
+  final ValueChanged<CartGroup> onPlus;
+  final ValueChanged<CartGroup> onMinus;
 
   @override
   Widget build(BuildContext context) {
+    final groups = CartGroup.fromOrder(order);
     return Material(
-      elevation: 2,
+      color: Theme.of(context).colorScheme.surface,
+      elevation: 3,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
-                Text(order == null ? 'Новый заказ' : 'Заказ #${order!.displayNumber}', style: Theme.of(context).textTheme.titleLarge),
+                Text(
+                  order == null ? 'Новый заказ' : 'Заказ #${order!.displayNumber}',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
                 const Spacer(),
-                if (busy) const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                if (busy)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
               ],
             ),
-            if (error != null) Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            const Divider(),
+            if (error != null) ...[
+              const SizedBox(height: 8),
+              Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+            const Divider(height: 24),
             Expanded(
-              child: order == null || order!.items.isEmpty
-                  ? const Center(child: Text('Нажмите блюдо, чтобы начать заказ'))
-                  : ListView.builder(
-                      itemCount: order!.items.length,
+              child: groups.isEmpty
+                  ? const Center(child: Text('Выберите блюдо из меню'))
+                  : ListView.separated(
+                      itemCount: groups.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
-                        final item = order!.items[index];
-                        return ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(item.productName),
-                          subtitle: Text('${item.quantity.g} × ${item.unitPrice.toStringAsFixed(2)}'),
-                          trailing: Text(item.lineTotal.toStringAsFixed(2)),
+                        final group = groups[index];
+                        final canRemove = group.lines.any((x) => x.status == 'NEW');
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      group.productName,
+                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '${group.quantity.g} × ${group.unitPrice.toStringAsFixed(2)} = ${group.total.toStringAsFixed(2)}',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton.filledTonal(
+                                onPressed: busy || !canRemove ? null : () => onMinus(group),
+                                icon: const Icon(Icons.remove),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                child: Text(
+                                  group.quantity.g,
+                                  style: Theme.of(context).textTheme.titleMedium,
+                                ),
+                              ),
+                              IconButton.filled(
+                                onPressed: busy ? null : () => onPlus(group),
+                                icon: const Icon(Icons.add),
+                              ),
+                            ],
+                          ),
                         );
                       },
                     ),
             ),
-            const Divider(),
+            const Divider(height: 24),
             Row(
               children: [
                 const Text('Итого'),
                 const Spacer(),
-                Text((order?.total ?? 0).toStringAsFixed(2), style: Theme.of(context).textTheme.headlineSmall),
+                Text(
+                  '${(order?.total ?? 0).toStringAsFixed(2)} AZN',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
               ],
             ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: null,
+              icon: const Icon(Icons.payments_outlined),
+              label: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Text('Оплата — следующий этап'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CartGroup {
+  CartGroup({
+    required this.productId,
+    required this.productName,
+    required this.unitPrice,
+    required this.status,
+  });
+
+  final String productId;
+  final String productName;
+  final double unitPrice;
+  final String status;
+  final List<OrderLineDto> lines = [];
+
+  double get quantity => lines.fold(0, (sum, line) => sum + line.quantity);
+  double get total => lines.fold(0, (sum, line) => sum + line.lineTotal);
+
+  static List<CartGroup> fromOrder(OrderDto? order) {
+    if (order == null) return const [];
+    final map = <String, CartGroup>{};
+    for (final line in order.items) {
+      final key = '${line.productId}|${line.unitPrice}|${line.status}';
+      final group = map.putIfAbsent(
+        key,
+        () => CartGroup(
+          productId: line.productId,
+          productName: line.productName,
+          unitPrice: line.unitPrice,
+          status: line.status,
+        ),
+      );
+      group.lines.add(line);
+    }
+    return map.values.toList();
+  }
+}
+
+class _ErrorPane extends StatelessWidget {
+  const _ErrorPane({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, size: 48),
+            const SizedBox(height: 12),
+            Text(message, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            FilledButton.tonal(onPressed: onRetry, child: const Text('Повторить')),
           ],
         ),
       ),
