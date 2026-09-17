@@ -106,7 +106,8 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Organization>().HasIndex(x => x.Name);
         modelBuilder.Entity<Restaurant>().HasIndex(x => new { x.OrganizationId, x.Name });
         modelBuilder.Entity<Employee>().HasIndex(x => new { x.RestaurantId, x.Name });
-        modelBuilder.Entity<Printer>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<Printer>().HasIndex(x => new { x.RestaurantId, x.Name });
+        modelBuilder.Entity<Printer>().HasIndex(x => new { x.HostDeviceId, x.Address }).IsUnique();
         modelBuilder.Entity<Device>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<Hall>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<DiningTable>().HasIndex(x => new { x.HallId, x.Name }).IsUnique();
@@ -125,6 +126,12 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .WithMany()
             .HasForeignKey(x => x.OrganizationId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Printer>()
+            .HasOne(x => x.HostDevice)
+            .WithMany()
+            .HasForeignKey(x => x.HostDeviceId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<Device>()
             .HasOne(x => x.ReceiptPrinter)
