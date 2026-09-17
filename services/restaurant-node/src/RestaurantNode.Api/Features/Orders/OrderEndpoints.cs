@@ -85,6 +85,7 @@ public static class OrderEndpoints
             var line = new OrderItem
             {
                 OrderId = order.Id,
+                Order = order,
                 ProductId = product.Id,
                 ProductNameSnapshot = product.Name,
                 Quantity = request.Quantity,
@@ -93,7 +94,10 @@ public static class OrderEndpoints
                 CreatedByEmployeeId = employeeId,
                 Status = OrderItemStatus.New
             };
-            order.Items.Add(line);
+
+            // Explicitly mark a client-generated UUID entity as new. Without this, EF Core may
+            // infer an existing row from the non-default key and issue UPDATE instead of INSERT.
+            db.OrderItems.Add(line);
             Recalculate(order);
             order.Version++;
             order.UpdatedAt = now;
