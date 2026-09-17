@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using RestaurantNode.Api.Features.Auth;
+using RestaurantNode.Api.Features.BackOffice;
 using RestaurantNode.Api.Features.Halls;
 using RestaurantNode.Api.Features.Menu;
 using RestaurantNode.Api.Features.Orders;
@@ -43,9 +44,8 @@ builder.Services
 
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("menu.read", policy => policy.RequireClaim("permission", "menu.read"));
-    options.AddPolicy("orders.read", policy => policy.RequireClaim("permission", "orders.read"));
-    options.AddPolicy("orders.write", policy => policy.RequireClaim("permission", "orders.write"));
+    foreach (var permission in Permissions.All)
+        options.AddPolicy(permission, policy => policy.RequireClaim("permission", permission));
 });
 builder.Services.AddCors(options =>
 {
@@ -77,6 +77,7 @@ app.UseAuthorization();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "restaurant-node", utc = DateTimeOffset.UtcNow }));
 
 app.MapAuthEndpoints();
+app.MapBackOfficeEndpoints();
 app.MapHallEndpoints();
 app.MapMenuEndpoints();
 app.MapOrderEndpoints();
