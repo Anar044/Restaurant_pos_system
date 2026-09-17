@@ -4,7 +4,7 @@ using PosAgent.Api.Printing;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<WindowsPrinterDiscovery>();
-builder.Services.AddSingleton<WindowsRawPrinter>();
+builder.Services.AddSingleton<WindowsDriverPrinter>();
 builder.Services.AddSingleton<NetworkRawPrinter>();
 builder.Services.AddSingleton<LocalReceiptPrinter>();
 builder.Services.AddSingleton<AgentCacheStore>();
@@ -80,6 +80,7 @@ app.MapPost("/api/v1/print/test-receipt", async (
             result.ConnectionType,
             result.Address,
             result.Port,
+            result.PrintMode,
             result.PrintedAt
         });
     }
