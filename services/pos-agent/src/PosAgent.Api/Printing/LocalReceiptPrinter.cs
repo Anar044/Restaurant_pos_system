@@ -8,12 +8,13 @@ public sealed record LocalPrintResult(
     string ConnectionType,
     string Address,
     int? Port,
+    string PrintMode,
     DateTimeOffset PrintedAt);
 
 public sealed class LocalReceiptPrinter(
     AgentCacheStore cacheStore,
     WindowsPrinterDiscovery discovery,
-    WindowsRawPrinter windowsRawPrinter,
+    WindowsDriverPrinter windowsDriverPrinter,
     NetworkRawPrinter networkRawPrinter)
 {
     public async Task<LocalPrintResult> PrintTestAsync(CancellationToken ct)
@@ -28,7 +29,7 @@ public sealed class LocalReceiptPrinter(
         }
 
         var printerName = config.ReceiptPrinterName ?? config.ReceiptPrinterAddress;
-        var payload = TestReceiptBuilder.Build(config.DeviceName, printerName);
+        string printMode;
 
         if (string.Equals(config.ReceiptPrinterConnectionType, "WindowsQueue", StringComparison.OrdinalIgnoreCase))
         {
@@ -40,18 +41,22 @@ public sealed class LocalReceiptPrinter(
                     $"Windows printer '{config.ReceiptPrinterAddress}' is no longer installed on this POS.");
             }
 
-            windowsRawPrinter.Send(
+            var text = TestReceiptBuilder.BuildWindowsText(config.DeviceName, printerName);
+            windowsDriverPrinter.PrintText(
                 config.ReceiptPrinterAddress,
-                payload,
+                text,
                 $"Restaurant POS test - {config.DeviceName ?? Environment.MachineName}");
+            printMode = "WindowsDriver";
         }
         else if (string.Equals(config.ReceiptPrinterConnectionType, "Network", StringComparison.OrdinalIgnoreCase))
         {
+            var payload = TestReceiptBuilder.BuildEscPos(config.DeviceName, printerName);
             await networkRawPrinter.SendAsync(
                 config.ReceiptPrinterAddress,
                 config.ReceiptPrinterPort ?? 9100,
                 payload,
                 ct);
+            printMode = "NetworkEscPosRaw";
         }
         else
         {
@@ -65,6 +70,7 @@ public sealed class LocalReceiptPrinter(
             config.ReceiptPrinterConnectionType,
             config.ReceiptPrinterAddress,
             config.ReceiptPrinterPort,
+            printMode,
             DateTimeOffset.UtcNow);
     }
 }
