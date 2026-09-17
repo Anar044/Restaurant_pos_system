@@ -22,7 +22,7 @@ public static class AuthEndpoints
             var restaurant = await db.Restaurants
                 .AsNoTracking()
                 .Where(x => x.Id == request.RestaurantId && x.IsActive)
-                .Select(x => new { x.Id, x.OrganizationId })
+                .Select(x => new { x.Id, x.OrganizationId, x.Name, x.CurrencyCode })
                 .FirstOrDefaultAsync(ct);
 
             if (restaurant is null)
@@ -49,7 +49,9 @@ public static class AuthEndpoints
                 employee.Name,
                 employee.Role.Name,
                 restaurant.OrganizationId,
-                employee.RestaurantId));
+                employee.RestaurantId,
+                restaurant.Name,
+                restaurant.CurrencyCode));
         }).RequireRateLimiting("pin-login");
 
         app.MapGet("/api/v1/me", (ClaimsPrincipal user) =>
@@ -77,4 +79,6 @@ public sealed record PinLoginResponse(
     string EmployeeName,
     string RoleName,
     Guid OrganizationId,
-    Guid RestaurantId);
+    Guid RestaurantId,
+    string RestaurantName,
+    string CurrencyCode);
