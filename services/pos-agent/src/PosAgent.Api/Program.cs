@@ -4,6 +4,9 @@ using PosAgent.Api.Printing;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<WindowsPrinterDiscovery>();
+builder.Services.AddSingleton<WindowsRawPrinter>();
+builder.Services.AddSingleton<NetworkRawPrinter>();
+builder.Services.AddSingleton<LocalReceiptPrinter>();
 builder.Services.AddSingleton<AgentCacheStore>();
 builder.Services.AddHttpClient<RestaurantNodeClient>(client =>
 {
@@ -60,6 +63,41 @@ app.MapGet("/api/v1/status", async (
         machineName = Environment.MachineName,
         localConfig
     });
+});
+
+app.MapPost("/api/v1/print/test-receipt", async (
+    LocalReceiptPrinter printer,
+    CancellationToken ct) =>
+{
+    try
+    {
+        var result = await printer.PrintTestAsync(ct);
+        return Results.Ok(new
+        {
+            status = "printed",
+            result.PrinterId,
+            result.PrinterName,
+            result.ConnectionType,
+            result.Address,
+            result.Port,
+            result.PrintedAt
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { message = ex.Message });
+    }
+    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+    {
+        return Results.StatusCode(499);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(
+            title: "Local receipt print failed.",
+            detail: ex.Message,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
 });
 
 app.Run();
