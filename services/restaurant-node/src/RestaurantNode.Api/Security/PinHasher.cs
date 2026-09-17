@@ -40,7 +40,7 @@ public sealed class PinHasher
             if (encoded.StartsWith(V2Prefix, StringComparison.Ordinal))
             {
                 var parts = encoded.Split('$');
-                if (parts.Length != 7 || parts[0] != "pin-v2" || parts[2] != "pbkdf2-sha256") return false;
+                if (parts.Length != 6 || parts[0] != "pin-v2" || parts[2] != "pbkdf2-sha256") return false;
                 return VerifyPbkdf2(pin, parts[3], parts[4], parts[5]);
             }
 
