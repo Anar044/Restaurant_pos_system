@@ -19,8 +19,23 @@ Copy-Item (Join-Path $template "pubspec.yaml") (Join-Path $target "pubspec.yaml"
 Remove-Item -Recurse -Force (Join-Path $target "lib")
 Copy-Item (Join-Path $template "lib") (Join-Path $target "lib") -Recurse -Force
 
+# Flutter setState callbacks must not return a Future. Patch the generated copy
+# until these two callbacks are folded into the template source itself.
+$mainFile = Join-Path $target "lib\main.dart"
+$mainText = Get-Content $mainFile -Raw
+$mainText = $mainText.Replace(
+    'setState(() => hallsFuture = widget.api.getHalls());',
+    "setState(() {`r`n      hallsFuture = widget.api.getHalls();`r`n    });"
+)
+$mainText = $mainText.Replace(
+    'onRetry: () => setState(() => menuFuture = widget.api.getMenu()),',
+    "onRetry: () {`r`n                setState(() {`r`n                  menuFuture = widget.api.getMenu();`r`n                });`r`n              },"
+)
+Set-Content -Path $mainFile -Value $mainText -Encoding utf8
+
 Push-Location $target
 flutter pub get
+dart format lib
 Pop-Location
 
 Write-Host "POS created at apps/pos"
