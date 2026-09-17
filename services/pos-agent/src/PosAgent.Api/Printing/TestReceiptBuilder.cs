@@ -4,7 +4,30 @@ namespace PosAgent.Api.Printing;
 
 public static class TestReceiptBuilder
 {
-    public static byte[] Build(string? deviceName, string? printerName)
+    public static string BuildWindowsText(string? deviceName, string? printerName)
+    {
+        return string.Join(Environment.NewLine,
+        [
+            "RESTAURANT POS TEST",
+            "WINDOWS DRIVER PRINT OK",
+            "------------------------------",
+            $"POS: {deviceName ?? "Unknown POS"}",
+            $"Printer: {printerName ?? "Unknown printer"}",
+            $"Machine: {Environment.MachineName}",
+            $"Time: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}",
+            "------------------------------",
+            "Unicode test:",
+            "Azərbaycan: Ə ə Ş ş Ç ç Ğ ğ İ ı Ö ö Ü ü",
+            "Русский: Тест печати через Windows",
+            "------------------------------",
+            "Printed by POS Agent locally.",
+            "Windows queue uses the installed printer driver.",
+            "Restaurant Node is not needed for this local print step.",
+            ""
+        ]);
+    }
+
+    public static byte[] BuildEscPos(string? deviceName, string? printerName)
     {
         var lines = new List<byte>();
 
@@ -16,7 +39,7 @@ public static class TestReceiptBuilder
         lines.AddRange([0x1B, 0x45, 0x01]);
         AppendAscii(lines, "RESTAURANT POS TEST\n");
         lines.AddRange([0x1B, 0x45, 0x00]);
-        AppendAscii(lines, "LOCAL PRINT OK\n");
+        AppendAscii(lines, "NETWORK RAW PRINT OK\n");
         AppendAscii(lines, "------------------------------\n");
 
         // Left aligned details.
@@ -27,6 +50,7 @@ public static class TestReceiptBuilder
         AppendAscii(lines, $"Time: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}\n");
         AppendAscii(lines, "------------------------------\n");
         AppendAscii(lines, "Printed by POS Agent locally.\n");
+        AppendAscii(lines, "Network mode sends ESC/POS RAW.\n");
         AppendAscii(lines, "Restaurant Node is not needed\nfor this local print step.\n");
         AppendAscii(lines, "\n\n\n");
 
