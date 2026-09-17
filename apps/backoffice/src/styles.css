@@ -77,6 +77,7 @@ input, select {
 }
 input:focus, select:focus { border-color: #6172f3; box-shadow: 0 0 0 3px rgba(97, 114, 243, .12); }
 .pin-input { font-size: 22px; letter-spacing: .25em; }
+.pin-input::placeholder { color: transparent; }
 
 .primary-button, .secondary-button, .text-button, .icon-button, .close-button {
   border: 0;
