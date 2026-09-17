@@ -116,6 +116,135 @@ public static class OrderEndpoints
             return Results.Ok(ToDto(order));
         }).RequireAuthorization("orders.write");
 
+        group.MapPost("/{id:guid}/send", async (Guid id, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId)) return Results.Unauthorized();
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            var order = await db.Orders
+                .Include(x => x.Items)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (order is null) return Results.NotFound(new { message = "Order not found." });
+            if (order.Status is OrderStatus.Closed or OrderStatus.Cancelled or OrderStatus.Paid)
+                return Results.Conflict(new { message = $"Order cannot be sent in status {order.Status}." });
+
+            var newItems = order.Items
+                .Where(x => x.Status == OrderItemStatus.New)
+                .OrderBy(x => x.CreatedAt)
+                .ToList();
+
+            if (newItems.Count == 0)
+                return Results.Conflict(new { message = "There are no new items to send to the kitchen." });
+
+            var productIds = newItems.Select(x => x.ProductId).Distinct().ToArray();
+            var routing = await db.Products
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && productIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.KitchenStationId })
+                .ToDictionaryAsync(x => x.Id, ct);
+
+            foreach (var item in newItems)
+            {
+                if (!routing.TryGetValue(item.ProductId, out var productRoute) || productRoute.KitchenStationId is null)
+                    return Results.Conflict(new { message = $"Product '{item.ProductNameSnapshot}' has no kitchen station." });
+            }
+
+            var stationIds = routing.Values
+                .Select(x => x.KitchenStationId!.Value)
+                .Distinct()
+                .ToArray();
+
+            var stations = await db.KitchenStations
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && stationIds.Contains(x.Id) && x.IsActive)
+                .ToDictionaryAsync(x => x.Id, ct);
+
+            if (stations.Count != stationIds.Length)
+                return Results.Conflict(new { message = "One or more kitchen stations are unavailable." });
+
+            var now = DateTimeOffset.UtcNow;
+            var ticketIds = new List<Guid>();
+
+            foreach (var stationId in stationIds)
+            {
+                var station = stations[stationId];
+                var stationItems = newItems
+                    .Where(x => routing[x.ProductId].KitchenStationId == stationId)
+                    .ToList();
+
+                var ticket = new KitchenTicket
+                {
+                    RestaurantId = restaurantId,
+                    OrderId = order.Id,
+                    KitchenStationId = stationId,
+                    Status = KitchenTicketStatus.Pending,
+                    CreatedAt = now
+                };
+                db.KitchenTickets.Add(ticket);
+                ticketIds.Add(ticket.Id);
+
+                var printPayload = new
+                {
+                    ticketId = ticket.Id,
+                    orderId = order.Id,
+                    orderNumber = order.DisplayNumber,
+                    order.TableId,
+                    stationId,
+                    stationName = station.Name,
+                    createdAt = now,
+                    items = stationItems.Select(x => new
+                    {
+                        lineId = x.Id,
+                        productId = x.ProductId,
+                        name = x.ProductNameSnapshot,
+                        x.Quantity,
+                        x.Comment
+                    })
+                };
+
+                db.PrintJobs.Add(new PrintJob
+                {
+                    RestaurantId = restaurantId,
+                    PrinterKey = $"kitchen:{stationId:N}",
+                    Type = "KITCHEN_TICKET",
+                    PayloadJson = JsonSerializer.Serialize(printPayload),
+                    Status = PrintJobStatus.Pending,
+                    CreatedAt = now
+                });
+            }
+
+            foreach (var item in newItems)
+            {
+                item.Status = OrderItemStatus.Sent;
+                item.SentAt = now;
+            }
+
+            order.Status = order.Items.Any(x => x.Status == OrderItemStatus.New)
+                ? OrderStatus.PartiallySent
+                : OrderStatus.Sent;
+            order.Version++;
+            order.UpdatedAt = now;
+
+            db.AuditEvents.Add(Audit(restaurantId, employeeId, "ORDER_SENT_TO_KITCHEN", "Order", order.Id, new
+            {
+                order.Id,
+                order.Version,
+                ticketIds,
+                itemIds = newItems.Select(x => x.Id).ToArray()
+            }));
+            db.OutboxEvents.Add(Outbox(restaurantId, "ORDER_SENT_TO_KITCHEN", "Order", order.Id, new
+            {
+                order.Id,
+                order.Version,
+                ticketIds
+            }));
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return Results.Ok(ToDto(order));
+        }).RequireAuthorization("orders.write");
+
         group.MapDelete("/{id:guid}/items/{itemId:guid}", async (Guid id, Guid itemId, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
             if (!TryClaims(user, out var restaurantId, out var employeeId)) return Results.Unauthorized();
@@ -173,7 +302,8 @@ public static class OrderEndpoints
             x.ModifiersTotal,
             x.LineTotal,
             status = EnumText(x.Status),
-            x.Comment
+            x.Comment,
+            x.SentAt
         })
     };
 
