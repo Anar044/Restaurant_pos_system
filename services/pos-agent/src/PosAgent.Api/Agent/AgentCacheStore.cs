@@ -6,7 +6,10 @@ public sealed record AgentLocalConfig(
     Guid? DeviceId,
     string? DeviceName,
     Guid? ReceiptPrinterId,
-    string? ReceiptPrinterQueueName,
+    string? ReceiptPrinterName,
+    string? ReceiptPrinterConnectionType,
+    string? ReceiptPrinterAddress,
+    int? ReceiptPrinterPort,
     DateTimeOffset? SyncedAt);
 
 public sealed class AgentCacheStore
@@ -35,15 +38,15 @@ public sealed class AgentCacheStore
         try
         {
             if (!File.Exists(path))
-                return new AgentLocalConfig(null, null, null, null, null);
+                return Empty();
 
             await using var stream = File.OpenRead(path);
             return await JsonSerializer.DeserializeAsync<AgentLocalConfig>(stream, JsonOptions, ct)
-                ?? new AgentLocalConfig(null, null, null, null, null);
+                ?? Empty();
         }
         catch (JsonException)
         {
-            return new AgentLocalConfig(null, null, null, null, null);
+            return Empty();
         }
         finally
         {
@@ -67,4 +70,7 @@ public sealed class AgentCacheStore
             gate.Release();
         }
     }
+
+    private static AgentLocalConfig Empty() =>
+        new(null, null, null, null, null, null, null, null);
 }
