@@ -3,7 +3,13 @@ using PosAgent.Api.Printing;
 
 namespace PosAgent.Api.Agent;
 
-public sealed record AgentReceiptPrinterResponse(Guid Id, string QueueName);
+public sealed record AgentReceiptPrinterResponse(
+    Guid Id,
+    string Name,
+    string ConnectionType,
+    string Address,
+    int? Port);
+
 public sealed record AgentSyncResponse(
     Guid DeviceId,
     string? DeviceName,
