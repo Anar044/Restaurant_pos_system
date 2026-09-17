@@ -10,6 +10,7 @@ import {
   getHalls,
   loginWithPin,
 } from './api';
+import { DevicesPage } from './DevicesPage';
 import { EmployeesPage } from './EmployeesPage';
 import { HallsPage } from './HallsPage';
 import { KitchenPage } from './KitchenPage';
@@ -156,7 +157,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'menu', label: 'Меню', icon: '≡', ready: true },
     { key: 'kitchen', label: 'Кухня', icon: '◫', ready: true },
     { key: 'employees', label: 'Сотрудники', icon: '◎', ready: true },
-    { key: 'devices', label: 'Оборудование', icon: '◇' },
+    { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
   ];
 
   return (
@@ -233,6 +234,8 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             <KitchenPage token={session.token} />
           ) : page === 'employees' ? (
             <EmployeesPage token={session.token} currentEmployeeId={session.employeeId} />
+          ) : page === 'devices' ? (
+            <DevicesPage token={session.token} />
           ) : (
             <ComingSoon page={navItems.find((x) => x.key === page)?.label ?? 'Раздел'} />
           )}
