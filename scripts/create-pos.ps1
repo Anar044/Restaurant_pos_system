@@ -21,8 +21,11 @@ Copy-Item (Join-Path $template "lib") (Join-Path $target "lib") -Recurse -Force
 
 # Flutter setState callbacks must not return a Future. Patch the generated copy
 # until these two callbacks are folded into the template source itself.
+# Read and write explicitly as UTF-8 so Windows PowerShell 5.1 does not corrupt
+# Cyrillic UI strings while applying the patch.
 $mainFile = Join-Path $target "lib\main.dart"
-$mainText = Get-Content $mainFile -Raw
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$mainText = [System.IO.File]::ReadAllText($mainFile, [System.Text.Encoding]::UTF8)
 $mainText = $mainText.Replace(
     'setState(() => hallsFuture = widget.api.getHalls());',
     "setState(() {`r`n      hallsFuture = widget.api.getHalls();`r`n    });"
@@ -31,7 +34,7 @@ $mainText = $mainText.Replace(
     'onRetry: () => setState(() => menuFuture = widget.api.getMenu()),',
     "onRetry: () {`r`n                setState(() {`r`n                  menuFuture = widget.api.getMenu();`r`n                });`r`n              },"
 )
-Set-Content -Path $mainFile -Value $mainText -Encoding utf8
+[System.IO.File]::WriteAllText($mainFile, $mainText, $utf8NoBom)
 
 Push-Location $target
 flutter pub get
