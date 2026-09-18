@@ -29,3 +29,14 @@ public sealed record ReceiptPrintResult(
     string PrintMode,
     long OrderNumber,
     DateTimeOffset PrintedAt);
+
+public sealed record PaidReceiptBundleResult(
+    Guid PrinterId,
+    string PrinterName,
+    string ConnectionType,
+    string Address,
+    int? Port,
+    string PrintMode,
+    long OrderNumber,
+    DateTimeOffset SaleReceiptPrintedAt,
+    DateTimeOffset PickupTicketPrintedAt);
