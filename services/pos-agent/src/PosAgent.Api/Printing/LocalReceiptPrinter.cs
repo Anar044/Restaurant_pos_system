@@ -46,8 +46,7 @@ public sealed class LocalReceiptPrinter(
             return Result(config, printerName, "NetworkEscPosRaw");
         }
 
-        throw new InvalidOperationException(
-            $"Unsupported receipt printer connection type '{config.ReceiptPrinterConnectionType}'.");
+        throw Unsupported(config);
     }
 
     public async Task<ReceiptPrintResult> PrintReceiptAsync(
@@ -57,33 +56,12 @@ public sealed class LocalReceiptPrinter(
         ReceiptBuilder.Validate(receipt);
         var config = await GetConfiguredReceiptPrinterAsync(ct);
         var printerName = config.ReceiptPrinterName ?? config.ReceiptPrinterAddress!;
-        string printMode;
-
-        if (IsWindowsQueue(config))
-        {
-            EnsureWindowsPrinterInstalled(config.ReceiptPrinterAddress!);
-            var text = ReceiptBuilder.BuildWindowsText(receipt);
-            windowsDriverPrinter.PrintText(
-                config.ReceiptPrinterAddress!,
-                text,
-                $"Order #{receipt.OrderNumber} - {receipt.RestaurantName}");
-            printMode = "WindowsDriver";
-        }
-        else if (IsNetwork(config))
-        {
-            var payload = ReceiptBuilder.BuildEscPos(receipt);
-            await networkRawPrinter.SendAsync(
-                config.ReceiptPrinterAddress!,
-                config.ReceiptPrinterPort ?? 9100,
-                payload,
-                ct);
-            printMode = "NetworkEscPosRaw";
-        }
-        else
-        {
-            throw new InvalidOperationException(
-                $"Unsupported receipt printer connection type '{config.ReceiptPrinterConnectionType}'.");
-        }
+        var printMode = await PrintDocumentAsync(
+            config,
+            ReceiptBuilder.BuildWindowsText(receipt),
+            ReceiptBuilder.BuildEscPos(receipt),
+            $"Order #{receipt.OrderNumber} - {receipt.RestaurantName}",
+            ct);
 
         return new ReceiptPrintResult(
             config.ReceiptPrinterId!.Value,
@@ -94,6 +72,76 @@ public sealed class LocalReceiptPrinter(
             printMode,
             receipt.OrderNumber,
             DateTimeOffset.UtcNow);
+    }
+
+    public async Task<PaidReceiptBundleResult> PrintPaidBundleAsync(
+        ReceiptPrintRequest receipt,
+        CancellationToken ct)
+    {
+        ReceiptBuilder.ValidatePaid(receipt);
+
+        var config = await GetConfiguredReceiptPrinterAsync(ct);
+        var printerName = config.ReceiptPrinterName ?? config.ReceiptPrinterAddress!;
+
+        var printMode = await PrintDocumentAsync(
+            config,
+            ReceiptBuilder.BuildWindowsText(receipt),
+            ReceiptBuilder.BuildEscPos(receipt),
+            $"Paid order #{receipt.OrderNumber} - {receipt.RestaurantName}",
+            ct);
+        var salePrintedAt = DateTimeOffset.UtcNow;
+
+        var pickupWindows = PickupTicketBuilder.BuildWindowsText(receipt);
+        var pickupEscPos = PickupTicketBuilder.BuildEscPos(receipt);
+
+        await PrintDocumentAsync(
+            config,
+            pickupWindows,
+            pickupEscPos,
+            $"Pickup ticket #{receipt.OrderNumber} - {receipt.RestaurantName}",
+            ct);
+        var pickupPrintedAt = DateTimeOffset.UtcNow;
+
+        return new PaidReceiptBundleResult(
+            config.ReceiptPrinterId!.Value,
+            printerName,
+            config.ReceiptPrinterConnectionType!,
+            config.ReceiptPrinterAddress!,
+            config.ReceiptPrinterPort,
+            printMode,
+            receipt.OrderNumber,
+            salePrintedAt,
+            pickupPrintedAt);
+    }
+
+    private async Task<string> PrintDocumentAsync(
+        AgentLocalConfig config,
+        string windowsText,
+        byte[] networkPayload,
+        string documentName,
+        CancellationToken ct)
+    {
+        if (IsWindowsQueue(config))
+        {
+            EnsureWindowsPrinterInstalled(config.ReceiptPrinterAddress!);
+            windowsDriverPrinter.PrintText(
+                config.ReceiptPrinterAddress!,
+                windowsText,
+                documentName);
+            return "WindowsDriver";
+        }
+
+        if (IsNetwork(config))
+        {
+            await networkRawPrinter.SendAsync(
+                config.ReceiptPrinterAddress!,
+                config.ReceiptPrinterPort ?? 9100,
+                networkPayload,
+                ct);
+            return "NetworkEscPosRaw";
+        }
+
+        throw Unsupported(config);
     }
 
     private async Task<AgentLocalConfig> GetConfiguredReceiptPrinterAsync(CancellationToken ct)
@@ -126,6 +174,9 @@ public sealed class LocalReceiptPrinter(
 
     private static bool IsNetwork(AgentLocalConfig config) =>
         string.Equals(config.ReceiptPrinterConnectionType, "Network", StringComparison.OrdinalIgnoreCase);
+
+    private static InvalidOperationException Unsupported(AgentLocalConfig config) =>
+        new($"Unsupported receipt printer connection type '{config.ReceiptPrinterConnectionType}'.");
 
     private static LocalPrintResult Result(AgentLocalConfig config, string printerName, string printMode) =>
         new(
