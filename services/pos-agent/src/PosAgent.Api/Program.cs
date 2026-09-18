@@ -143,4 +143,48 @@ app.MapPost("/api/v1/print/receipt", async (
     }
 });
 
+app.MapPost("/api/v1/print/paid-bundle", async (
+    ReceiptPrintRequest request,
+    LocalReceiptPrinter printer,
+    CancellationToken ct) =>
+{
+    try
+    {
+        var result = await printer.PrintPaidBundleAsync(request, ct);
+        return Results.Ok(new
+        {
+            status = "printed",
+            documentsPrinted = 2,
+            result.OrderNumber,
+            result.PrinterId,
+            result.PrinterName,
+            result.ConnectionType,
+            result.Address,
+            result.Port,
+            result.PrintMode,
+            result.SaleReceiptPrintedAt,
+            result.PickupTicketPrintedAt
+        });
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { message = ex.Message });
+    }
+    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+    {
+        return Results.StatusCode(499);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(
+            title: "Paid receipt bundle print failed.",
+            detail: ex.Message,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
+});
+
 app.Run();
