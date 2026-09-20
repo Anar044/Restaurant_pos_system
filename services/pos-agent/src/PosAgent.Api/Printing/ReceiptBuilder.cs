@@ -40,6 +40,10 @@ public static class ReceiptBuilder
         {
             sb.AppendLine($"Оплата / Payment: {receipt.PaymentMethod!.Trim()}");
             sb.AppendLine($"Оплачено / Paid: {Money(receipt.PaidAmount ?? receipt.Total)} {currency}");
+            if (receipt.CashReceived.HasValue)
+                sb.AppendLine($"Получено / Cash received: {Money(receipt.CashReceived.Value)} {currency}");
+            if ((receipt.ChangeAmount ?? 0m) > 0)
+                sb.AppendLine($"Сдача / Change: {Money(receipt.ChangeAmount!.Value)} {currency}");
         }
         else
         {
@@ -94,6 +98,10 @@ public static class ReceiptBuilder
         {
             AppendAscii(bytes, $"Payment: {ToAscii(receipt.PaymentMethod!.Trim())}\n");
             AppendAscii(bytes, $"Paid: {Money(receipt.PaidAmount ?? receipt.Total)} {currency}\n");
+            if (receipt.CashReceived.HasValue)
+                AppendAscii(bytes, $"Cash received: {Money(receipt.CashReceived.Value)} {currency}\n");
+            if ((receipt.ChangeAmount ?? 0m) > 0)
+                AppendAscii(bytes, $"Change: {Money(receipt.ChangeAmount!.Value)} {currency}\n");
         }
         else
         {
