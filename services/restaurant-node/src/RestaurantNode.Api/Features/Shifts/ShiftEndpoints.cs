@@ -314,16 +314,20 @@ public static class ShiftEndpoints
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
 
+            var closedReport = report with
+            {
+                Status = EnumText(shift.Status),
+                ClosedAt = shift.ClosedAt,
+                ClosingCash = shift.ClosingCash,
+                CashDifference = Money(closingCash - report.ExpectedCash)
+            };
+
             return Results.Ok(new
             {
                 shift = ToDto(shift),
-                report = report with
-                {
-                    Status = EnumText(shift.Status),
-                    ClosedAt = shift.ClosedAt,
-                    ClosingCash = shift.ClosingCash,
-                    CashDifference = Money(closingCash - report.ExpectedCash)
-                }
+                expectedCash = closedReport.ExpectedCash,
+                difference = closedReport.CashDifference,
+                report = closedReport
             });
         }).RequireAuthorization("shifts.manage");
 
