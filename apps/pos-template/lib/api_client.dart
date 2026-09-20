@@ -18,6 +18,7 @@ class AuthSession {
     required this.employeeName,
     required this.roleName,
     required this.restaurantId,
+    required this.permissions,
   });
 
   final String token;
@@ -25,6 +26,9 @@ class AuthSession {
   final String employeeName;
   final String roleName;
   final String restaurantId;
+  final Set<String> permissions;
+
+  bool hasPermission(String permission) => permissions.contains(permission);
 }
 
 class PosApiClient {
@@ -55,6 +59,9 @@ class PosApiClient {
       employeeName: data['employeeName'] as String,
       roleName: data['roleName'] as String,
       restaurantId: data['restaurantId'] as String,
+      permissions: ((data['permissions'] as List<dynamic>?) ?? const [])
+          .map((value) => value.toString())
+          .toSet(),
     );
     session = auth;
     return auth;
@@ -143,6 +150,14 @@ class PosApiClient {
     return PaymentRefundResultDto.fromJson(_decode(response));
   }
 
+  Future<OrderPaymentsDto> getOrderPayments(String orderId) async {
+    final response = await _http.get(
+      _uri('/api/v1/payments/order/$orderId'),
+      headers: _headers,
+    );
+    return OrderPaymentsDto.fromJson(_decode(response));
+  }
+
   Future<List<HallDto>> getHalls() async {
     final response = await _http.get(_uri('/api/v1/halls'), headers: _headers);
     final data = _decode(response);
@@ -169,7 +184,7 @@ class PosApiClient {
 
   Future<List<OrderHistoryItemDto>> getOrderHistory({
     String? shiftId,
-    int take = 50,
+    int take = 200,
   }) async {
     final query = <String, String>{
       'take': take.toString(),
@@ -407,6 +422,35 @@ class ShiftReportDto {
         payments: ((json['payments'] as List<dynamic>?) ?? const [])
             .map((e) => ShiftPaymentTotalDto.fromJson(e as Map<String, dynamic>))
             .toList(),
+      );
+}
+
+class OrderPaymentsDto {
+  const OrderPaymentsDto({
+    required this.payments,
+    required this.refunds,
+    required this.grossTotal,
+    required this.refundedTotal,
+    required this.netTotal,
+  });
+
+  final List<PaymentDto> payments;
+  final List<PaymentRefundDto> refunds;
+  final double grossTotal;
+  final double refundedTotal;
+  final double netTotal;
+
+  factory OrderPaymentsDto.fromJson(Map<String, dynamic> json) =>
+      OrderPaymentsDto(
+        payments: ((json['payments'] as List<dynamic>?) ?? const [])
+            .map((e) => PaymentDto.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        refunds: ((json['refunds'] as List<dynamic>?) ?? const [])
+            .map((e) => PaymentRefundDto.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        grossTotal: (json['grossTotal'] as num?)?.toDouble() ?? 0,
+        refundedTotal: (json['refundedTotal'] as num?)?.toDouble() ?? 0,
+        netTotal: (json['netTotal'] as num?)?.toDouble() ?? 0,
       );
 }
 
