@@ -99,6 +99,50 @@ class PosApiClient {
     return CloseShiftResult.fromJson(_decode(response));
   }
 
+  Future<ShiftReportDto> getShiftReport(String shiftId) async {
+    final response = await _http.get(
+      _uri('/api/v1/shifts/$shiftId/report'),
+      headers: _headers,
+    );
+    return ShiftReportDto.fromJson(_decode(response));
+  }
+
+  Future<void> addCashTransaction({
+    required String shiftId,
+    required String type,
+    required double amount,
+    required String reason,
+  }) async {
+    final response = await _http.post(
+      _uri('/api/v1/shifts/$shiftId/cash-transactions'),
+      headers: _headers,
+      body: jsonEncode({
+        'type': type,
+        'amount': amount,
+        'reason': reason,
+      }),
+    );
+    _decode(response);
+  }
+
+  Future<PaymentRefundResultDto> refundPayment({
+    required String paymentId,
+    required String shiftId,
+    required double amount,
+    required String reason,
+  }) async {
+    final response = await _http.post(
+      _uri('/api/v1/payments/$paymentId/refund'),
+      headers: _headers,
+      body: jsonEncode({
+        'shiftId': shiftId,
+        'amount': amount,
+        'reason': reason,
+      }),
+    );
+    return PaymentRefundResultDto.fromJson(_decode(response));
+  }
+
   Future<List<HallDto>> getHalls() async {
     final response = await _http.get(_uri('/api/v1/halls'), headers: _headers);
     final data = _decode(response);
@@ -165,6 +209,7 @@ class PosApiClient {
     required String shiftId,
     required String method,
     required double amount,
+    double? tenderedAmount,
     String? providerReference,
   }) async {
     final response = await _http.post(
@@ -175,6 +220,7 @@ class PosApiClient {
         'shiftId': shiftId,
         'method': method,
         'amount': amount,
+        if (tenderedAmount != null) 'tenderedAmount': tenderedAmount,
         if (providerReference != null && providerReference.trim().isNotEmpty)
           'providerReference': providerReference.trim(),
       }),
@@ -243,17 +289,168 @@ class CloseShiftResult {
     required this.shift,
     required this.expectedCash,
     required this.difference,
+    this.report,
   });
 
   final ShiftDto shift;
   final double expectedCash;
   final double difference;
+  final ShiftReportDto? report;
 
   factory CloseShiftResult.fromJson(Map<String, dynamic> json) =>
       CloseShiftResult(
         shift: ShiftDto.fromJson(json['shift'] as Map<String, dynamic>),
         expectedCash: (json['expectedCash'] as num).toDouble(),
-        difference: (json['difference'] as num).toDouble(),
+        difference: (json['difference'] as num?)?.toDouble() ?? 0,
+        report: json['report'] == null
+            ? null
+            : ShiftReportDto.fromJson(json['report'] as Map<String, dynamic>),
+      );
+}
+
+class ShiftPaymentTotalDto {
+  const ShiftPaymentTotalDto({
+    required this.method,
+    required this.gross,
+    required this.refunds,
+    required this.net,
+  });
+
+  final String method;
+  final double gross;
+  final double refunds;
+  final double net;
+
+  factory ShiftPaymentTotalDto.fromJson(Map<String, dynamic> json) =>
+      ShiftPaymentTotalDto(
+        method: json['method'] as String,
+        gross: (json['gross'] as num).toDouble(),
+        refunds: (json['refunds'] as num).toDouble(),
+        net: (json['net'] as num).toDouble(),
+      );
+}
+
+class ShiftReportDto {
+  const ShiftReportDto({
+    required this.shiftId,
+    required this.deviceId,
+    required this.status,
+    required this.openedAt,
+    required this.openingCash,
+    required this.expectedCash,
+    required this.ordersCount,
+    required this.paymentsCount,
+    required this.grossSales,
+    required this.refunds,
+    required this.netSales,
+    required this.deposits,
+    required this.withdrawals,
+    required this.payments,
+    this.closedAt,
+    this.closingCash,
+    this.cashDifference,
+  });
+
+  final String shiftId;
+  final String deviceId;
+  final String status;
+  final DateTime openedAt;
+  final DateTime? closedAt;
+  final double openingCash;
+  final double? closingCash;
+  final double expectedCash;
+  final double? cashDifference;
+  final int ordersCount;
+  final int paymentsCount;
+  final double grossSales;
+  final double refunds;
+  final double netSales;
+  final double deposits;
+  final double withdrawals;
+  final List<ShiftPaymentTotalDto> payments;
+
+  factory ShiftReportDto.fromJson(Map<String, dynamic> json) => ShiftReportDto(
+        shiftId: json['shiftId'] as String,
+        deviceId: json['deviceId'] as String,
+        status: json['status'] as String,
+        openedAt: DateTime.parse(json['openedAt'] as String),
+        closedAt: json['closedAt'] == null
+            ? null
+            : DateTime.tryParse(json['closedAt'] as String),
+        openingCash: (json['openingCash'] as num).toDouble(),
+        closingCash: (json['closingCash'] as num?)?.toDouble(),
+        expectedCash: (json['expectedCash'] as num).toDouble(),
+        cashDifference: (json['cashDifference'] as num?)?.toDouble(),
+        ordersCount: (json['ordersCount'] as num).toInt(),
+        paymentsCount: (json['paymentsCount'] as num).toInt(),
+        grossSales: (json['grossSales'] as num).toDouble(),
+        refunds: (json['refunds'] as num).toDouble(),
+        netSales: (json['netSales'] as num).toDouble(),
+        deposits: (json['deposits'] as num).toDouble(),
+        withdrawals: (json['withdrawals'] as num).toDouble(),
+        payments: ((json['payments'] as List<dynamic>?) ?? const [])
+            .map((e) => ShiftPaymentTotalDto.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+class PaymentRefundDto {
+  const PaymentRefundDto({
+    required this.id,
+    required this.paymentId,
+    required this.orderId,
+    required this.shiftId,
+    required this.method,
+    required this.amount,
+    required this.currencyCode,
+    required this.reason,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String paymentId;
+  final String orderId;
+  final String shiftId;
+  final String method;
+  final double amount;
+  final String currencyCode;
+  final String? reason;
+  final DateTime createdAt;
+
+  factory PaymentRefundDto.fromJson(Map<String, dynamic> json) =>
+      PaymentRefundDto(
+        id: json['id'] as String,
+        paymentId: json['paymentId'] as String,
+        orderId: json['orderId'] as String,
+        shiftId: json['shiftId'] as String,
+        method: json['method'] as String,
+        amount: (json['amount'] as num).toDouble(),
+        currencyCode: json['currencyCode'] as String,
+        reason: json['reason'] as String?,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+      );
+}
+
+class PaymentRefundResultDto {
+  const PaymentRefundResultDto({
+    required this.refund,
+    required this.payment,
+    required this.refundable,
+  });
+
+  final PaymentRefundDto refund;
+  final PaymentDto payment;
+  final double refundable;
+
+  factory PaymentRefundResultDto.fromJson(Map<String, dynamic> json) =>
+      PaymentRefundResultDto(
+        refund: PaymentRefundDto.fromJson(
+          json['refund'] as Map<String, dynamic>,
+        ),
+        payment: PaymentDto.fromJson(
+          json['payment'] as Map<String, dynamic>,
+        ),
+        refundable: (json['refundable'] as num).toDouble(),
       );
 }
 
@@ -411,6 +608,10 @@ class PaymentDto {
     required this.amount,
     required this.currencyCode,
     required this.createdAt,
+    this.tenderedAmount,
+    this.changeAmount = 0,
+    this.refundedAmount = 0,
+    this.refundableAmount,
     this.providerReference,
   });
 
@@ -420,6 +621,10 @@ class PaymentDto {
   final String method;
   final String status;
   final double amount;
+  final double? tenderedAmount;
+  final double changeAmount;
+  final double refundedAmount;
+  final double? refundableAmount;
   final String currencyCode;
   final String? providerReference;
   final DateTime createdAt;
@@ -431,6 +636,10 @@ class PaymentDto {
         method: json['method'] as String,
         status: json['status'] as String,
         amount: (json['amount'] as num).toDouble(),
+        tenderedAmount: (json['tenderedAmount'] as num?)?.toDouble(),
+        changeAmount: (json['changeAmount'] as num?)?.toDouble() ?? 0,
+        refundedAmount: (json['refundedAmount'] as num?)?.toDouble() ?? 0,
+        refundableAmount: (json['refundableAmount'] as num?)?.toDouble(),
         currencyCode: json['currencyCode'] as String,
         providerReference: json['providerReference'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
