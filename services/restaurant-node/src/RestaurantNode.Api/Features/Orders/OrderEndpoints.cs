@@ -411,6 +411,8 @@ public static class OrderEndpoints
             method = EnumText(x.Method),
             status = EnumText(x.Status),
             x.Amount,
+            x.TenderedAmount,
+            x.ChangeAmount,
             x.CurrencyCode,
             x.ProviderReference,
             x.CreatedAt
