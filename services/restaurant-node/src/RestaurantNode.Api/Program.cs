@@ -9,6 +9,8 @@ using RestaurantNode.Api.Features.BackOffice;
 using RestaurantNode.Api.Features.Halls;
 using RestaurantNode.Api.Features.Menu;
 using RestaurantNode.Api.Features.Orders;
+using RestaurantNode.Api.Features.Payments;
+using RestaurantNode.Api.Features.Shifts;
 using RestaurantNode.Api.Infrastructure;
 using RestaurantNode.Api.Security;
 
@@ -89,6 +91,8 @@ app.MapBackOfficePosPrinterEndpoints();
 app.MapHallEndpoints();
 app.MapMenuEndpoints();
 app.MapOrderEndpoints();
+app.MapShiftEndpoints();
+app.MapPaymentEndpoints();
 
 using (var scope = app.Services.CreateScope())
 {
