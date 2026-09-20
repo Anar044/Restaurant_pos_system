@@ -1,9 +1,7 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   type BackOfficeFinance,
-  type FinancePayment,
   getBackOfficeFinance,
-  refundPayment,
 } from './api';
 import './finance.css';
 
@@ -12,7 +10,6 @@ export function FinancePage({ token }: { token: string }) {
   const [shiftId, setShiftId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [refundTarget, setRefundTarget] = useState<FinancePayment | null>(null);
 
   async function refresh(selectedShift = shiftId) {
     setLoading(true);
@@ -49,6 +46,7 @@ export function FinancePage({ token }: { token: string }) {
           <div className="eyebrow">КАССА И ОПЛАТЫ</div>
           <h1>Оплаты и смены</h1>
           <p>Журнал оплат, возвратов и кассовых смен ресторана.</p>
+          <p className="muted">Возвраты выполняются на POS сотрудником с правом «Возврат оплат».</p>
         </div>
         <div className="heading-actions finance-filter-actions">
           <select value={shiftId} onChange={(e) => changeShift(e.target.value)}>
@@ -99,7 +97,6 @@ export function FinancePage({ token }: { token: string }) {
                 <th>Сумма</th>
                 <th>Возврат</th>
                 <th>Статус</th>
-                <th />
               </tr>
             </thead>
             <tbody>
@@ -128,20 +125,11 @@ export function FinancePage({ token }: { token: string }) {
                       {payment.status === 'REFUNDED' ? 'Возвращено' : 'Оплачено'}
                     </span>
                   </td>
-                  <td className="finance-action-cell">
-                    <button
-                      className="text-button"
-                      disabled={payment.refundableAmount <= 0 || (data?.openShifts.length ?? 0) === 0}
-                      onClick={() => setRefundTarget(payment)}
-                    >
-                      Возврат
-                    </button>
-                  </td>
                 </tr>
               ))}
               {!loading && (data?.payments.length ?? 0) === 0 && (
                 <tr>
-                  <td colSpan={8} className="finance-empty-row">Оплат пока нет.</td>
+                  <td colSpan={7} className="finance-empty-row">Оплат пока нет.</td>
                 </tr>
               )}
             </tbody>
@@ -205,18 +193,6 @@ export function FinancePage({ token }: { token: string }) {
         </div>
       </div>
 
-      {refundTarget && data && (
-        <RefundDialog
-          payment={refundTarget}
-          openShifts={data.openShifts}
-          token={token}
-          onClose={() => setRefundTarget(null)}
-          onSaved={async () => {
-            setRefundTarget(null);
-            await refresh();
-          }}
-        />
-      )}
     </section>
   );
 }
@@ -239,125 +215,6 @@ function FinanceStat({
         <strong>{value}</strong>
         <small>{detail}</small>
       </div>
-    </div>
-  );
-}
-
-function RefundDialog({
-  payment,
-  openShifts,
-  token,
-  onClose,
-  onSaved,
-}: {
-  payment: FinancePayment;
-  openShifts: BackOfficeFinance['openShifts'];
-  token: string;
-  onClose: () => void;
-  onSaved: () => Promise<void>;
-}) {
-  const preferredShift = openShifts.find((shift) => shift.id === payment.shiftId) ?? openShifts[0];
-  const [shiftId, setShiftId] = useState(preferredShift?.id ?? '');
-  const [amount, setAmount] = useState(payment.refundableAmount.toFixed(2));
-  const [reason, setReason] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    const parsedAmount = Number(amount.replace(',', '.'));
-    if (!shiftId) {
-      setError('Нет открытой смены для проведения возврата.');
-      return;
-    }
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0 || parsedAmount > payment.refundableAmount + 0.0001) {
-      setError('Сумма должна быть от 0.01 до ' + payment.refundableAmount.toFixed(2) + ' ' + payment.currencyCode + '.');
-      return;
-    }
-    if (!reason.trim()) {
-      setError('Укажите причину возврата.');
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-    try {
-      await refundPayment(token, payment.id, {
-        shiftId,
-        amount: parsedAmount,
-        reason: reason.trim(),
-      });
-      await onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось провести возврат');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <form className="modal-card finance-refund-modal" onSubmit={submit}>
-        <div className="modal-header">
-          <div>
-            <div className="eyebrow">ВОЗВРАТ ОПЛАТЫ</div>
-            <h2>{'Заказ #' + payment.orderNumber}</h2>
-          </div>
-          <button type="button" className="close-button" onClick={onClose}>×</button>
-        </div>
-
-        <div className="refund-summary">
-          <span>{methodName(payment.method)}</span>
-          <strong>{money(payment.amount, payment.currencyCode)}</strong>
-          <small>{'Доступно к возврату: ' + money(payment.refundableAmount, payment.currencyCode)}</small>
-        </div>
-
-        <label>
-          <span>Смена возврата</span>
-          <select value={shiftId} onChange={(e) => setShiftId(e.target.value)}>
-            {openShifts.map((shift) => (
-              <option key={shift.id} value={shift.id}>
-                {shift.deviceName + ' · ' + formatDate(shift.openedAt)}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <span>Сумма возврата</span>
-          <input
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            inputMode="decimal"
-          />
-        </label>
-
-        <label>
-          <span>Причина</span>
-          <textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={3}
-            maxLength={500}
-            placeholder="Например: ошибка оплаты, отмена заказа"
-          />
-        </label>
-
-        {payment.method === 'CARD' && (
-          <div className="kitchen-inline-warning">
-            Сейчас это учётный возврат в Restaurant Platform. Автоматический возврат через банковский терминал подключим вместе с эквайрингом.
-          </div>
-        )}
-
-        {error && <div className="error-box">{error}</div>}
-
-        <div className="modal-actions">
-          <button type="button" className="secondary-button" onClick={onClose}>Отмена</button>
-          <button className="primary-button" disabled={saving || !shiftId}>
-            {saving ? 'Возвращаем…' : 'Провести возврат'}
-          </button>
-        </div>
-      </form>
     </div>
   );
 }
