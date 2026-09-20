@@ -216,6 +216,7 @@ class PosApiClient {
     String orderId,
     String productId, {
     String? comment,
+    List<ModifierSelectionDto> modifiers = const [],
   }) async {
     final response = await _http.post(
       _uri('/api/v1/orders/$orderId/items'),
@@ -225,6 +226,7 @@ class PosApiClient {
         'quantity': 1,
         if (comment != null && comment.trim().isNotEmpty)
           'comment': comment.trim(),
+        'modifiers': modifiers.map((item) => item.toJson()).toList(),
       }),
     );
     return OrderDto.fromJson(_decode(response));
@@ -673,24 +675,126 @@ class MenuCategory {
       );
 }
 
+class ModifierSelectionDto {
+  const ModifierSelectionDto({
+    required this.groupId,
+    required this.modifierId,
+    this.quantity = 1,
+  });
+
+  final String groupId;
+  final String modifierId;
+  final double quantity;
+
+  Map<String, dynamic> toJson() => {
+        'groupId': groupId,
+        'modifierId': modifierId,
+        'quantity': quantity,
+      };
+}
+
+class MenuModifierOption {
+  const MenuModifierOption({
+    required this.id,
+    required this.name,
+    required this.priceDelta,
+  });
+
+  final String id;
+  final String name;
+  final double priceDelta;
+
+  factory MenuModifierOption.fromJson(Map<String, dynamic> json) =>
+      MenuModifierOption(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        priceDelta: (json['priceDelta'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+class MenuModifierGroup {
+  const MenuModifierGroup({
+    required this.id,
+    required this.name,
+    required this.minSelections,
+    required this.maxSelections,
+    required this.isRequired,
+    required this.modifiers,
+  });
+
+  final String id;
+  final String name;
+  final int minSelections;
+  final int maxSelections;
+  final bool isRequired;
+  final List<MenuModifierOption> modifiers;
+
+  factory MenuModifierGroup.fromJson(Map<String, dynamic> json) =>
+      MenuModifierGroup(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        minSelections: (json['minSelections'] as num?)?.toInt() ?? 0,
+        maxSelections: (json['maxSelections'] as num?)?.toInt() ?? 1,
+        isRequired: json['isRequired'] as bool? ?? false,
+        modifiers: ((json['modifiers'] as List<dynamic>?) ?? const [])
+            .map((e) => MenuModifierOption.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
 class MenuProduct {
   const MenuProduct({
     required this.id,
     required this.name,
     required this.price,
     required this.currencyCode,
+    required this.modifierGroups,
   });
 
   final String id;
   final String name;
   final double price;
   final String currencyCode;
+  final List<MenuModifierGroup> modifierGroups;
+
+  bool get hasModifiers => modifierGroups.isNotEmpty;
 
   factory MenuProduct.fromJson(Map<String, dynamic> json) => MenuProduct(
         id: json['id'] as String,
         name: json['name'] as String,
         price: (json['price'] as num).toDouble(),
         currencyCode: json['currencyCode'] as String,
+        modifierGroups: ((json['modifierGroups'] as List<dynamic>?) ?? const [])
+            .map((e) => MenuModifierGroup.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+class OrderLineModifierDto {
+  const OrderLineModifierDto({
+    required this.id,
+    required this.modifierId,
+    required this.name,
+    required this.quantity,
+    required this.priceDelta,
+    required this.total,
+  });
+
+  final String id;
+  final String modifierId;
+  final String name;
+  final double quantity;
+  final double priceDelta;
+  final double total;
+
+  factory OrderLineModifierDto.fromJson(Map<String, dynamic> json) =>
+      OrderLineModifierDto(
+        id: json['id'] as String,
+        modifierId: json['modifierId'] as String,
+        name: json['name'] as String,
+        quantity: (json['quantity'] as num?)?.toDouble() ?? 1,
+        priceDelta: (json['priceDelta'] as num?)?.toDouble() ?? 0,
+        total: (json['total'] as num?)?.toDouble() ?? 0,
       );
 }
 
@@ -701,8 +805,10 @@ class OrderLineDto {
     required this.productName,
     required this.quantity,
     required this.unitPrice,
+    required this.modifiersTotal,
     required this.lineTotal,
     required this.status,
+    required this.modifiers,
     this.sentAt,
     this.voidedAt,
     this.comment,
@@ -713,8 +819,10 @@ class OrderLineDto {
   final String productName;
   final double quantity;
   final double unitPrice;
+  final double modifiersTotal;
   final double lineTotal;
   final String status;
+  final List<OrderLineModifierDto> modifiers;
   final DateTime? sentAt;
   final DateTime? voidedAt;
   final String? comment;
@@ -725,8 +833,12 @@ class OrderLineDto {
         productName: json['productName'] as String,
         quantity: (json['quantity'] as num).toDouble(),
         unitPrice: (json['unitPrice'] as num).toDouble(),
+        modifiersTotal: (json['modifiersTotal'] as num?)?.toDouble() ?? 0,
         lineTotal: (json['lineTotal'] as num).toDouble(),
         status: json['status'] as String,
+        modifiers: ((json['modifiers'] as List<dynamic>?) ?? const [])
+            .map((e) => OrderLineModifierDto.fromJson(e as Map<String, dynamic>))
+            .toList(),
         comment: json['comment'] as String?,
         sentAt: json['sentAt'] == null
             ? null
