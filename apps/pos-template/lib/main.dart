@@ -450,16 +450,15 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
 
   Future<void> showOrderHistory() async {
     try {
-      final history = await widget.api.getOrderHistory(
-        shiftId: widget.shift.id,
-        take: 50,
-      );
+      final history = await widget.api.getOrderHistory(take: 200);
       if (!mounted) return;
       await showDialog<void>(
         context: context,
         builder: (_) => _OrderHistoryDialog(
           orders: history,
+          canRefund: widget.session.hasPermission('payments.refund'),
           onReprint: reprintHistoryOrder,
+          onRefund: refundHistoryOrder,
         ),
       );
     } catch (e) {
@@ -468,6 +467,51 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
         SnackBar(content: Text('История заказов: $e')),
       );
     }
+  }
+
+  Future<void> refundHistoryOrder(OrderHistoryItemDto item) async {
+    if (!widget.session.hasPermission('payments.refund')) {
+      throw StateError('У сотрудника нет права на возврат оплат.');
+    }
+
+    final journal = await widget.api.getOrderPayments(item.order.id);
+    final refundable = journal.payments
+        .where((payment) => (payment.refundableAmount ?? 0) > 0.005)
+        .toList();
+
+    if (refundable.isEmpty) {
+      throw StateError('По этому заказу больше нет суммы для возврата.');
+    }
+
+    if (!mounted) return;
+    final request = await showDialog<_PaymentRefundRequest>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _PaymentRefundDialog(
+        orderNumber: item.order.displayNumber,
+        payments: refundable,
+        currentShift: widget.shift,
+      ),
+    );
+
+    if (request == null || !mounted) return;
+
+    final result = await widget.api.refundPayment(
+      paymentId: request.paymentId,
+      shiftId: widget.shift.id,
+      amount: request.amount,
+      reason: request.reason,
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Возврат ${result.refund.amount.toStringAsFixed(2)} '
+          '${result.refund.currencyCode} проведён в текущую смену.',
+        ),
+      ),
+    );
   }
 
   Future<void> reprintHistoryOrder(OrderHistoryItemDto item) async {
@@ -829,62 +873,137 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
 class _OrderHistoryDialog extends StatefulWidget {
   const _OrderHistoryDialog({
     required this.orders,
+    required this.canRefund,
     required this.onReprint,
+    required this.onRefund,
   });
 
   final List<OrderHistoryItemDto> orders;
+  final bool canRefund;
   final Future<void> Function(OrderHistoryItemDto item) onReprint;
+  final Future<void> Function(OrderHistoryItemDto item) onRefund;
 
   @override
   State<_OrderHistoryDialog> createState() => _OrderHistoryDialogState();
 }
 
 class _OrderHistoryDialogState extends State<_OrderHistoryDialog> {
-  String? printingId;
+  final searchController = TextEditingController();
+  String? busyOrderId;
   String? error;
 
-  Future<void> reprint(OrderHistoryItemDto item) async {
-    if (printingId != null) return;
+  @override
+  void initState() {
+    super.initState();
+    searchController.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    searchController
+      ..removeListener(_refresh)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  List<OrderHistoryItemDto> get filteredOrders {
+    final query = searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return widget.orders;
+
+    return widget.orders.where((item) {
+      final order = item.order;
+      final haystack = [
+        order.displayNumber.toString(),
+        item.hallName ?? '',
+        item.tableName ?? '',
+        item.cashierName,
+        order.closedAt?.toLocal().toString() ?? '',
+      ].join(' ').toLowerCase();
+      return haystack.contains(query);
+    }).toList();
+  }
+
+  Future<void> runAction(
+    OrderHistoryItemDto item,
+    Future<void> Function(OrderHistoryItemDto item) action,
+  ) async {
+    if (busyOrderId != null) return;
     setState(() {
-      printingId = item.order.id;
+      busyOrderId = item.order.id;
       error = null;
     });
     try {
-      await widget.onReprint(item);
+      await action(item);
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
     } finally {
-      if (mounted) setState(() => printingId = null);
+      if (mounted) setState(() => busyOrderId = null);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final items = filteredOrders;
+    final scheme = Theme.of(context).colorScheme;
+
     return AlertDialog(
-      title: const Text('История заказов этой смены'),
+      title: const Text('История заказов'),
       content: SizedBox(
-        width: 650,
-        height: 480,
+        width: 820,
+        height: 560,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            TextField(
+              controller: searchController,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                labelText: 'Найти заказ',
+                hintText: 'Номер заказа, стол, зал, кассир или дата',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                widget.canRefund
+                    ? 'Возврат можно провести по заказу из текущей или старой смены. '
+                      'Возврат всегда учитывается в текущей открытой смене.'
+                    : 'У вашей роли нет права «Возврат оплат». '
+                      'Администратор может включить его в настройках роли.',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
             if (error != null) ...[
+              const SizedBox(height: 8),
               Text(
                 error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: TextStyle(color: scheme.error),
               ),
-              const SizedBox(height: 8),
             ],
+            const SizedBox(height: 8),
             Expanded(
-              child: widget.orders.isEmpty
-                  ? const Center(child: Text('Закрытых заказов пока нет.'))
+              child: items.isEmpty
+                  ? const Center(child: Text('Заказы не найдены.'))
                   : ListView.separated(
-                      itemCount: widget.orders.length,
+                      itemCount: items.length,
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
-                        final item = widget.orders[index];
+                        final item = items[index];
                         final order = item.order;
+                        final busy = busyOrderId == order.id;
                         return ListTile(
+                          contentPadding:
+                              const EdgeInsets.symmetric(horizontal: 4),
                           leading: CircleAvatar(
                             child: Text('#${order.displayNumber}'),
                           ),
@@ -905,20 +1024,41 @@ class _OrderHistoryDialogState extends State<_OrderHistoryDialog> {
                                     .substring(0, 19),
                             ].join(' · '),
                           ),
-                          trailing: FilledButton.tonalIcon(
-                            onPressed: printingId == null
-                                ? () => reprint(item)
-                                : null,
-                            icon: printingId == order.id
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.print_outlined),
-                            label: const Text('Повторить чек'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FilledButton.tonalIcon(
+                                onPressed: busyOrderId == null
+                                    ? () => runAction(
+                                          item,
+                                          widget.onReprint,
+                                        )
+                                    : null,
+                                icon: busy
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.print_outlined),
+                                label: const Text('Чек'),
+                              ),
+                              if (widget.canRefund) ...[
+                                const SizedBox(width: 8),
+                                FilledButton.tonalIcon(
+                                  onPressed: busyOrderId == null
+                                      ? () => runAction(
+                                            item,
+                                            widget.onRefund,
+                                          )
+                                      : null,
+                                  icon: const Icon(Icons.undo),
+                                  label: const Text('Возврат'),
+                                ),
+                              ],
+                            ],
                           ),
                         );
                       },
@@ -929,10 +1069,216 @@ class _OrderHistoryDialogState extends State<_OrderHistoryDialog> {
       ),
       actions: [
         FilledButton(
-          onPressed: printingId == null
-              ? () => Navigator.of(context).pop()
-              : null,
+          onPressed:
+              busyOrderId == null ? () => Navigator.of(context).pop() : null,
           child: const Text('Закрыть'),
+        ),
+      ],
+    );
+  }
+}
+
+class _PaymentRefundRequest {
+  const _PaymentRefundRequest({
+    required this.paymentId,
+    required this.amount,
+    required this.reason,
+  });
+
+  final String paymentId;
+  final double amount;
+  final String reason;
+}
+
+class _PaymentRefundDialog extends StatefulWidget {
+  const _PaymentRefundDialog({
+    required this.orderNumber,
+    required this.payments,
+    required this.currentShift,
+  });
+
+  final int orderNumber;
+  final List<PaymentDto> payments;
+  final ShiftDto currentShift;
+
+  @override
+  State<_PaymentRefundDialog> createState() => _PaymentRefundDialogState();
+}
+
+class _PaymentRefundDialogState extends State<_PaymentRefundDialog> {
+  late String paymentId;
+  late final TextEditingController amountController;
+  final reasonController = TextEditingController();
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    paymentId = widget.payments.first.id;
+    amountController = TextEditingController(
+      text: _selected.refundableAmount!.toStringAsFixed(2),
+    );
+  }
+
+  PaymentDto get _selected =>
+      widget.payments.firstWhere((payment) => payment.id == paymentId);
+
+  String _methodLabel(String method) =>
+      method == 'CASH' ? 'Наличные' : method == 'CARD' ? 'Карта' : method;
+
+  void _selectPayment(String id) {
+    setState(() {
+      paymentId = id;
+      amountController.text =
+          _selected.refundableAmount!.toStringAsFixed(2);
+      error = null;
+    });
+  }
+
+  void submit() {
+    final amount = double.tryParse(
+      amountController.text.trim().replaceAll(',', '.'),
+    );
+    final reason = reasonController.text.trim();
+    final maxAmount = _selected.refundableAmount ?? 0;
+
+    if (amount == null || amount <= 0 || amount > maxAmount + 0.0001) {
+      setState(() {
+        error =
+            'Сумма возврата должна быть от 0.01 до '
+            '${maxAmount.toStringAsFixed(2)} ${_selected.currencyCode}.';
+      });
+      return;
+    }
+
+    if (reason.isEmpty) {
+      setState(() => error = 'Укажите причину возврата.');
+      return;
+    }
+
+    Navigator.of(context).pop(
+      _PaymentRefundRequest(
+        paymentId: paymentId,
+        amount: amount,
+        reason: reason,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    amountController.dispose();
+    reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = _selected;
+    final scheme = Theme.of(context).colorScheme;
+
+    return AlertDialog(
+      title: Text('Возврат · заказ #${widget.orderNumber}'),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Возврат будет записан в текущую открытую смену, '
+                  'даже если исходная продажа была в старой смене.',
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Выберите исходную оплату',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              for (final payment in widget.payments)
+                RadioListTile<String>(
+                  value: payment.id,
+                  groupValue: paymentId,
+                  onChanged: (value) {
+                    if (value != null) _selectPayment(value);
+                  },
+                  title: Text(
+                    '${_methodLabel(payment.method)} · '
+                    '${payment.amount.toStringAsFixed(2)} '
+                    '${payment.currencyCode}',
+                  ),
+                  subtitle: Text(
+                    'Уже возвращено: '
+                    '${payment.refundedAmount.toStringAsFixed(2)} · '
+                    'Доступно: '
+                    '${(payment.refundableAmount ?? 0).toStringAsFixed(2)}',
+                  ),
+                ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: amountController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Сумма возврата',
+                  suffixText: selected.currencyCode,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: reasonController,
+                maxLength: 500,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Причина возврата',
+                  hintText: 'Например: ошибка оплаты, возврат блюда',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (selected.method == 'CARD') ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: scheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    'Карточный возврат пока фиксируется в Restaurant Platform. '
+                    'Автоматическую команду банковскому терминалу добавим '
+                    'при интеграции эквайринга.',
+                  ),
+                ),
+              ],
+              if (error != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  error!,
+                  style: TextStyle(color: scheme.error),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton.icon(
+          onPressed: submit,
+          icon: const Icon(Icons.undo),
+          label: const Text('Провести возврат'),
         ),
       ],
     );
