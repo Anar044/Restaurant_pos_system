@@ -45,7 +45,6 @@ public static class PosAgentPrintJobEndpoints
                     printerKeys.Contains(x.PrinterKey) &&
                     x.Attempts < MaxAttempts &&
                     (x.Status == PrintJobStatus.Pending ||
-                     x.Status == PrintJobStatus.Failed ||
                      (x.Status == PrintJobStatus.Printing &&
                       x.PrintedAt.HasValue &&
                       x.PrintedAt.Value < staleBefore)))
