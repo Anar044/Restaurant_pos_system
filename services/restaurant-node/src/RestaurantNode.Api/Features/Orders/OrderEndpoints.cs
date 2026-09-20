@@ -185,6 +185,8 @@ public static class OrderEndpoints
                 .FirstOrDefaultAsync(ct);
             if (price is null) return Results.Conflict(new { message = "Product has no active price." });
 
+            var comment = NormalizeText(request.Comment, 500);
+
             var line = new OrderItem
             {
                 OrderId = order.Id,
@@ -194,6 +196,7 @@ public static class OrderEndpoints
                 Quantity = request.Quantity,
                 UnitPrice = price.Amount,
                 LineTotal = decimal.Round(price.Amount * request.Quantity, 4, MidpointRounding.AwayFromZero),
+                Comment = comment,
                 CreatedByEmployeeId = employeeId,
                 Status = OrderItemStatus.New
             };
@@ -211,13 +214,366 @@ public static class OrderEndpoints
                 productId = product.Id,
                 productName = product.Name,
                 request.Quantity,
-                unitPrice = price.Amount
+                unitPrice = price.Amount,
+                comment
             }));
             db.OutboxEvents.Add(Outbox(restaurantId, "ORDER_CHANGED", "Order", order.Id, new { order.Id, order.Version }));
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok(ToDto(order));
         }).RequireAuthorization("orders.write");
+
+        group.MapPut("/{id:guid}/guest-count", async (
+            Guid id,
+            UpdateGuestCountRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            if (request.GuestCount is < 1 or > 100)
+                return Results.BadRequest(new { message = "GuestCount must be between 1 and 100." });
+
+            var order = await db.Orders
+                .Include(x => x.Items)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (order is null)
+                return Results.NotFound(new { message = "Order not found." });
+
+            if (!CanEditOrder(order.Status))
+                return Results.Conflict(new { message = $"Order cannot be edited in status {order.Status}." });
+
+            var previous = order.GuestCount;
+            order.GuestCount = request.GuestCount;
+            order.Version++;
+            order.UpdatedAt = DateTimeOffset.UtcNow;
+
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "ORDER_GUEST_COUNT_CHANGED",
+                "Order",
+                order.Id,
+                new { previous, current = order.GuestCount }));
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CHANGED",
+                "Order",
+                order.Id,
+                new { order.Id, order.Version }));
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(ToDto(order));
+        }).RequireAuthorization("orders.write");
+
+        group.MapPut("/{id:guid}/table", async (
+            Guid id,
+            MoveOrderRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            var order = await db.Orders
+                .Include(x => x.Items)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (order is null)
+                return Results.NotFound(new { message = "Order not found." });
+
+            if (!CanEditOrder(order.Status))
+                return Results.Conflict(new { message = $"Order cannot be moved in status {order.Status}." });
+
+            var target = await (
+                from table in db.DiningTables.AsNoTracking()
+                join hall in db.Halls.AsNoTracking() on table.HallId equals hall.Id
+                where table.Id == request.TableId &&
+                      table.RestaurantId == restaurantId &&
+                      table.IsActive &&
+                      hall.IsActive
+                select new
+                {
+                    table.Id,
+                    TableName = table.Name,
+                    HallName = hall.Name
+                })
+                .FirstOrDefaultAsync(ct);
+
+            if (target is null)
+                return Results.BadRequest(new { message = "Target table is not available." });
+
+            if (order.TableId == target.Id)
+                return Results.Ok(ToDto(order));
+
+            var occupied = await db.Orders
+                .AsNoTracking()
+                .AnyAsync(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.Id != order.Id &&
+                    x.TableId == target.Id &&
+                    x.Status != OrderStatus.Closed &&
+                    x.Status != OrderStatus.Cancelled,
+                    ct);
+
+            if (occupied)
+                return Results.Conflict(new { message = "Target table already has an open order." });
+
+            var previousTableId = order.TableId;
+            order.TableId = target.Id;
+            order.Version++;
+            order.UpdatedAt = DateTimeOffset.UtcNow;
+
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "ORDER_MOVED",
+                "Order",
+                order.Id,
+                new
+                {
+                    previousTableId,
+                    tableId = target.Id,
+                    target.HallName,
+                    target.TableName
+                }));
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CHANGED",
+                "Order",
+                order.Id,
+                new { order.Id, order.Version, order.TableId }));
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(ToDto(order));
+        }).RequireAuthorization("orders.write");
+
+        group.MapPut("/{id:guid}/items/{itemId:guid}/comment", async (
+            Guid id,
+            Guid itemId,
+            UpdateOrderItemCommentRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            var order = await db.Orders
+                .Include(x => x.Items)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (order is null)
+                return Results.NotFound(new { message = "Order not found." });
+
+            if (!CanEditOrder(order.Status))
+                return Results.Conflict(new { message = $"Order cannot be edited in status {order.Status}." });
+
+            var line = order.Items.FirstOrDefault(x => x.Id == itemId);
+            if (line is null)
+                return Results.NotFound(new { message = "Order item not found." });
+
+            if (line.Status != OrderItemStatus.New)
+                return Results.Conflict(new
+                {
+                    message = "A kitchen comment can only be changed before the item is sent."
+                });
+
+            var previous = line.Comment;
+            line.Comment = NormalizeText(request.Comment, 500);
+            order.Version++;
+            order.UpdatedAt = DateTimeOffset.UtcNow;
+
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "ITEM_COMMENT_CHANGED",
+                "Order",
+                order.Id,
+                new { lineId = line.Id, previous, current = line.Comment }));
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CHANGED",
+                "Order",
+                order.Id,
+                new { order.Id, order.Version }));
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(ToDto(order));
+        }).RequireAuthorization("orders.write");
+
+        group.MapPost("/{id:guid}/items/{itemId:guid}/void", async (
+            Guid id,
+            Guid itemId,
+            VoidOrderItemRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            var reason = NormalizeText(request.Reason, 500);
+            if (reason is null)
+                return Results.BadRequest(new { message = "Void reason is required." });
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            var order = await db.Orders
+                .Include(x => x.Items)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (order is null)
+                return Results.NotFound(new { message = "Order not found." });
+
+            if (!CanEditOrder(order.Status))
+                return Results.Conflict(new { message = $"Order cannot be edited in status {order.Status}." });
+
+            var line = order.Items.FirstOrDefault(x => x.Id == itemId);
+            if (line is null)
+                return Results.NotFound(new { message = "Order item not found." });
+
+            if (line.Status == OrderItemStatus.Voided)
+                return Results.Ok(ToDto(order));
+
+            if (line.Status != OrderItemStatus.Sent)
+                return Results.Conflict(new
+                {
+                    message = "Only a sent item requires a void. New items can be removed normally."
+                });
+
+            var route = await (
+                from product in db.Products.AsNoTracking()
+                join station in db.KitchenStations.AsNoTracking()
+                    on product.KitchenStationId equals (Guid?)station.Id
+                join printer in db.Printers.AsNoTracking()
+                    on station.PrinterId equals (Guid?)printer.Id
+                where product.Id == line.ProductId &&
+                      product.RestaurantId == restaurantId &&
+                      station.RestaurantId == restaurantId &&
+                      station.IsActive &&
+                      printer.RestaurantId == restaurantId &&
+                      printer.IsConfigured &&
+                      printer.IsActive &&
+                      printer.HostDeviceId.HasValue
+                select new
+                {
+                    StationId = station.Id,
+                    StationName = station.Name
+                })
+                .FirstOrDefaultAsync(ct);
+
+            if (route is null)
+                return Results.Conflict(new
+                {
+                    message = "Kitchen cancellation cannot be printed because the item's kitchen printer is unavailable."
+                });
+
+            string? tableName = null;
+            string? hallName = null;
+            if (order.TableId.HasValue)
+            {
+                var tableInfo = await (
+                    from table in db.DiningTables.AsNoTracking()
+                    join hall in db.Halls.AsNoTracking() on table.HallId equals hall.Id
+                    where table.Id == order.TableId.Value &&
+                          table.RestaurantId == restaurantId
+                    select new { TableName = table.Name, HallName = hall.Name })
+                    .FirstOrDefaultAsync(ct);
+
+                tableName = tableInfo?.TableName;
+                hallName = tableInfo?.HallName;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var ticket = new KitchenTicket
+            {
+                RestaurantId = restaurantId,
+                OrderId = order.Id,
+                KitchenStationId = route.StationId,
+                Status = KitchenTicketStatus.Pending,
+                CreatedAt = now
+            };
+            db.KitchenTickets.Add(ticket);
+
+            var payload = new
+            {
+                ticketId = ticket.Id,
+                orderId = order.Id,
+                orderNumber = order.DisplayNumber,
+                order.TableId,
+                tableName,
+                hallName,
+                stationId = route.StationId,
+                stationName = route.StationName,
+                createdAt = now,
+                isVoid = true,
+                voidReason = reason,
+                items = new[]
+                {
+                    new
+                    {
+                        lineId = line.Id,
+                        productId = line.ProductId,
+                        name = line.ProductNameSnapshot,
+                        line.Quantity,
+                        line.Comment
+                    }
+                }
+            };
+
+            db.PrintJobs.Add(new PrintJob
+            {
+                RestaurantId = restaurantId,
+                PrinterKey = $"kitchen:{route.StationId:N}",
+                Type = "KITCHEN_TICKET",
+                PayloadJson = JsonSerializer.Serialize(payload),
+                Status = PrintJobStatus.Pending,
+                CreatedAt = now
+            });
+
+            line.Status = OrderItemStatus.Voided;
+            line.VoidedAt = now;
+            Recalculate(order);
+            RefreshOrderStatus(order);
+            order.Version++;
+            order.UpdatedAt = now;
+
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "ITEM_VOIDED",
+                "Order",
+                order.Id,
+                new
+                {
+                    lineId = line.Id,
+                    line.ProductId,
+                    line.ProductNameSnapshot,
+                    line.Quantity,
+                    reason,
+                    kitchenStationId = route.StationId,
+                    ticketId = ticket.Id
+                }));
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CHANGED",
+                "Order",
+                order.Id,
+                new { order.Id, order.Version }));
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return Results.Ok(ToDto(order));
+        }).RequireAuthorization("orders.void");
 
         group.MapPost("/{id:guid}/send", async (Guid id, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
@@ -467,6 +823,7 @@ public static class OrderEndpoints
             db.OrderItems.Remove(line);
             order.Items.Remove(line);
             Recalculate(order);
+            RefreshOrderStatus(order);
             order.Version++;
             order.UpdatedAt = DateTimeOffset.UtcNow;
             db.AuditEvents.Add(Audit(restaurantId, employeeId, "ITEM_REMOVED", "Order", order.Id, new { itemId }));
@@ -483,6 +840,40 @@ public static class OrderEndpoints
     {
         order.Subtotal = order.Items.Where(x => x.Status != OrderItemStatus.Voided).Sum(x => x.LineTotal);
         order.Total = decimal.Round(order.Subtotal - order.DiscountTotal + order.SurchargeTotal, 4, MidpointRounding.AwayFromZero);
+    }
+
+    private static bool CanEditOrder(OrderStatus status) =>
+        status is not (OrderStatus.Closed or OrderStatus.Cancelled or OrderStatus.Paid or OrderStatus.PartiallyPaid);
+
+    private static void RefreshOrderStatus(Order order)
+    {
+        if (!CanEditOrder(order.Status))
+            return;
+
+        var active = order.Items
+            .Where(x => x.Status != OrderItemStatus.Voided)
+            .ToArray();
+
+        var hasNew = active.Any(x => x.Status == OrderItemStatus.New);
+        var hasSent = active.Any(x => x.Status == OrderItemStatus.Sent);
+
+        order.Status = (hasNew, hasSent) switch
+        {
+            (true, true) => OrderStatus.PartiallySent,
+            (false, true) => OrderStatus.Sent,
+            _ => OrderStatus.Open
+        };
+    }
+
+    private static string? NormalizeText(string? value, int maxLength)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return null;
+
+        return normalized.Length <= maxLength
+            ? normalized
+            : normalized[..maxLength];
     }
 
     internal static object ToDto(Order order) => new
@@ -530,7 +921,8 @@ public static class OrderEndpoints
             x.LineTotal,
             status = EnumText(x.Status),
             x.Comment,
-            x.SentAt
+            x.SentAt,
+            x.VoidedAt
         })
     };
 
@@ -565,4 +957,8 @@ public static class OrderEndpoints
 }
 
 public sealed record CreateOrderRequest(Guid? TableId = null, int GuestCount = 1);
-public sealed record AddOrderItemRequest(Guid ProductId, decimal Quantity = 1m);
+public sealed record AddOrderItemRequest(Guid ProductId, decimal Quantity = 1m, string? Comment = null);
+public sealed record UpdateGuestCountRequest(int GuestCount);
+public sealed record MoveOrderRequest(Guid TableId);
+public sealed record UpdateOrderItemCommentRequest(string? Comment);
+public sealed record VoidOrderItemRequest(string? Reason);
