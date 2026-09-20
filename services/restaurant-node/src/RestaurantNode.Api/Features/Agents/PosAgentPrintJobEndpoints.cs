@@ -157,6 +157,20 @@ public static class PosAgentPrintJobEndpoints
             if (!routes.ContainsKey(job.PrinterKey))
                 return Results.Conflict(new { message = "This print job is no longer assigned to this POS Agent." });
 
+            // Completion is idempotent. Once a job is PRINTED, a late/duplicate
+            // callback must never move it back to FAILED and make it printable again.
+            if (job.Status == PrintJobStatus.Printed)
+            {
+                return Results.Ok(new
+                {
+                    id = job.Id,
+                    status = job.Status.ToString().ToUpperInvariant(),
+                    attempts = job.Attempts,
+                    job.PrintedAt,
+                    job.LastError
+                });
+            }
+
             if (request.Success)
             {
                 var printedAt = DateTimeOffset.UtcNow;
