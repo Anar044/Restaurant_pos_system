@@ -37,7 +37,7 @@ public static class OrderEndpoints
             if (!TryClaims(user, out var restaurantId, out _))
                 return Results.Unauthorized();
 
-            var limit = Math.Clamp(take ?? 50, 1, 100);
+            var limit = Math.Clamp(take ?? 100, 1, 300);
 
             var query = db.Orders
                 .AsNoTracking()
