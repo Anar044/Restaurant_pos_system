@@ -318,6 +318,97 @@ export type BackOfficePosPrinters = {
   networkPrinters: PosNetworkPrinter[];
 };
 
+export type FinanceShift = {
+  id: string;
+  deviceId: string;
+  deviceName: string;
+  status: string;
+  openingCash: number;
+  closingCash: number | null;
+  openedAt: string;
+  closedAt: string | null;
+};
+
+export type FinanceOpenShift = {
+  id: string;
+  deviceId: string;
+  deviceName: string;
+  openedAt: string;
+};
+
+export type FinancePayment = {
+  id: string;
+  orderId: string;
+  orderNumber: number;
+  orderStatus: string;
+  shiftId: string;
+  employeeId: string;
+  employeeName: string;
+  method: string;
+  status: string;
+  amount: number;
+  tenderedAmount: number | null;
+  changeAmount: number;
+  refundedAmount: number;
+  refundableAmount: number;
+  currencyCode: string;
+  providerReference: string | null;
+  createdAt: string;
+};
+
+export type FinanceRefund = {
+  id: string;
+  paymentId: string;
+  orderId: string;
+  orderNumber: number;
+  shiftId: string;
+  employeeName: string;
+  method: string;
+  amount: number;
+  currencyCode: string;
+  reason: string | null;
+  createdAt: string;
+};
+
+export type BackOfficeFinance = {
+  shifts: FinanceShift[];
+  openShifts: FinanceOpenShift[];
+  payments: FinancePayment[];
+  refunds: FinanceRefund[];
+};
+
+export type RefundPaymentResult = {
+  refund: {
+    id: string;
+    paymentId: string;
+    orderId: string;
+    shiftId: string;
+    employeeId: string;
+    method: string;
+    amount: number;
+    currencyCode: string;
+    reason: string | null;
+    createdAt: string;
+  };
+  payment: {
+    id: string;
+    orderId: string;
+    shiftId: string;
+    employeeId: string;
+    method: string;
+    status: string;
+    amount: number;
+    tenderedAmount: number | null;
+    changeAmount: number;
+    refundedAmount: number;
+    refundableAmount: number;
+    currencyCode: string;
+    providerReference: string | null;
+    createdAt: string;
+  };
+  refundable: number;
+};
+
 async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { message?: string; title?: string };
@@ -608,5 +699,24 @@ export async function assignPosReceiptPrinter(
   return request(`/api/v1/backoffice/pos-printers/${deviceId}/receipt-printer`, {
     method: 'PUT',
     body: JSON.stringify({ printerId }),
+  }, token);
+}
+
+export async function getBackOfficeFinance(
+  token: string,
+  shiftId?: string | null,
+): Promise<BackOfficeFinance> {
+  const query = shiftId ? `?shiftId=${encodeURIComponent(shiftId)}&take=200` : '?take=200';
+  return request<BackOfficeFinance>(`/api/v1/backoffice/finance${query}`, {}, token);
+}
+
+export async function refundPayment(
+  token: string,
+  paymentId: string,
+  input: { shiftId: string; amount: number; reason: string },
+): Promise<RefundPaymentResult> {
+  return request<RefundPaymentResult>(`/api/v1/payments/${paymentId}/refund`, {
+    method: 'POST',
+    body: JSON.stringify(input),
   }, token);
 }
