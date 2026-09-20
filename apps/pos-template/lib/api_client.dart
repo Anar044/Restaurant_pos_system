@@ -60,6 +60,45 @@ class PosApiClient {
     return auth;
   }
 
+  Future<ShiftDto?> getCurrentShift(String deviceId) async {
+    final response = await _http.get(
+      _uri('/api/v1/shifts/current?deviceId=${Uri.encodeQueryComponent(deviceId)}'),
+      headers: _headers,
+    );
+    final data = _decode(response);
+    final shift = data['shift'];
+    return shift == null
+        ? null
+        : ShiftDto.fromJson(shift as Map<String, dynamic>);
+  }
+
+  Future<ShiftDto> openShift(
+    String deviceId, {
+    double openingCash = 0,
+  }) async {
+    final response = await _http.post(
+      _uri('/api/v1/shifts/open'),
+      headers: _headers,
+      body: jsonEncode({
+        'deviceId': deviceId,
+        'openingCash': openingCash,
+      }),
+    );
+    return ShiftDto.fromJson(_decode(response));
+  }
+
+  Future<CloseShiftResult> closeShift(
+    String shiftId, {
+    required double closingCash,
+  }) async {
+    final response = await _http.post(
+      _uri('/api/v1/shifts/$shiftId/close'),
+      headers: _headers,
+      body: jsonEncode({'closingCash': closingCash}),
+    );
+    return CloseShiftResult.fromJson(_decode(response));
+  }
+
   Future<List<HallDto>> getHalls() async {
     final response = await _http.get(_uri('/api/v1/halls'), headers: _headers);
     final data = _decode(response);
@@ -121,6 +160,36 @@ class PosApiClient {
     return OrderDto.fromJson(_decode(response));
   }
 
+  Future<PaymentResultDto> payOrder({
+    required String orderId,
+    required String shiftId,
+    required String method,
+    required double amount,
+    String? providerReference,
+  }) async {
+    final response = await _http.post(
+      _uri('/api/v1/payments'),
+      headers: _headers,
+      body: jsonEncode({
+        'orderId': orderId,
+        'shiftId': shiftId,
+        'method': method,
+        'amount': amount,
+        if (providerReference != null && providerReference.trim().isNotEmpty)
+          'providerReference': providerReference.trim(),
+      }),
+    );
+    return PaymentResultDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> closeOrder(String orderId) async {
+    final response = await _http.post(
+      _uri('/api/v1/orders/$orderId/close'),
+      headers: _headers,
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
   Map<String, dynamic> _decode(http.Response response) {
     Map<String, dynamic> data = {};
     if (response.body.isNotEmpty) {
@@ -135,6 +204,57 @@ class PosApiClient {
     }
     return data;
   }
+}
+
+class ShiftDto {
+  const ShiftDto({
+    required this.id,
+    required this.deviceId,
+    required this.status,
+    required this.openingCash,
+    required this.openedAt,
+    this.closingCash,
+    this.closedAt,
+  });
+
+  final String id;
+  final String deviceId;
+  final String status;
+  final double openingCash;
+  final double? closingCash;
+  final DateTime openedAt;
+  final DateTime? closedAt;
+
+  factory ShiftDto.fromJson(Map<String, dynamic> json) => ShiftDto(
+        id: json['id'] as String,
+        deviceId: json['deviceId'] as String,
+        status: json['status'] as String,
+        openingCash: (json['openingCash'] as num).toDouble(),
+        closingCash: (json['closingCash'] as num?)?.toDouble(),
+        openedAt: DateTime.parse(json['openedAt'] as String),
+        closedAt: json['closedAt'] == null
+            ? null
+            : DateTime.tryParse(json['closedAt'] as String),
+      );
+}
+
+class CloseShiftResult {
+  const CloseShiftResult({
+    required this.shift,
+    required this.expectedCash,
+    required this.difference,
+  });
+
+  final ShiftDto shift;
+  final double expectedCash;
+  final double difference;
+
+  factory CloseShiftResult.fromJson(Map<String, dynamic> json) =>
+      CloseShiftResult(
+        shift: ShiftDto.fromJson(json['shift'] as Map<String, dynamic>),
+        expectedCash: (json['expectedCash'] as num).toDouble(),
+        difference: (json['difference'] as num).toDouble(),
+      );
 }
 
 class HallDto {
@@ -206,7 +326,12 @@ class OpenOrderSummary {
 }
 
 class MenuCategory {
-  const MenuCategory({required this.id, required this.name, required this.products});
+  const MenuCategory({
+    required this.id,
+    required this.name,
+    required this.products,
+  });
+
   final String id;
   final String name;
   final List<MenuProduct> products;
@@ -227,6 +352,7 @@ class MenuProduct {
     required this.price,
     required this.currencyCode,
   });
+
   final String id;
   final String name;
   final double price;
@@ -275,16 +401,74 @@ class OrderLineDto {
       );
 }
 
+class PaymentDto {
+  const PaymentDto({
+    required this.id,
+    required this.shiftId,
+    required this.employeeId,
+    required this.method,
+    required this.status,
+    required this.amount,
+    required this.currencyCode,
+    required this.createdAt,
+    this.providerReference,
+  });
+
+  final String id;
+  final String shiftId;
+  final String employeeId;
+  final String method;
+  final String status;
+  final double amount;
+  final String currencyCode;
+  final String? providerReference;
+  final DateTime createdAt;
+
+  factory PaymentDto.fromJson(Map<String, dynamic> json) => PaymentDto(
+        id: json['id'] as String,
+        shiftId: json['shiftId'] as String,
+        employeeId: json['employeeId'] as String,
+        method: json['method'] as String,
+        status: json['status'] as String,
+        amount: (json['amount'] as num).toDouble(),
+        currencyCode: json['currencyCode'] as String,
+        providerReference: json['providerReference'] as String?,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+      );
+}
+
+class PaymentResultDto {
+  const PaymentResultDto({
+    required this.payment,
+    required this.order,
+    required this.remaining,
+  });
+
+  final PaymentDto payment;
+  final OrderDto order;
+  final double remaining;
+
+  factory PaymentResultDto.fromJson(Map<String, dynamic> json) =>
+      PaymentResultDto(
+        payment: PaymentDto.fromJson(json['payment'] as Map<String, dynamic>),
+        order: OrderDto.fromJson(json['order'] as Map<String, dynamic>),
+        remaining: (json['remaining'] as num).toDouble(),
+      );
+}
+
 class OrderDto {
   const OrderDto({
     required this.id,
     required this.displayNumber,
     required this.status,
     required this.total,
+    required this.paidTotal,
     required this.version,
     required this.items,
+    required this.payments,
     required this.guestCount,
     this.tableId,
+    this.closedAt,
   });
 
   final String id;
@@ -293,10 +477,23 @@ class OrderDto {
   final String? tableId;
   final int guestCount;
   final double total;
+  final double paidTotal;
   final int version;
   final List<OrderLineDto> items;
+  final List<PaymentDto> payments;
+  final DateTime? closedAt;
 
   bool get hasNewItems => items.any((item) => item.status == 'NEW');
+  bool get isPaid => status == 'PAID' || status == 'CLOSED';
+  bool get isClosed => status == 'CLOSED';
+  double get remaining => total > paidTotal ? total - paidTotal : 0;
+
+  PaymentDto? get latestCompletedPayment {
+    for (final payment in payments.reversed) {
+      if (payment.status == 'COMPLETED') return payment;
+    }
+    return null;
+  }
 
   factory OrderDto.fromJson(Map<String, dynamic> json) => OrderDto(
         id: json['id'] as String,
@@ -305,7 +502,14 @@ class OrderDto {
         tableId: json['tableId'] as String?,
         guestCount: (json['guestCount'] as num).toInt(),
         total: (json['total'] as num).toDouble(),
+        paidTotal: (json['paidTotal'] as num?)?.toDouble() ?? 0,
         version: (json['version'] as num).toInt(),
+        closedAt: json['closedAt'] == null
+            ? null
+            : DateTime.tryParse(json['closedAt'] as String),
+        payments: ((json['payments'] as List<dynamic>?) ?? const [])
+            .map((e) => PaymentDto.fromJson(e as Map<String, dynamic>))
+            .toList(),
         items: (json['items'] as List<dynamic>)
             .map((e) => OrderLineDto.fromJson(e as Map<String, dynamic>))
             .toList(),
