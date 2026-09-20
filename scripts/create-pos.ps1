@@ -104,7 +104,10 @@ $mainText = Replace-Required $mainText `
 # Insert the kitchen button immediately before the existing payment button.
 $paymentAnchor = @(
     '            FilledButton.icon(',
-    '              onPressed: busy || order == null || order!.items.isEmpty',
+    '              onPressed: busy ||',
+    '                      order == null ||',
+    '                      order!.items.isEmpty ||',
+    "                      (order!.status != 'PAID' && order!.hasNewItems)",
     '                  ? null',
     "                  : order!.status == 'PAID'"
 ) -join "`n"
@@ -122,7 +125,10 @@ $kitchenAndPaymentAnchor = @(
     '            ),',
     '            const SizedBox(height: 10),',
     '            FilledButton.icon(',
-    '              onPressed: busy || order == null || order!.items.isEmpty',
+    '              onPressed: busy ||',
+    '                      order == null ||',
+    '                      order!.items.isEmpty ||',
+    "                      (order!.status != 'PAID' && order!.hasNewItems)",
     '                  ? null',
     "                  : order!.status == 'PAID'"
 ) -join "`n"
