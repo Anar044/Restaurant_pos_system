@@ -7,12 +7,14 @@ builder.Services.AddSingleton<WindowsPrinterDiscovery>();
 builder.Services.AddSingleton<WindowsDriverPrinter>();
 builder.Services.AddSingleton<NetworkRawPrinter>();
 builder.Services.AddSingleton<LocalReceiptPrinter>();
+builder.Services.AddSingleton<KitchenPrintJobExecutor>();
 builder.Services.AddSingleton<AgentCacheStore>();
 builder.Services.AddHttpClient<RestaurantNodeClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
 });
 builder.Services.AddHostedService<AgentSyncWorker>();
+builder.Services.AddHostedService<KitchenPrintWorker>();
 
 var app = builder.Build();
 
