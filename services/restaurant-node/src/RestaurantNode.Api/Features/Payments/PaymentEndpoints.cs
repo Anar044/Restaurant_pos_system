@@ -28,7 +28,8 @@ public static class PaymentEndpoints
             if (request.Amount <= 0)
                 return Results.BadRequest(new { message = "Payment amount must be greater than zero." });
 
-            if (!Enum.IsDefined(request.Method))
+            if (!Enum.TryParse<PaymentMethod>(request.Method, ignoreCase: true, out var method) ||
+                !Enum.IsDefined(method))
                 return Results.BadRequest(new { message = "Unsupported payment method." });
 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -93,7 +94,7 @@ public static class PaymentEndpoints
                 OrderId = order.Id,
                 ShiftId = shift.Id,
                 EmployeeId = employeeId,
-                Method = request.Method,
+                Method = method,
                 Status = PaymentStatus.Completed,
                 Amount = amount,
                 CurrencyCode = restaurantCurrency,
@@ -260,6 +261,6 @@ public static class PaymentEndpoints
 public sealed record CreatePaymentRequest(
     Guid OrderId,
     Guid ShiftId,
-    PaymentMethod Method,
+    string Method,
     decimal Amount,
     string? ProviderReference = null);
