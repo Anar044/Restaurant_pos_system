@@ -120,6 +120,9 @@ export function KitchenPage({ token }: { token: string }) {
                       </span>
                     </div>
                     <p>{station.activeProductCount} активных · {station.totalProductCount} всего</p>
+                    <div className="station-printer-line">
+                      Принтер: <strong>{station.printerName ?? 'не назначен'}</strong>
+                    </div>
                   </div>
                 </div>
                 <button className="text-button" onClick={() => setEditor({ kind: 'edit', station })}>Настроить</button>
@@ -158,6 +161,7 @@ export function KitchenPage({ token }: { token: string }) {
         <KitchenStationEditor
           editor={editor}
           token={token}
+          availablePrinters={data.availablePrinters}
           onClose={() => setEditor(null)}
           onSaved={async () => {
             setEditor(null);
@@ -194,16 +198,19 @@ function KitchenStat({
 function KitchenStationEditor({
   editor,
   token,
+  availablePrinters,
   onClose,
   onSaved,
 }: {
   editor: Exclude<EditorState, null>;
   token: string;
+  availablePrinters: BackOfficeKitchen['availablePrinters'];
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   const station = editor.kind === 'edit' ? editor.station : null;
   const [name, setName] = useState(station?.name ?? '');
+  const [printerId, setPrinterId] = useState(station?.printerId ?? '');
   const [isActive, setIsActive] = useState(station?.isActive ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -216,10 +223,14 @@ function KitchenStationEditor({
     setError(null);
     try {
       if (editor.kind === 'create') {
-        await createKitchenStation(token, { name: name.trim() });
+        await createKitchenStation(token, {
+          name: name.trim(),
+          printerId: printerId || null,
+        });
       } else {
         await updateKitchenStation(token, editor.station.id, {
           name: name.trim(),
+          printerId: printerId || null,
           isActive,
         });
       }
@@ -252,6 +263,27 @@ function KitchenStationEditor({
             autoFocus
           />
         </label>
+
+        <label>
+          <span>Кухонный принтер</span>
+          <select value={printerId} onChange={(e) => setPrinterId(e.target.value)}>
+            <option value="">Не назначен</option>
+            {availablePrinters.map((printer) => (
+              <option key={printer.id} value={printer.id}>
+                {printer.name} · {printer.hostDeviceName} · {printer.address}
+              </option>
+            ))}
+          </select>
+          <small className="field-hint">
+            Печать выполняет POS Agent кассы, к которой привязан этот принтер.
+          </small>
+        </label>
+
+        {availablePrinters.length === 0 && (
+          <div className="kitchen-inline-warning">
+            Нет доступных принтеров. Сначала настройте принтер в разделе «Оборудование → POS принтеры».
+          </div>
+        )}
 
         {editor.kind === 'edit' && (
           <label className="toggle-row">
