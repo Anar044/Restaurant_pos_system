@@ -850,6 +850,7 @@ class _OrderPageState extends State<OrderPage> {
     final current = order;
     if (current == null ||
         current.items.isEmpty ||
+        current.hasNewItems ||
         current.isPaid ||
         current.remaining <= 0 ||
         mutating ||
@@ -1297,7 +1298,10 @@ class _OrderPane extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             FilledButton.icon(
-              onPressed: busy || order == null || order!.items.isEmpty
+              onPressed: busy ||
+                      order == null ||
+                      order!.items.isEmpty ||
+                      (order!.status != 'PAID' && order!.hasNewItems)
                   ? null
                   : order!.status == 'PAID'
                       ? onFinalizePaid
