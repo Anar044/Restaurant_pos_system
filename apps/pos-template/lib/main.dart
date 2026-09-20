@@ -448,6 +448,100 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
     }
   }
 
+  Future<void> showOrderHistory() async {
+    try {
+      final history = await widget.api.getOrderHistory(
+        shiftId: widget.shift.id,
+        take: 50,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => _OrderHistoryDialog(
+          orders: history,
+          onReprint: reprintHistoryOrder,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('История заказов: $e')),
+      );
+    }
+  }
+
+  Future<void> reprintHistoryOrder(OrderHistoryItemDto item) async {
+    final paidOrder = item.order;
+    final completedPayments = paidOrder.payments
+        .where(
+          (payment) =>
+              payment.status == 'COMPLETED' || payment.status == 'REFUNDED',
+        )
+        .toList();
+
+    if (completedPayments.isEmpty) {
+      throw StateError('У заказа нет завершённой оплаты.');
+    }
+
+    final totals = <String, double>{};
+    for (final payment in completedPayments) {
+      totals.update(
+        payment.method,
+        (value) => value + payment.amount,
+        ifAbsent: () => payment.amount,
+      );
+    }
+    final paymentSummary = totals.entries
+        .map((entry) => '${entry.key} ${entry.value.toStringAsFixed(2)}')
+        .join(' + ');
+
+    PaymentDto? cashPayment;
+    for (final payment in completedPayments.reversed) {
+      if (payment.method == 'CASH' && payment.tenderedAmount != null) {
+        cashPayment = payment;
+        break;
+      }
+    }
+
+    final groups = CartGroup.fromOrder(paidOrder);
+    final result = await widget.printer.printReceipt(
+      restaurantName: AppConfig.restaurantDisplayName,
+      orderNumber: paidOrder.displayNumber,
+      hallName: item.hallName,
+      tableName: item.tableName,
+      cashierName: item.cashierName,
+      guestCount: paidOrder.guestCount,
+      currencyCode: AppConfig.currencyCode,
+      total: paidOrder.total,
+      paymentMethod: paymentSummary,
+      paidAmount: paidOrder.paidTotal,
+      cashReceived: cashPayment?.tenderedAmount,
+      changeAmount:
+          (cashPayment?.changeAmount ?? 0) > 0 ? cashPayment!.changeAmount : null,
+      completedAt: completedPayments.last.createdAt,
+      isCopy: true,
+      items: groups
+          .map(
+            (group) => ReceiptPrintItem(
+              name: group.productName,
+              quantity: group.quantity,
+              unitPrice: group.unitPrice,
+              lineTotal: group.total,
+            ),
+          )
+          .toList(),
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Копия чека #${result.orderNumber} отправлена на ${result.printerName}',
+        ),
+      ),
+    );
+  }
+
   Future<void> showXReport() async {
     try {
       final report = await widget.api.getShiftReport(widget.shift.id);
@@ -588,6 +682,11 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
           ),
           const SizedBox(width: 8),
           TextButton.icon(
+            onPressed: showOrderHistory,
+            icon: const Icon(Icons.history),
+            label: const Text('История'),
+          ),
+          TextButton.icon(
             onPressed: showXReport,
             icon: const Icon(Icons.summarize_outlined),
             label: const Text('X-отчёт'),
@@ -706,6 +805,119 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
           );
         },
       ),
+    );
+  }
+}
+
+class _OrderHistoryDialog extends StatefulWidget {
+  const _OrderHistoryDialog({
+    required this.orders,
+    required this.onReprint,
+  });
+
+  final List<OrderHistoryItemDto> orders;
+  final Future<void> Function(OrderHistoryItemDto item) onReprint;
+
+  @override
+  State<_OrderHistoryDialog> createState() => _OrderHistoryDialogState();
+}
+
+class _OrderHistoryDialogState extends State<_OrderHistoryDialog> {
+  String? printingId;
+  String? error;
+
+  Future<void> reprint(OrderHistoryItemDto item) async {
+    if (printingId != null) return;
+    setState(() {
+      printingId = item.order.id;
+      error = null;
+    });
+    try {
+      await widget.onReprint(item);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => printingId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('История заказов этой смены'),
+      content: SizedBox(
+        width: 650,
+        height: 480,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (error != null) ...[
+              Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Expanded(
+              child: widget.orders.isEmpty
+                  ? const Center(child: Text('Закрытых заказов пока нет.'))
+                  : ListView.separated(
+                      itemCount: widget.orders.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final item = widget.orders[index];
+                        final order = item.order;
+                        return ListTile(
+                          leading: CircleAvatar(
+                            child: Text('#${order.displayNumber}'),
+                          ),
+                          title: Text(
+                            'Заказ #${order.displayNumber} · '
+                            '${order.total.toStringAsFixed(2)} AZN',
+                          ),
+                          subtitle: Text(
+                            [
+                              if (item.hallName != null) item.hallName!,
+                              if (item.tableName != null)
+                                'Стол ${item.tableName}',
+                              item.cashierName,
+                              if (order.closedAt != null)
+                                order.closedAt!
+                                    .toLocal()
+                                    .toString()
+                                    .substring(0, 19),
+                            ].join(' · '),
+                          ),
+                          trailing: FilledButton.tonalIcon(
+                            onPressed: printingId == null
+                                ? () => reprint(item)
+                                : null,
+                            icon: printingId == order.id
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.print_outlined),
+                            label: const Text('Повторить чек'),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: printingId == null
+              ? () => Navigator.of(context).pop()
+              : null,
+          child: const Text('Закрыть'),
+        ),
+      ],
     );
   }
 }
