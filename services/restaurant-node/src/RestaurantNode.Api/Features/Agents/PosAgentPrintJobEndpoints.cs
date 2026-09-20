@@ -36,18 +36,13 @@ public static class PosAgentPrintJobEndpoints
 
             var printerKeys = routes.Keys.ToArray();
             var take = Math.Clamp(limit ?? 10, 1, 25);
-            var staleBefore = DateTimeOffset.UtcNow.AddSeconds(-90);
-
             var candidates = await db.PrintJobs
                 .Where(x =>
                     x.RestaurantId == restaurantId &&
                     x.Type == "KITCHEN_TICKET" &&
                     printerKeys.Contains(x.PrinterKey) &&
                     x.Attempts < MaxAttempts &&
-                    (x.Status == PrintJobStatus.Pending ||
-                     (x.Status == PrintJobStatus.Printing &&
-                      x.PrintedAt.HasValue &&
-                      x.PrintedAt.Value < staleBefore)))
+                    x.Status == PrintJobStatus.Pending)
                 .OrderBy(x => x.CreatedAt)
                 .Take(Math.Min(take * 5, 100))
                 .ToListAsync(ct);
@@ -92,8 +87,9 @@ public static class PosAgentPrintJobEndpoints
 
                 job.Status = PrintJobStatus.Printing;
                 job.Attempts++;
-                // While PRINTING, PrintedAt is used as the lease timestamp.
-                // On failure it is cleared; on success it becomes the actual printed timestamp.
+                // PRINTING means this job has already been dispatched to an agent.
+                // It is intentionally not auto-dispatched again: duplicate kitchen tickets
+                // are more dangerous than requiring a manual retry after a rare crash.
                 job.PrintedAt = claimedAt;
                 job.LastError = null;
                 jobs.Add(job);
