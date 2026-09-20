@@ -175,7 +175,7 @@ public static class PosAgentPrintJobEndpoints
         var rows = await (
             from station in db.KitchenStations.AsNoTracking()
             join printer in db.Printers.AsNoTracking()
-                on station.PrinterId equals printer.Id
+                on station.PrinterId equals (Guid?)printer.Id
             where station.RestaurantId == restaurantId &&
                   station.IsActive &&
                   printer.RestaurantId == restaurantId &&
