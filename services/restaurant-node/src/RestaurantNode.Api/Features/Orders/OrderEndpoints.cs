@@ -74,7 +74,7 @@ public static class OrderEndpoints
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             var order = await db.Orders.Include(x => x.Items).FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
             if (order is null) return Results.NotFound(new { message = "Order not found." });
-            if (order.Status is OrderStatus.Closed or OrderStatus.Cancelled or OrderStatus.Paid)
+            if (order.Status is OrderStatus.Closed or OrderStatus.Cancelled or OrderStatus.Paid or OrderStatus.PartiallyPaid)
                 return Results.Conflict(new { message = $"Order cannot be edited in status {order.Status}." });
 
             var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(x => x.Id == request.ProductId && x.RestaurantId == restaurantId && x.IsActive, ct);
@@ -131,7 +131,7 @@ public static class OrderEndpoints
                 .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
 
             if (order is null) return Results.NotFound(new { message = "Order not found." });
-            if (order.Status is OrderStatus.Closed or OrderStatus.Cancelled or OrderStatus.Paid)
+            if (order.Status is OrderStatus.Closed or OrderStatus.Cancelled or OrderStatus.Paid or OrderStatus.PartiallyPaid)
                 return Results.Conflict(new { message = $"Order cannot be sent in status {order.Status}." });
 
             var newItems = order.Items
@@ -315,6 +315,8 @@ public static class OrderEndpoints
             if (order is null) return Results.NotFound(new { message = "Order not found." });
             var line = order.Items.FirstOrDefault(x => x.Id == itemId);
             if (line is null) return Results.NotFound(new { message = "Order item not found." });
+            if (order.Status is OrderStatus.Closed or OrderStatus.Cancelled or OrderStatus.Paid or OrderStatus.PartiallyPaid)
+                return Results.Conflict(new { message = $"Order cannot be edited in status {order.Status}." });
             if (line.Status != OrderItemStatus.New)
                 return Results.Conflict(new { message = "Sent items cannot be deleted; they require an explicit void operation." });
 
