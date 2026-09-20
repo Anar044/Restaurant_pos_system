@@ -16,6 +16,8 @@ public static class ReceiptBuilder
 
         sb.AppendLine(Normalize(receipt.RestaurantName, "Restaurant"));
         sb.AppendLine(paid ? "ЧЕК / RECEIPT" : "ПРЕДЧЕК / PRECHECK");
+        if (receipt.IsCopy)
+            sb.AppendLine("КОПИЯ / COPY");
         sb.AppendLine(new string('-', 42));
         sb.AppendLine($"Заказ / Order: #{receipt.OrderNumber}");
         if (!string.IsNullOrWhiteSpace(receipt.HallName))
@@ -69,6 +71,8 @@ public static class ReceiptBuilder
         bytes.AddRange([0x1B, 0x45, 0x01]);
         AppendAscii(bytes, ToAscii(Normalize(receipt.RestaurantName, "Restaurant")) + "\n");
         AppendAscii(bytes, paid ? "RECEIPT\n" : "PRECHECK\n");
+        if (receipt.IsCopy)
+            AppendAscii(bytes, "COPY\n");
         bytes.AddRange([0x1B, 0x45, 0x00]);
         AppendAscii(bytes, "--------------------------------\n");
 
