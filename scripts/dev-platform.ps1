@@ -314,7 +314,7 @@ function Start-Platform {
     }
 
     Write-Host "Starting BackOffice..."
-    Start-LoggedProcess -name "backoffice" -filePath "npm.cmd" -argumentList @("run", "dev", "--", "--host", "127.0.0.1") -workingDirectory $backofficeDir | Out-Null
+    Start-LoggedProcess -name "backoffice" -filePath "cmd.exe" -argumentList @("/d", "/c", "npm.cmd run dev -- --host 127.0.0.1") -workingDirectory $backofficeDir | Out-Null
 
     if (-not (Wait-Http "http://127.0.0.1:5173" 45)) {
         throw "BackOffice did not start. Check .devlogs\backoffice.err.log"
@@ -322,13 +322,8 @@ function Start-Platform {
     Write-Host "BackOffice is ready." -ForegroundColor Green
 
     Write-Host "Starting Flutter POS..."
-    Start-LoggedProcess -name "flutter-pos" -filePath "flutter" -argumentList @(
-        "run",
-        "-d", "windows",
-        "--dart-define=API_BASE_URL=http://127.0.0.1:8080",
-        "--dart-define=POS_AGENT_BASE_URL=http://127.0.0.1:8791",
-        "--dart-define=POS_DEVICE_ID=$deviceId"
-    ) -workingDirectory $posDir | Out-Null
+    $flutterCommand = "flutter run -d windows --dart-define=API_BASE_URL=http://127.0.0.1:8080 --dart-define=POS_AGENT_BASE_URL=http://127.0.0.1:8791 --dart-define=POS_DEVICE_ID=$deviceId"
+    Start-LoggedProcess -name "flutter-pos" -filePath "cmd.exe" -argumentList @("/d", "/c", $flutterCommand) -workingDirectory $posDir | Out-Null
 
     Start-Sleep -Seconds 2
     Start-Process "http://127.0.0.1:5173" | Out-Null
@@ -372,8 +367,16 @@ function Stop-Platform {
     Write-Host "Restaurant Platform stopped." -ForegroundColor Green
 }
 
-switch ($Action) {
-    "Start" { Start-Platform }
-    "Stop" { Stop-Platform }
-    "Status" { Show-Status }
+try {
+    switch ($Action) {
+        "Start" { Start-Platform }
+        "Stop" { Stop-Platform }
+        "Status" { Show-Status }
+    }
+}
+catch {
+    Write-Host ""
+    Write-Host ("ERROR: " + $_.Exception.Message) -ForegroundColor Red
+    Write-Host ("Logs: " + $logsDir)
+    exit 1
 }
