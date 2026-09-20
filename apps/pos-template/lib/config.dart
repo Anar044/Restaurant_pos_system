@@ -19,7 +19,12 @@ class AppConfig {
     defaultValue: 'AZN',
   );
 
-  // Development seed restaurant only. Later this comes from device provisioning.
+  // Development identifiers only. Later both come from device provisioning.
   static const developmentRestaurantId =
       '11111111-1111-1111-1111-111111111111';
+
+  static const posDeviceId = String.fromEnvironment(
+    'POS_DEVICE_ID',
+    defaultValue: '01a0b072-5a20-7a10-add0-4f890c477588',
+  );
 }
