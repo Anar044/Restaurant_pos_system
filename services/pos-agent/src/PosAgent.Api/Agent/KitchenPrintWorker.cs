@@ -109,31 +109,51 @@ public sealed class KitchenPrintWorker(
                                 job.Id);
                         }
 
-                        try
-                        {
-                            await nodeClient.CompletePrintJobAsync(
-                                restaurantId,
-                                deviceId,
-                                job.Id,
-                                success: true,
-                                error: null,
-                                stoppingToken);
+                        var acknowledged = false;
+                        Exception? lastAckError = null;
 
-                            logger.LogInformation(
-                                "Kitchen print job {PrintJobId} acknowledged as printed.",
-                                job.Id);
-                        }
-                        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                        for (var ackAttempt = 1; ackAttempt <= 3 && !acknowledged; ackAttempt++)
                         {
-                            throw;
+                            try
+                            {
+                                await nodeClient.CompletePrintJobAsync(
+                                    restaurantId,
+                                    deviceId,
+                                    job.Id,
+                                    success: true,
+                                    error: null,
+                                    stoppingToken);
+
+                                acknowledged = true;
+                                logger.LogInformation(
+                                    "Kitchen print job {PrintJobId} acknowledged as printed.",
+                                    job.Id);
+                            }
+                            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                            {
+                                throw;
+                            }
+                            catch (Exception ackError)
+                            {
+                                lastAckError = ackError;
+                                logger.LogWarning(
+                                    ackError,
+                                    "Kitchen print job {PrintJobId} acknowledgement attempt {AckAttempt}/3 failed.",
+                                    job.Id,
+                                    ackAttempt);
+
+                                if (ackAttempt < 3)
+                                    await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
+                            }
                         }
-                        catch (Exception ackError)
+
+                        if (!acknowledged)
                         {
-                            // IMPORTANT: physical printing already succeeded. Do not turn this
-                            // into a failed print job and do not print it again.
-                            logger.LogWarning(
-                                ackError,
-                                "Kitchen print job {PrintJobId} was physically printed, but Restaurant Node acknowledgement failed. The local deduplication receipt will prevent duplicate printing on retry.",
+                            // IMPORTANT: physical printing already succeeded. Never report it
+                            // as FAILED, because that can cause the same ticket to be printed again.
+                            logger.LogError(
+                                lastAckError,
+                                "Kitchen print job {PrintJobId} was physically printed, but acknowledgement failed after 3 attempts. The job remains PRINTING and will not be auto-printed again.",
                                 job.Id);
                         }
                     }
