@@ -29,6 +29,7 @@ public static class OrderEndpoints
 
         group.MapGet("/history", async (
             Guid? shiftId,
+            int? orderNumber,
             int? take,
             ClaimsPrincipal user,
             RestaurantDbContext db,
@@ -52,6 +53,9 @@ public static class OrderEndpoints
                 query = query.Where(x =>
                     x.Payments.Any(payment => payment.ShiftId == shiftId.Value));
             }
+
+            if (orderNumber.HasValue)
+                query = query.Where(x => x.DisplayNumber == orderNumber.Value);
 
             var orders = await query
                 .OrderByDescending(x => x.ClosedAt ?? x.UpdatedAt)
