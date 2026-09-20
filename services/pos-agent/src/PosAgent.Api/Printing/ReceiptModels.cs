@@ -17,6 +17,8 @@ public sealed record ReceiptPrintRequest(
     decimal Total,
     string? PaymentMethod,
     decimal? PaidAmount,
+    decimal? CashReceived,
+    decimal? ChangeAmount,
     DateTimeOffset? CompletedAt,
     IReadOnlyList<ReceiptLineRequest> Items);
 
