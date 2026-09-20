@@ -62,6 +62,9 @@ public static class PaymentEndpoints
             if (order.Items.Count == 0 || order.Total <= 0)
                 return Results.Conflict(new { message = "Order has no payable total." });
 
+            if (order.Items.Any(x => x.Status == OrderItemStatus.New))
+                return Results.Conflict(new { message = "Send all order items to the kitchen before payment." });
+
             var completedTotal = order.Payments
                 .Where(x => x.Status == PaymentStatus.Completed)
                 .Sum(x => x.Amount);
