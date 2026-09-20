@@ -12,6 +12,7 @@ import {
 } from './api';
 import { DevicesPage } from './DevicesPage';
 import { EmployeesPage } from './EmployeesPage';
+import { FinancePage } from './FinancePage';
 import { HallsPage } from './HallsPage';
 import { KitchenPage } from './KitchenPage';
 import { MenuPage } from './MenuPage';
@@ -19,7 +20,7 @@ import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'halls' | 'menu' | 'kitchen' | 'employees' | 'devices';
+type PageKey = 'overview' | 'halls' | 'menu' | 'kitchen' | 'employees' | 'devices' | 'finance';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -158,6 +159,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'kitchen', label: 'Кухня', icon: '◫', ready: true },
     { key: 'employees', label: 'Сотрудники', icon: '◎', ready: true },
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
+    { key: 'finance', label: 'Оплаты и смены', icon: '₼', ready: true },
   ];
 
   return (
@@ -236,6 +238,8 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             <EmployeesPage token={session.token} currentEmployeeId={session.employeeId} />
           ) : page === 'devices' ? (
             <DevicesPage token={session.token} />
+          ) : page === 'finance' ? (
+            <FinancePage token={session.token} />
           ) : (
             <ComingSoon page={navItems.find((x) => x.key === page)?.label ?? 'Раздел'} />
           )}
