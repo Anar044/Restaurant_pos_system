@@ -497,7 +497,11 @@ public static class OrderEndpoints
         order.CreatedAt,
         order.UpdatedAt,
         order.ClosedAt,
-        payments = order.Payments.OrderBy(x => x.CreatedAt).Select(x => new
+        payments = order.Payments
+            .GroupBy(x => x.Id)
+            .Select(group => group.First())
+            .OrderBy(x => x.CreatedAt)
+            .Select(x => new
         {
             x.Id,
             x.ShiftId,
