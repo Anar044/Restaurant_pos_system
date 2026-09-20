@@ -167,6 +167,22 @@ class PosApiClient {
     return OrderDto.fromJson(_decode(response));
   }
 
+  Future<List<OrderHistoryItemDto>> getOrderHistory({
+    String? shiftId,
+    int take = 50,
+  }) async {
+    final query = <String, String>{
+      'take': take.toString(),
+      if (shiftId != null && shiftId.isNotEmpty) 'shiftId': shiftId,
+    };
+    final uri = _uri('/api/v1/orders/history').replace(queryParameters: query);
+    final response = await _http.get(uri, headers: _headers);
+    final data = _decode(response);
+    return ((data['orders'] as List<dynamic>?) ?? const [])
+        .map((e) => OrderHistoryItemDto.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<OrderDto> createOrder({int guestCount = 1, String? tableId}) async {
     final response = await _http.post(
       _uri('/api/v1/orders'),
@@ -662,6 +678,28 @@ class PaymentResultDto {
         payment: PaymentDto.fromJson(json['payment'] as Map<String, dynamic>),
         order: OrderDto.fromJson(json['order'] as Map<String, dynamic>),
         remaining: (json['remaining'] as num).toDouble(),
+      );
+}
+
+class OrderHistoryItemDto {
+  const OrderHistoryItemDto({
+    required this.order,
+    required this.cashierName,
+    this.hallName,
+    this.tableName,
+  });
+
+  final OrderDto order;
+  final String cashierName;
+  final String? hallName;
+  final String? tableName;
+
+  factory OrderHistoryItemDto.fromJson(Map<String, dynamic> json) =>
+      OrderHistoryItemDto(
+        order: OrderDto.fromJson(json['order'] as Map<String, dynamic>),
+        cashierName: json['cashierName'] as String? ?? 'Employee',
+        hallName: json['hallName'] as String?,
+        tableName: json['tableName'] as String?,
       );
 }
 
