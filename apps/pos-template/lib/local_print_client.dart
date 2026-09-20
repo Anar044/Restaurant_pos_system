@@ -111,6 +111,7 @@ class PosAgentClient {
     double? cashReceived,
     double? changeAmount,
     DateTime? completedAt,
+    bool isCopy = false,
   }) async {
     final response = await _http.post(
       _uri('/api/v1/print/receipt'),
@@ -130,6 +131,7 @@ class PosAgentClient {
         'changeAmount': changeAmount,
         'completedAt': completedAt?.toUtc().toIso8601String(),
         'items': items.map((item) => item.toJson()).toList(),
+        'isCopy': isCopy,
       }),
     ).timeout(const Duration(seconds: 15));
 
