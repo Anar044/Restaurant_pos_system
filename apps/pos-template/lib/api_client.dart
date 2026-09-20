@@ -212,11 +212,64 @@ class PosApiClient {
     return OrderDto.fromJson(_decode(response));
   }
 
-  Future<OrderDto> addItem(String orderId, String productId) async {
+  Future<OrderDto> addItem(
+    String orderId,
+    String productId, {
+    String? comment,
+  }) async {
     final response = await _http.post(
       _uri('/api/v1/orders/$orderId/items'),
       headers: _headers,
-      body: jsonEncode({'productId': productId, 'quantity': 1}),
+      body: jsonEncode({
+        'productId': productId,
+        'quantity': 1,
+        if (comment != null && comment.trim().isNotEmpty)
+          'comment': comment.trim(),
+      }),
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> updateGuestCount(String orderId, int guestCount) async {
+    final response = await _http.put(
+      _uri('/api/v1/orders/$orderId/guest-count'),
+      headers: _headers,
+      body: jsonEncode({'guestCount': guestCount}),
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> moveOrder(String orderId, String tableId) async {
+    final response = await _http.put(
+      _uri('/api/v1/orders/$orderId/table'),
+      headers: _headers,
+      body: jsonEncode({'tableId': tableId}),
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> updateItemComment(
+    String orderId,
+    String itemId,
+    String? comment,
+  ) async {
+    final response = await _http.put(
+      _uri('/api/v1/orders/$orderId/items/$itemId/comment'),
+      headers: _headers,
+      body: jsonEncode({'comment': comment}),
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> voidItem(
+    String orderId,
+    String itemId,
+    String reason,
+  ) async {
+    final response = await _http.post(
+      _uri('/api/v1/orders/$orderId/items/$itemId/void'),
+      headers: _headers,
+      body: jsonEncode({'reason': reason}),
     );
     return OrderDto.fromJson(_decode(response));
   }
@@ -635,6 +688,8 @@ class OrderLineDto {
     required this.lineTotal,
     required this.status,
     this.sentAt,
+    this.voidedAt,
+    this.comment,
   });
 
   final String id;
@@ -645,6 +700,8 @@ class OrderLineDto {
   final double lineTotal;
   final String status;
   final DateTime? sentAt;
+  final DateTime? voidedAt;
+  final String? comment;
 
   factory OrderLineDto.fromJson(Map<String, dynamic> json) => OrderLineDto(
         id: json['id'] as String,
@@ -654,9 +711,13 @@ class OrderLineDto {
         unitPrice: (json['unitPrice'] as num).toDouble(),
         lineTotal: (json['lineTotal'] as num).toDouble(),
         status: json['status'] as String,
+        comment: json['comment'] as String?,
         sentAt: json['sentAt'] == null
             ? null
             : DateTime.tryParse(json['sentAt'] as String),
+        voidedAt: json['voidedAt'] == null
+            ? null
+            : DateTime.tryParse(json['voidedAt'] as String),
       );
 }
 
