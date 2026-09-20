@@ -127,7 +127,7 @@ public static class BackOfficeFinanceEndpoints
                     x.id,
                     x.deviceId,
                     x.deviceName,
-                    x.openedAt
+                    openedAt = x.OpenedAt
                 })
                 .ToArray();
 
