@@ -212,11 +212,34 @@ function Start-Postgres {
 }
 
 function Ensure-PosProject {
-    if (Test-Path (Join-Path $posDir "pubspec.yaml")) {
+    $templateVersionPath = Join-Path $repoRoot "apps\pos-template\.template-version"
+    $generatedVersionPath = Join-Path $posDir ".template-version"
+
+    $templateVersion = if (Test-Path $templateVersionPath) {
+        (Get-Content $templateVersionPath -Raw).Trim()
+    } else {
+        ""
+    }
+
+    $generatedVersion = if (Test-Path $generatedVersionPath) {
+        (Get-Content $generatedVersionPath -Raw).Trim()
+    } else {
+        ""
+    }
+
+    $missing = -not (Test-Path (Join-Path $posDir "pubspec.yaml"))
+    $outdated = -not $missing -and $templateVersion -ne $generatedVersion
+
+    if (-not $missing -and -not $outdated) {
         return
     }
 
-    Write-Host "Generated Flutter POS is missing. Creating apps\pos..."
+    if ($missing) {
+        Write-Host "Generated Flutter POS is missing. Creating apps\pos..."
+    } else {
+        Write-Host "Flutter POS template changed. Regenerating apps\pos..."
+    }
+
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot "scripts\create-pos.ps1")
     if ($LASTEXITCODE -ne 0) {
         throw "Could not generate Flutter POS."
