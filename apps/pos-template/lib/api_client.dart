@@ -248,6 +248,22 @@ class PosApiClient {
     return OrderDto.fromJson(_decode(response));
   }
 
+  Future<TransferOrderItemsResultDto> transferOrderItems({
+    required String orderId,
+    required String targetTableId,
+    required List<String> itemIds,
+  }) async {
+    final response = await _http.post(
+      _uri('/api/v1/orders/$orderId/transfer-items'),
+      headers: _headers,
+      body: jsonEncode({
+        'targetTableId': targetTableId,
+        'itemIds': itemIds,
+      }),
+    );
+    return TransferOrderItemsResultDto.fromJson(_decode(response));
+  }
+
   Future<OrderDto> updateItemComment(
     String orderId,
     String itemId,
@@ -785,6 +801,32 @@ class PaymentResultDto {
         payment: PaymentDto.fromJson(json['payment'] as Map<String, dynamic>),
         order: OrderDto.fromJson(json['order'] as Map<String, dynamic>),
         remaining: (json['remaining'] as num).toDouble(),
+      );
+}
+
+class TransferOrderItemsResultDto {
+  const TransferOrderItemsResultDto({
+    required this.sourceOrder,
+    required this.targetOrder,
+    required this.targetCreated,
+    required this.movedItemIds,
+  });
+
+  final OrderDto sourceOrder;
+  final OrderDto targetOrder;
+  final bool targetCreated;
+  final List<String> movedItemIds;
+
+  factory TransferOrderItemsResultDto.fromJson(Map<String, dynamic> json) =>
+      TransferOrderItemsResultDto(
+        sourceOrder:
+            OrderDto.fromJson(json['sourceOrder'] as Map<String, dynamic>),
+        targetOrder:
+            OrderDto.fromJson(json['targetOrder'] as Map<String, dynamic>),
+        targetCreated: json['targetCreated'] as bool? ?? false,
+        movedItemIds: ((json['movedItemIds'] as List<dynamic>?) ?? const [])
+            .map((value) => value.toString())
+            .toList(),
       );
 }
 
