@@ -90,7 +90,7 @@ public static class BackOfficeKitchenEndpoints
             var availablePrinters = await (
                 from printer in db.Printers.AsNoTracking()
                 join device in db.Devices.AsNoTracking()
-                    on printer.HostDeviceId equals device.Id
+                    on printer.HostDeviceId equals (Guid?)device.Id
                 where printer.RestaurantId == restaurantId &&
                       printer.IsConfigured &&
                       printer.IsActive &&
