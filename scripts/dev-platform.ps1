@@ -68,6 +68,17 @@ function Test-Http([string]$url) {
     }
 }
 
+function Wait-ProcessName([string]$name, [int]$seconds) {
+    $deadline = (Get-Date).AddSeconds($seconds)
+    while ((Get-Date) -lt $deadline) {
+        if ($null -ne (Get-Process $name -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+            return $true
+        }
+        Start-Sleep -Milliseconds 800
+    }
+    return $false
+}
+
 function Get-ListeningPid([int]$port) {
     try {
         $connection = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -359,13 +370,32 @@ function Start-Platform {
     $flutterCommand = "flutter run -d windows --dart-define=API_BASE_URL=http://127.0.0.1:8080 --dart-define=POS_AGENT_BASE_URL=http://127.0.0.1:8791 --dart-define=POS_DEVICE_ID=$deviceId"
     Start-LoggedProcess -name "flutter-pos" -filePath "cmd.exe" -argumentList @("/d", "/c", $flutterCommand) -workingDirectory $posDir | Out-Null
 
-    Start-Sleep -Seconds 2
+    Write-Host "Waiting for Flutter POS window (first build can take up to 90 seconds)..."
+    $flutterReady = Wait-ProcessName "restaurant_pos" 90
+
     Start-Process "http://127.0.0.1:5173" | Out-Null
+
+    if (-not $flutterReady) {
+        Write-Host ""
+        Write-Host "Flutter POS did not start." -ForegroundColor Yellow
+        $flutterErr = Join-Path $logsDir "flutter-pos.err.log"
+        $flutterOut = Join-Path $logsDir "flutter-pos.log"
+        if (Test-Path $flutterErr) {
+            Get-Content $flutterErr -Tail 60 | ForEach-Object { Write-Host $_ }
+        }
+        if (Test-Path $flutterOut) {
+            Get-Content $flutterOut -Tail 60 | ForEach-Object { Write-Host $_ }
+        }
+    }
 
     Show-Status
 
     Write-Host ""
-    Write-Host "Platform started. You can close this window." -ForegroundColor Green
+    if ($flutterReady) {
+        Write-Host "Platform started. You can close this window." -ForegroundColor Green
+    } else {
+        Write-Host "Core services started, but Flutter POS needs attention." -ForegroundColor Yellow
+    }
     Write-Host "PIN: 1234"
 }
 
