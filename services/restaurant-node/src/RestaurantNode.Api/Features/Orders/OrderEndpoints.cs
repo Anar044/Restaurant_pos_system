@@ -27,6 +27,90 @@ public static class OrderEndpoints
             return Results.Ok(new { orders = orders.Select(ToDto) });
         }).RequireAuthorization("orders.read");
 
+        group.MapGet("/history", async (
+            Guid? shiftId,
+            int? take,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out _))
+                return Results.Unauthorized();
+
+            var limit = Math.Clamp(take ?? 50, 1, 100);
+
+            var query = db.Orders
+                .AsNoTracking()
+                .Include(x => x.Items)
+                .Include(x => x.Payments)
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    (x.Status == OrderStatus.Closed || x.Status == OrderStatus.Paid));
+
+            if (shiftId.HasValue)
+            {
+                query = query.Where(x =>
+                    x.Payments.Any(payment => payment.ShiftId == shiftId.Value));
+            }
+
+            var orders = await query
+                .OrderByDescending(x => x.ClosedAt ?? x.UpdatedAt)
+                .Take(limit)
+                .ToListAsync(ct);
+
+            var tableIds = orders
+                .Where(x => x.TableId.HasValue)
+                .Select(x => x.TableId!.Value)
+                .Distinct()
+                .ToArray();
+
+            var tableRows = await (
+                from table in db.DiningTables.AsNoTracking()
+                join hall in db.Halls.AsNoTracking() on table.HallId equals hall.Id
+                where table.RestaurantId == restaurantId &&
+                      tableIds.Contains(table.Id)
+                select new
+                {
+                    table.Id,
+                    TableName = table.Name,
+                    HallName = hall.Name
+                })
+                .ToListAsync(ct);
+
+            var tables = tableRows.ToDictionary(x => x.Id);
+
+            var employeeIds = orders
+                .Select(x => x.CreatedByEmployeeId)
+                .Distinct()
+                .ToArray();
+
+            var employees = await db.Employees
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    employeeIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+
+            return Results.Ok(new
+            {
+                orders = orders.Select(order =>
+                {
+                    var hasTable = order.TableId.HasValue &&
+                                   tables.TryGetValue(order.TableId.Value, out var tableInfo);
+
+                    return new
+                    {
+                        order = ToDto(order),
+                        hallName = hasTable ? tableInfo!.HallName : null,
+                        tableName = hasTable ? tableInfo!.TableName : null,
+                        cashierName = employees.GetValueOrDefault(
+                            order.CreatedByEmployeeId,
+                            "Employee")
+                    };
+                })
+            });
+        }).RequireAuthorization("orders.read");
+
         group.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
             if (!TryClaims(user, out var restaurantId, out _)) return Results.Unauthorized();
