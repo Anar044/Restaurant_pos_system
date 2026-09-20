@@ -5,6 +5,7 @@ namespace PosAgent.Api.Agent;
 public sealed class KitchenPrintWorker(
     RestaurantNodeClient nodeClient,
     KitchenPrintJobExecutor executor,
+    PrintedJobStore printedJobStore,
     IConfiguration configuration,
     ILogger<KitchenPrintWorker> logger) : BackgroundService
 {
@@ -44,9 +45,72 @@ public sealed class KitchenPrintWorker(
 
                     foreach (var job in jobs)
                     {
+                        var alreadyPrinted = await printedJobStore.ContainsAsync(job.Id, stoppingToken);
+
+                        if (!alreadyPrinted)
+                        {
+                            try
+                            {
+                                await executor.ExecuteAsync(job, stoppingToken);
+
+                                // Persist locally BEFORE acknowledging Restaurant Node.
+                                // If the acknowledgement fails, a later lease retry must not
+                                // send the same physical ticket to the printer again.
+                                await printedJobStore.MarkPrintedAsync(job.Id, stoppingToken);
+
+                                logger.LogInformation(
+                                    "Kitchen print job {PrintJobId} physically printed on {PrinterName} ({PrinterAddress}).",
+                                    job.Id,
+                                    job.Printer.Name,
+                                    job.Printer.Address);
+                            }
+                            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.LogWarning(
+                                    ex,
+                                    "Kitchen print job {PrintJobId} failed before a successful physical print on {PrinterName}. Attempt {Attempt}.",
+                                    job.Id,
+                                    job.Printer.Name,
+                                    job.Attempts);
+
+                                try
+                                {
+                                    await nodeClient.CompletePrintJobAsync(
+                                        restaurantId,
+                                        deviceId,
+                                        job.Id,
+                                        success: false,
+                                        error: ex.Message,
+                                        stoppingToken);
+                                }
+                                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                                {
+                                    throw;
+                                }
+                                catch (Exception reportError)
+                                {
+                                    logger.LogWarning(
+                                        reportError,
+                                        "Could not report physical print failure for kitchen job {PrintJobId}.",
+                                        job.Id);
+                                }
+
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            logger.LogWarning(
+                                "Kitchen print job {PrintJobId} was already physically printed on this POS. Skipping duplicate output and retrying acknowledgement only.",
+                                job.Id);
+                        }
+
                         try
                         {
-                            await executor.ExecuteAsync(job, stoppingToken);
                             await nodeClient.CompletePrintJobAsync(
                                 restaurantId,
                                 deviceId,
@@ -56,45 +120,21 @@ public sealed class KitchenPrintWorker(
                                 stoppingToken);
 
                             logger.LogInformation(
-                                "Kitchen print job {PrintJobId} printed on {PrinterName} ({PrinterAddress}).",
-                                job.Id,
-                                job.Printer.Name,
-                                job.Printer.Address);
+                                "Kitchen print job {PrintJobId} acknowledged as printed.",
+                                job.Id);
                         }
                         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                         {
                             throw;
                         }
-                        catch (Exception ex)
+                        catch (Exception ackError)
                         {
+                            // IMPORTANT: physical printing already succeeded. Do not turn this
+                            // into a failed print job and do not print it again.
                             logger.LogWarning(
-                                ex,
-                                "Kitchen print job {PrintJobId} failed on {PrinterName}. Attempt {Attempt}.",
-                                job.Id,
-                                job.Printer.Name,
-                                job.Attempts);
-
-                            try
-                            {
-                                await nodeClient.CompletePrintJobAsync(
-                                    restaurantId,
-                                    deviceId,
-                                    job.Id,
-                                    success: false,
-                                    error: ex.Message,
-                                    stoppingToken);
-                            }
-                            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                            {
-                                throw;
-                            }
-                            catch (Exception reportError)
-                            {
-                                logger.LogWarning(
-                                    reportError,
-                                    "Could not report failure for kitchen print job {PrintJobId}.",
-                                    job.Id);
-                            }
+                                ackError,
+                                "Kitchen print job {PrintJobId} was physically printed, but Restaurant Node acknowledgement failed. The local deduplication receipt will prevent duplicate printing on retry.",
+                                job.Id);
                         }
                     }
                 }
@@ -112,7 +152,7 @@ public sealed class KitchenPrintWorker(
 
             try
             {
-                await Task.Delay(hadJobs ? TimeSpan.FromMilliseconds(250) : interval, stoppingToken);
+                await Task.Delay(hadJobs ? TimeSpan.FromSeconds(1) : interval, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
