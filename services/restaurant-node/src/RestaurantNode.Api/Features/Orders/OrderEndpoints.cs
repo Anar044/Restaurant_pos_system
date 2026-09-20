@@ -80,7 +80,9 @@ public static class OrderEndpoints
             var tables = tableRows.ToDictionary(x => x.Id);
 
             var employeeIds = orders
-                .Select(x => x.CreatedByEmployeeId)
+                .SelectMany(order =>
+                    order.Payments.Select(payment => payment.EmployeeId)
+                        .Append(order.CreatedByEmployeeId))
                 .Distinct()
                 .ToArray();
 
@@ -98,6 +100,13 @@ public static class OrderEndpoints
                     var tableInfo = order.TableId.HasValue
                         ? tables.GetValueOrDefault(order.TableId.Value)
                         : null;
+                    var lastPayment = order.Payments
+                        .Where(payment =>
+                            payment.Status == PaymentStatus.Completed ||
+                            payment.Status == PaymentStatus.Refunded)
+                        .OrderBy(payment => payment.CreatedAt)
+                        .LastOrDefault();
+                    var cashierId = lastPayment?.EmployeeId ?? order.CreatedByEmployeeId;
 
                     return new
                     {
@@ -105,7 +114,7 @@ public static class OrderEndpoints
                         hallName = tableInfo?.HallName,
                         tableName = tableInfo?.TableName,
                         cashierName = employees.GetValueOrDefault(
-                            order.CreatedByEmployeeId,
+                            cashierId,
                             "Employee")
                     };
                 })
