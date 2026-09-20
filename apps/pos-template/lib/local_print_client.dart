@@ -108,6 +108,8 @@ class PosAgentClient {
     required List<ReceiptPrintItem> items,
     String? paymentMethod,
     double? paidAmount,
+    double? cashReceived,
+    double? changeAmount,
     DateTime? completedAt,
   }) async {
     final response = await _http.post(
@@ -124,10 +126,12 @@ class PosAgentClient {
         'total': total,
         'paymentMethod': paymentMethod,
         'paidAmount': paidAmount,
+        'cashReceived': cashReceived,
+        'changeAmount': changeAmount,
         'completedAt': completedAt?.toUtc().toIso8601String(),
         'items': items.map((item) => item.toJson()).toList(),
       }),
-    );
+    ).timeout(const Duration(seconds: 15));
 
     final data = _decode(response);
     return LocalReceiptPrintResult.fromJson(data);
