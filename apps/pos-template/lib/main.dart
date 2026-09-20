@@ -472,10 +472,13 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
 
   Future<void> reprintHistoryOrder(OrderHistoryItemDto item) async {
     final paidOrder = item.order;
+    final seen = <String>{};
     final completedPayments = paidOrder.payments
         .where(
           (payment) =>
-              payment.status == 'COMPLETED' || payment.status == 'REFUNDED',
+              (payment.status == 'COMPLETED' ||
+                  payment.status == 'REFUNDED') &&
+              seen.add(payment.id),
         )
         .toList();
 
@@ -484,24 +487,38 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
     }
 
     final totals = <String, double>{};
+    var cashReceived = 0.0;
+    var hasCashReceived = false;
+    var changeAmount = 0.0;
+
     for (final payment in completedPayments) {
       totals.update(
         payment.method,
         (value) => value + payment.amount,
         ifAbsent: () => payment.amount,
       );
+
+      if (payment.method == 'CASH') {
+        if (payment.tenderedAmount != null) {
+          cashReceived += payment.tenderedAmount!;
+          hasCashReceived = true;
+        }
+        changeAmount += payment.changeAmount;
+      }
     }
+
     final paymentSummary = totals.entries
         .map((entry) => '${entry.key} ${entry.value.toStringAsFixed(2)}')
         .join(' + ');
 
-    PaymentDto? cashPayment;
-    for (final payment in completedPayments.reversed) {
-      if (payment.method == 'CASH' && payment.tenderedAmount != null) {
-        cashPayment = payment;
-        break;
-      }
-    }
+    final paymentParts = totals.entries
+        .map(
+          (entry) => ReceiptPaymentPart(
+            method: entry.key,
+            amount: entry.value,
+          ),
+        )
+        .toList();
 
     final groups = CartGroup.fromOrder(paidOrder);
     final result = await widget.printer.printReceipt(
@@ -514,10 +531,10 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
       currencyCode: AppConfig.currencyCode,
       total: paidOrder.total,
       paymentMethod: paymentSummary,
+      payments: paymentParts,
       paidAmount: paidOrder.paidTotal,
-      cashReceived: cashPayment?.tenderedAmount,
-      changeAmount:
-          (cashPayment?.changeAmount ?? 0) > 0 ? cashPayment!.changeAmount : null,
+      cashReceived: hasCashReceived ? cashReceived : null,
+      changeAmount: changeAmount > 0.005 ? changeAmount : null,
       completedAt: completedPayments.last.createdAt,
       isCopy: true,
       items: groups
