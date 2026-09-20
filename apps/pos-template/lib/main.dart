@@ -448,6 +448,57 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
     }
   }
 
+  Future<void> showXReport() async {
+    try {
+      final report = await widget.api.getShiftReport(widget.shift.id);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => _ShiftReportDialog(
+          title: 'X-отчёт',
+          report: report,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('X-отчёт: $e')),
+      );
+    }
+  }
+
+  Future<void> addCashMovement(String type) async {
+    final request = await showDialog<_CashMovementRequest>(
+      context: context,
+      builder: (_) => _CashMovementDialog(type: type),
+    );
+    if (request == null || !mounted) return;
+
+    try {
+      await widget.api.addCashTransaction(
+        shiftId: widget.shift.id,
+        type: type,
+        amount: request.amount,
+        reason: request.reason,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            type == 'DEPOSIT'
+                ? 'Внесение ${request.amount.toStringAsFixed(2)} AZN сохранено.'
+                : 'Изъятие ${request.amount.toStringAsFixed(2)} AZN сохранено.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Операция с кассой: $e')),
+      );
+    }
+  }
+
   Future<void> closeShift() async {
     final controller = TextEditingController(text: '0.00');
     final closingCash = await showDialog<double>(
@@ -493,6 +544,19 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
         closingCash: closingCash,
       );
       if (!mounted) return;
+
+      if (result.report != null) {
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => _ShiftReportDialog(
+            title: 'Z-отчёт · смена закрыта',
+            report: result.report!,
+          ),
+        );
+      }
+
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -523,6 +587,30 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
             ),
           ),
           const SizedBox(width: 8),
+          TextButton.icon(
+            onPressed: showXReport,
+            icon: const Icon(Icons.summarize_outlined),
+            label: const Text('X-отчёт'),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Операции с кассой',
+            onSelected: (value) {
+              if (value == 'DEPOSIT' || value == 'WITHDRAWAL') {
+                addCashMovement(value);
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'DEPOSIT',
+                child: Text('Внесение наличных'),
+              ),
+              PopupMenuItem(
+                value: 'WITHDRAWAL',
+                child: Text('Изъятие наличных'),
+              ),
+            ],
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+          ),
           TextButton.icon(
             onPressed: closeShift,
             icon: const Icon(Icons.lock_outline),
@@ -617,6 +705,259 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _CashMovementRequest {
+  const _CashMovementRequest({
+    required this.amount,
+    required this.reason,
+  });
+
+  final double amount;
+  final String reason;
+}
+
+class _CashMovementDialog extends StatefulWidget {
+  const _CashMovementDialog({required this.type});
+
+  final String type;
+
+  @override
+  State<_CashMovementDialog> createState() => _CashMovementDialogState();
+}
+
+class _CashMovementDialogState extends State<_CashMovementDialog> {
+  final amountController = TextEditingController();
+  final reasonController = TextEditingController();
+  String? error;
+
+  @override
+  void dispose() {
+    amountController.dispose();
+    reasonController.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    final amount = double.tryParse(
+      amountController.text.trim().replaceAll(',', '.'),
+    );
+    final reason = reasonController.text.trim();
+
+    if (amount == null || amount <= 0) {
+      setState(() => error = 'Введите корректную сумму.');
+      return;
+    }
+    if (reason.isEmpty) {
+      setState(() => error = 'Укажите причину.');
+      return;
+    }
+
+    Navigator.of(context).pop(
+      _CashMovementRequest(amount: amount, reason: reason),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final deposit = widget.type == 'DEPOSIT';
+    return AlertDialog(
+      title: Text(deposit ? 'Внесение наличных' : 'Изъятие наличных'),
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: amountController,
+              autofocus: true,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Сумма',
+                suffixText: 'AZN',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'Причина',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (error != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  error!,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: submit,
+          child: Text(deposit ? 'Внести' : 'Изъять'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ShiftReportDialog extends StatelessWidget {
+  const _ShiftReportDialog({
+    required this.title,
+    required this.report,
+  });
+
+  final String title;
+  final ShiftReportDto report;
+
+  String _methodName(String method) {
+    switch (method) {
+      case 'CASH':
+        return 'Наличные';
+      case 'CARD':
+        return 'Карта';
+      default:
+        return 'Другое';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(title),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _ReportRow(
+                label: 'Открытие',
+                value:
+                    '${report.openedAt.toLocal().toString().substring(0, 19)}',
+              ),
+              _ReportRow(
+                label: 'Заказов',
+                value: report.ordersCount.toString(),
+              ),
+              _ReportRow(
+                label: 'Оплат',
+                value: report.paymentsCount.toString(),
+              ),
+              const Divider(height: 24),
+              for (final payment in report.payments)
+                _ReportRow(
+                  label: _methodName(payment.method),
+                  value:
+                      '${payment.net.toStringAsFixed(2)} AZN '
+                      '(продажи ${payment.gross.toStringAsFixed(2)}, '
+                      'возвраты ${payment.refunds.toStringAsFixed(2)})',
+                ),
+              const Divider(height: 24),
+              _ReportRow(
+                label: 'Продажи',
+                value: '${report.grossSales.toStringAsFixed(2)} AZN',
+              ),
+              _ReportRow(
+                label: 'Возвраты',
+                value: '${report.refunds.toStringAsFixed(2)} AZN',
+              ),
+              _ReportRow(
+                label: 'Нетто',
+                value: '${report.netSales.toStringAsFixed(2)} AZN',
+                strong: true,
+              ),
+              const Divider(height: 24),
+              _ReportRow(
+                label: 'Наличные при открытии',
+                value: '${report.openingCash.toStringAsFixed(2)} AZN',
+              ),
+              _ReportRow(
+                label: 'Внесения',
+                value: '${report.deposits.toStringAsFixed(2)} AZN',
+              ),
+              _ReportRow(
+                label: 'Изъятия',
+                value: '${report.withdrawals.toStringAsFixed(2)} AZN',
+              ),
+              _ReportRow(
+                label: 'Ожидается в кассе',
+                value: '${report.expectedCash.toStringAsFixed(2)} AZN',
+                strong: true,
+              ),
+              if (report.closingCash != null)
+                _ReportRow(
+                  label: 'Фактически в кассе',
+                  value: '${report.closingCash!.toStringAsFixed(2)} AZN',
+                ),
+              if (report.cashDifference != null)
+                _ReportRow(
+                  label: 'Разница',
+                  value: '${report.cashDifference!.toStringAsFixed(2)} AZN',
+                  strong: true,
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Закрыть'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReportRow extends StatelessWidget {
+  const _ReportRow({
+    required this.label,
+    required this.value,
+    this.strong = false,
+  });
+
+  final String label;
+  final String value;
+  final bool strong;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = strong
+        ? const TextStyle(fontWeight: FontWeight.w800)
+        : const TextStyle();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Text(label, style: style)),
+          const SizedBox(width: 18),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: style,
+            ),
+          ),
+        ],
       ),
     );
   }
