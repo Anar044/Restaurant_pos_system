@@ -8,6 +8,7 @@ public static class Permissions
     public const string OrdersVoid = "orders.void";
     public const string ShiftsManage = "shifts.manage";
     public const string PaymentsWrite = "payments.write";
+    public const string PaymentsRefund = "payments.refund";
 
     public const string BackOfficeRead = "backoffice.read";
     public const string RestaurantManage = "restaurant.manage";
@@ -25,6 +26,7 @@ public static class Permissions
         OrdersVoid,
         ShiftsManage,
         PaymentsWrite,
+        PaymentsRefund,
         BackOfficeRead,
         RestaurantManage,
         HallsManage,
