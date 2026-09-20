@@ -116,7 +116,7 @@ public static class ReceiptBuilder
             {
                 AppendAscii(bytes, "Payment:\n");
                 foreach (var part in receipt.Payments!)
-                    AppendAscii(bytes, $"  {ToAscii(PaymentLabel(part.Method))}: {Money(part.Amount)} {currency}\n");
+                    AppendAscii(bytes, $"  {PaymentAsciiLabel(part.Method)}: {Money(part.Amount)} {currency}\n");
             }
             else
             {
@@ -168,6 +168,14 @@ public static class ReceiptBuilder
             "CASH" => "Наличные / Cash",
             "CARD" => "Карта / Card",
             _ => Normalize(method, "Другое / Other")
+        };
+
+    private static string PaymentAsciiLabel(string? method) =>
+        method?.Trim().ToUpperInvariant() switch
+        {
+            "CASH" => "Cash",
+            "CARD" => "Card",
+            _ => ToAscii(Normalize(method, "Other"))
         };
 
     private static string Normalize(string? value, string fallback)
