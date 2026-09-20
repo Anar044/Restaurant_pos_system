@@ -1715,31 +1715,58 @@ class _OrderPageState extends State<OrderPage> {
     menuFuture = widget.api.getMenu();
   }
 
+  Future<MenuProduct> _loadFreshProduct(String productId) async {
+    final categories = await widget.api.getMenu();
+
+    if (mounted) {
+      setState(() {
+        menuFuture = Future.value(categories);
+      });
+    }
+
+    for (final category in categories) {
+      for (final product in category.products) {
+        if (product.id == productId) return product;
+      }
+    }
+
+    throw StateError('Блюдо больше не доступно в меню.');
+  }
+
   Future<void> addProduct(MenuProduct product) async {
     if (mutating || printing || paying) return;
-
-    List<ModifierSelectionDto> selections = const [];
-    if (product.hasModifiers) {
-      final selected = await showModifierDialog(product);
-      if (selected == null || !mounted) return;
-      selections = selected;
-    }
 
     setState(() {
       mutating = true;
       error = null;
     });
+
     try {
+      final freshProduct = await _loadFreshProduct(product.id);
+      if (!mounted) return;
+
+      List<ModifierSelectionDto> selections = const [];
+      if (freshProduct.hasModifiers) {
+        final selected = await showModifierDialog(freshProduct);
+        if (selected == null || !mounted) return;
+        selections = selected;
+      }
+
       var current =
           order ?? await widget.api.createOrder(tableId: widget.table.id);
       current = await widget.api.addItem(
         current.id,
-        product.id,
+        freshProduct.id,
         modifiers: selections,
       );
+
       if (mounted) setState(() => order = current);
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) {
+        setState(() {
+          error = e.toString().replaceFirst('Bad state: ', '');
+        });
+      }
     } finally {
       if (mounted) setState(() => mutating = false);
     }
@@ -1950,8 +1977,7 @@ class _OrderPageState extends State<OrderPage> {
                                                   children: [
                                                     Icon(
                                                       quantity > 0
-                                                          ? Icons
-                                                              .check_circle
+                                                          ? Icons.check_circle
                                                           : Icons
                                                               .radio_button_unchecked,
                                                       color: quantity > 0
@@ -2120,46 +2146,35 @@ class _OrderPageState extends State<OrderPage> {
   Future<void> incrementGroup(CartGroup group) async {
     if (mutating || printing || paying || order == null) return;
 
-    if (group.hasModifiers) {
-      try {
-        final categories = await menuFuture;
-        MenuProduct? product;
-        for (final category in categories) {
-          for (final candidate in category.products) {
-            if (candidate.id == group.productId) {
-              product = candidate;
-              break;
-            }
-          }
-          if (product != null) break;
-        }
-        if (product == null) {
-          if (mounted) {
-            setState(() => error = 'Блюдо больше не найдено в меню.');
-          }
-          return;
-        }
-        await addProduct(product);
-        return;
-      } catch (e) {
-        if (mounted) setState(() => error = 'Модификаторы: $e');
-        return;
-      }
-    }
-
     setState(() {
       mutating = true;
       error = null;
     });
+
     try {
+      final product = await _loadFreshProduct(group.productId);
+      if (!mounted) return;
+
+      List<ModifierSelectionDto> selections = const [];
+      if (product.hasModifiers) {
+        final selected = await showModifierDialog(product);
+        if (selected == null || !mounted) return;
+        selections = selected;
+      }
+
       final updated = await widget.api.addItem(
         order!.id,
         group.productId,
         comment: group.comment,
+        modifiers: selections,
       );
       if (mounted) setState(() => order = updated);
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) {
+        setState(() {
+          error = e.toString().replaceFirst('Bad state: ', '');
+        });
+      }
     } finally {
       if (mounted) setState(() => mutating = false);
     }
