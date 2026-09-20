@@ -859,40 +859,21 @@ class _OrderPageState extends State<OrderPage> {
       return;
     }
 
-    final method = await showDialog<String>(
+    final request = await showDialog<_PaymentRequest>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(
-          'Оплата заказа #${current.displayNumber}',
-        ),
-        content: Text(
-          'К оплате: ${current.remaining.toStringAsFixed(2)} AZN',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Отмена'),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: () => Navigator.pop(dialogContext, 'CASH'),
-            icon: const Icon(Icons.payments_outlined),
-            label: const Text('Наличные'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(dialogContext, 'CARD'),
-            icon: const Icon(Icons.credit_card),
-            label: const Text('Карта'),
-          ),
-        ],
+      builder: (dialogContext) => _PaymentDialog(
+        orderNumber: current.displayNumber,
+        total: current.total,
+        paid: current.paidTotal,
+        remaining: current.remaining,
       ),
     );
 
-    if (method == null || !mounted) return;
-    await pay(method);
+    if (request == null || !mounted) return;
+    await pay(request);
   }
 
-  Future<void> pay(String method) async {
+  Future<void> pay(_PaymentRequest request) async {
     final current = order;
     if (current == null || current.remaining <= 0 || paying) return;
 
@@ -905,8 +886,9 @@ class _OrderPageState extends State<OrderPage> {
       final result = await widget.api.payOrder(
         orderId: current.id,
         shiftId: widget.shift.id,
-        method: method,
-        amount: current.remaining,
+        method: request.method,
+        amount: request.amount,
+        tenderedAmount: request.tenderedAmount,
       );
 
       if (!mounted) return;
@@ -914,12 +896,57 @@ class _OrderPageState extends State<OrderPage> {
 
       if (result.order.status == 'PAID') {
         await printPaidReceiptAndClose(result.order, result.payment);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Оплата ${result.payment.amount.toStringAsFixed(2)} AZN сохранена. '
+              'Осталось: ${result.remaining.toStringAsFixed(2)} AZN',
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) setState(() => error = 'Оплата: $e');
     } finally {
       if (mounted) setState(() => paying = false);
     }
+  }
+
+  String _paymentSummary(OrderDto paidOrder) {
+    final totals = <String, double>{};
+    for (final entry in paidOrder.payments) {
+      if (entry.status != 'COMPLETED' && entry.status != 'REFUNDED') continue;
+      totals.update(
+        entry.method,
+        (value) => value + entry.amount,
+        ifAbsent: () => entry.amount,
+      );
+    }
+
+    if (totals.isEmpty) return 'PAID';
+    return totals.entries
+        .map((entry) => '${entry.key} ${entry.value.toStringAsFixed(2)}')
+        .join(' + ');
+  }
+
+  PaymentDto? _lastCashPayment(OrderDto paidOrder) {
+    for (final entry in paidOrder.payments.reversed) {
+      if (entry.method == 'CASH' &&
+          (entry.status == 'COMPLETED' || entry.status == 'REFUNDED') &&
+          entry.tenderedAmount != null) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  double? _cashReceivedForReceipt(OrderDto paidOrder) =>
+      _lastCashPayment(paidOrder)?.tenderedAmount;
+
+  double? _changeForReceipt(OrderDto paidOrder) {
+    final value = _lastCashPayment(paidOrder)?.changeAmount ?? 0;
+    return value > 0 ? value : null;
   }
 
   Future<void> retryPaidFinalize() async {
@@ -955,8 +982,10 @@ class _OrderPageState extends State<OrderPage> {
         guestCount: paidOrder.guestCount,
         currencyCode: AppConfig.currencyCode,
         total: paidOrder.total,
-        paymentMethod: payment.method,
+        paymentMethod: _paymentSummary(paidOrder),
         paidAmount: paidOrder.paidTotal,
+        cashReceived: _cashReceivedForReceipt(paidOrder),
+        changeAmount: _changeForReceipt(paidOrder),
         completedAt: payment.createdAt,
         items: groups
             .map(
@@ -1035,6 +1064,8 @@ class _OrderPageState extends State<OrderPage> {
           }
 
           final busy = mutating || printing || paying;
+          final editingLocked =
+              order?.status == 'PARTIALLY_PAID' || (order?.isPaid ?? false);
           return LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= 1000;
@@ -1044,7 +1075,7 @@ class _OrderPageState extends State<OrderPage> {
                 onCategory: (category) =>
                     setState(() => selectedCategoryId = category.id),
                 onProduct: addProduct,
-                disabled: busy,
+                disabled: busy || editingLocked,
               );
               final cart = _OrderPane(
                 order: order,
@@ -1076,6 +1107,235 @@ class _OrderPageState extends State<OrderPage> {
           );
         },
       ),
+    );
+  }
+}
+
+class _PaymentRequest {
+  const _PaymentRequest({
+    required this.method,
+    required this.amount,
+    this.tenderedAmount,
+  });
+
+  final String method;
+  final double amount;
+  final double? tenderedAmount;
+}
+
+class _PaymentDialog extends StatefulWidget {
+  const _PaymentDialog({
+    required this.orderNumber,
+    required this.total,
+    required this.paid,
+    required this.remaining,
+  });
+
+  final int orderNumber;
+  final double total;
+  final double paid;
+  final double remaining;
+
+  @override
+  State<_PaymentDialog> createState() => _PaymentDialogState();
+}
+
+class _PaymentDialogState extends State<_PaymentDialog> {
+  late final TextEditingController amountController;
+  late final TextEditingController cashController;
+  String method = 'CASH';
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.remaining.toStringAsFixed(2);
+    amountController = TextEditingController(text: initial);
+    cashController = TextEditingController(text: initial);
+    amountController.addListener(_refresh);
+    cashController.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    amountController
+      ..removeListener(_refresh)
+      ..dispose();
+    cashController
+      ..removeListener(_refresh)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() => error = null);
+  }
+
+  double? _parse(TextEditingController controller) =>
+      double.tryParse(controller.text.trim().replaceAll(',', '.'));
+
+  double get _amount => _parse(amountController) ?? 0;
+  double get _cashReceived => _parse(cashController) ?? 0;
+  double get _change =>
+      method == 'CASH' && _cashReceived > _amount
+          ? _cashReceived - _amount
+          : 0;
+
+  void submit() {
+    final amount = _amount;
+    if (amount <= 0 || amount > widget.remaining + 0.0001) {
+      setState(() {
+        error =
+            'Сумма оплаты должна быть больше 0 и не превышать остаток '
+            '${widget.remaining.toStringAsFixed(2)} AZN.';
+      });
+      return;
+    }
+
+    double? tendered;
+    if (method == 'CASH') {
+      tendered = _cashReceived;
+      if (tendered < amount) {
+        setState(() => error = 'Получено наличными меньше суммы оплаты.');
+        return;
+      }
+    }
+
+    Navigator.of(context).pop(
+      _PaymentRequest(
+        method: method,
+        amount: amount,
+        tenderedAmount: tendered,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Оплата заказа #${widget.orderNumber}'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Text('Итого'),
+                const Spacer(),
+                Text('${widget.total.toStringAsFixed(2)} AZN'),
+              ],
+            ),
+            if (widget.paid > 0) ...[
+              const SizedBox(height: 5),
+              Row(
+                children: [
+                  const Text('Уже оплачено'),
+                  const Spacer(),
+                  Text('${widget.paid.toStringAsFixed(2)} AZN'),
+                ],
+              ),
+            ],
+            const SizedBox(height: 5),
+            Row(
+              children: [
+                const Text(
+                  'Осталось',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                Text(
+                  '${widget.remaining.toStringAsFixed(2)} AZN',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(
+                  value: 'CASH',
+                  icon: Icon(Icons.payments_outlined),
+                  label: Text('Наличные'),
+                ),
+                ButtonSegment(
+                  value: 'CARD',
+                  icon: Icon(Icons.credit_card),
+                  label: Text('Карта'),
+                ),
+              ],
+              selected: {method},
+              onSelectionChanged: (selection) {
+                setState(() {
+                  method = selection.first;
+                  error = null;
+                  if (method == 'CASH' && _cashReceived < _amount) {
+                    cashController.text = amountController.text;
+                  }
+                });
+              },
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: amountController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Сумма этой оплаты',
+                suffixText: 'AZN',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (method == 'CASH') ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: cashController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Получено от клиента',
+                  suffixText: 'AZN',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Text('Сдача'),
+                  const Spacer(),
+                  Text(
+                    '${_change.toStringAsFixed(2)} AZN',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ],
+              ),
+            ],
+            if (error != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton.icon(
+          onPressed: submit,
+          icon: Icon(
+            method == 'CASH'
+                ? Icons.payments_outlined
+                : Icons.credit_card,
+          ),
+          label: const Text('Оплатить'),
+        ),
+      ],
     );
   }
 }
@@ -1194,6 +1454,8 @@ class _OrderPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final groups = CartGroup.fromOrder(order);
+    final editingLocked =
+        order?.status == 'PARTIALLY_PAID' || (order?.isPaid ?? false);
     return Material(
       color: Theme.of(context).colorScheme.surface,
       elevation: 3,
@@ -1251,7 +1513,7 @@ class _OrderPane extends StatelessWidget {
                                 ),
                               ),
                               IconButton.filledTonal(
-                                onPressed: busy || !canRemove ? null : () => onMinus(group),
+                                onPressed: busy || editingLocked || !canRemove ? null : () => onMinus(group),
                                 icon: const Icon(Icons.remove),
                               ),
                               Padding(
@@ -1262,7 +1524,7 @@ class _OrderPane extends StatelessWidget {
                                 ),
                               ),
                               IconButton.filled(
-                                onPressed: busy ? null : () => onPlus(group),
+                                onPressed: busy || editingLocked ? null : () => onPlus(group),
                                 icon: const Icon(Icons.add),
                               ),
                             ],
@@ -1282,6 +1544,27 @@ class _OrderPane extends StatelessWidget {
                 ),
               ],
             ),
+            if ((order?.paidTotal ?? 0) > 0) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Text('Оплачено'),
+                  const Spacer(),
+                  Text('${order!.paidTotal.toStringAsFixed(2)} AZN'),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Row(
+                children: [
+                  const Text('Осталось'),
+                  const Spacer(),
+                  Text(
+                    '${order!.remaining.toStringAsFixed(2)} AZN',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: busy ||
