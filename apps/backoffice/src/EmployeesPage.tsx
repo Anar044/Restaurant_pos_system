@@ -27,6 +27,7 @@ const permissionMeta: Record<string, { label: string; description: string; group
   'orders.void': { label: 'Отмена позиций', description: 'Отменять позиции и заказы', group: 'Касса и заказы' },
   'shifts.manage': { label: 'Управление сменой', description: 'Открывать и закрывать кассовые смены', group: 'Касса и заказы' },
   'payments.write': { label: 'Оплата', description: 'Принимать и проводить оплаты', group: 'Касса и заказы' },
+  'payments.refund': { label: 'Возврат оплат', description: 'Проводить полный и частичный возврат на кассе, в том числе по старым сменам', group: 'Касса и заказы' },
   'backoffice.read': { label: 'Вход в BackOffice', description: 'Открывать административную панель', group: 'BackOffice' },
   'restaurant.manage': { label: 'Настройки ресторана', description: 'Изменять основные настройки ресторана', group: 'BackOffice' },
   'halls.manage': { label: 'Залы и столы', description: 'Управлять залами и столами', group: 'BackOffice' },
