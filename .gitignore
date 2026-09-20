@@ -30,3 +30,8 @@ appsettings.Development.local.json
 # OS
 .DS_Store
 Thumbs.db
+
+
+# Local development launcher state
+.devlogs/
+.devpids/
