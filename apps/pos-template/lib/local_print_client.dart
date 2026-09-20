@@ -36,6 +36,21 @@ class PosAgentConfig {
   }
 }
 
+class ReceiptPaymentPart {
+  const ReceiptPaymentPart({
+    required this.method,
+    required this.amount,
+  });
+
+  final String method;
+  final double amount;
+
+  Map<String, dynamic> toJson() => {
+        'method': method,
+        'amount': amount,
+      };
+}
+
 class ReceiptPrintItem {
   const ReceiptPrintItem({
     required this.name,
@@ -112,6 +127,7 @@ class PosAgentClient {
     double? changeAmount,
     DateTime? completedAt,
     bool isCopy = false,
+    List<ReceiptPaymentPart>? payments,
   }) async {
     final response = await _http.post(
       _uri('/api/v1/print/receipt'),
@@ -132,6 +148,7 @@ class PosAgentClient {
         'completedAt': completedAt?.toUtc().toIso8601String(),
         'items': items.map((item) => item.toJson()).toList(),
         'isCopy': isCopy,
+        'payments': payments?.map((payment) => payment.toJson()).toList(),
       }),
     ).timeout(const Duration(seconds: 15));
 
