@@ -227,6 +227,23 @@ public static class PaymentEndpoints
             if (payment is null)
                 return Results.NotFound(new { message = "Payment not found." });
 
+            var orderStatus = await db.Orders
+                .AsNoTracking()
+                .Where(x =>
+                    x.Id == payment.OrderId &&
+                    x.RestaurantId == restaurantId)
+                .Select(x => (OrderStatus?)x.Status)
+                .FirstOrDefaultAsync(ct);
+
+            if (orderStatus is null)
+                return Results.NotFound(new { message = "Payment order was not found." });
+
+            if (orderStatus != OrderStatus.Closed)
+                return Results.Conflict(new
+                {
+                    message = "Refunds are allowed only after the order is closed."
+                });
+
             if (payment.Status is not (PaymentStatus.Completed or PaymentStatus.Refunded))
                 return Results.Conflict(new { message = $"Payment cannot be refunded in status {payment.Status}." });
 
