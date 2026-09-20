@@ -81,6 +81,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "restauran
 
 app.MapAuthEndpoints();
 app.MapPosAgentEndpoints();
+app.MapPosAgentPrintJobEndpoints();
 app.MapBackOfficeEndpoints();
 app.MapBackOfficeHallEndpoints();
 app.MapBackOfficeMenuEndpoints();
