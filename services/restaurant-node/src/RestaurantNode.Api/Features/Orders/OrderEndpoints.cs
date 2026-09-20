@@ -19,6 +19,7 @@ public static class OrderEndpoints
             var orders = await db.Orders
                 .AsNoTracking()
                 .Include(x => x.Items)
+                .Include(x => x.Payments)
                 .Where(x => x.RestaurantId == restaurantId && x.Status != OrderStatus.Closed && x.Status != OrderStatus.Cancelled)
                 .OrderByDescending(x => x.UpdatedAt)
                 .Take(100)
@@ -29,7 +30,11 @@ public static class OrderEndpoints
         group.MapGet("/{id:guid}", async (Guid id, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
             if (!TryClaims(user, out var restaurantId, out _)) return Results.Unauthorized();
-            var order = await db.Orders.AsNoTracking().Include(x => x.Items).FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+            var order = await db.Orders
+                .AsNoTracking()
+                .Include(x => x.Items)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
             return order is null ? Results.NotFound(new { message = "Order not found." }) : Results.Ok(ToDto(order));
         }).RequireAuthorization("orders.read");
 
@@ -245,6 +250,63 @@ public static class OrderEndpoints
             return Results.Ok(ToDto(order));
         }).RequireAuthorization("orders.write");
 
+        group.MapPost("/{id:guid}/close", async (Guid id, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            var order = await db.Orders
+                .Include(x => x.Items)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (order is null)
+                return Results.NotFound(new { message = "Order not found." });
+
+            if (order.Status == OrderStatus.Closed)
+                return Results.Ok(ToDto(order));
+
+            if (order.Status != OrderStatus.Paid)
+                return Results.Conflict(new { message = "Only a fully paid order can be closed." });
+
+            order.Status = OrderStatus.Closed;
+            order.ClosedAt = DateTimeOffset.UtcNow;
+            order.UpdatedAt = order.ClosedAt.Value;
+            order.Version++;
+
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "ORDER_CLOSED",
+                "Order",
+                order.Id,
+                new
+                {
+                    order.Id,
+                    order.DisplayNumber,
+                    order.Total,
+                    order.PaidTotal,
+                    order.ClosedAt
+                }));
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CLOSED",
+                "Order",
+                order.Id,
+                new
+                {
+                    order.Id,
+                    order.DisplayNumber,
+                    order.ClosedAt
+                }));
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return Results.Ok(ToDto(order));
+        }).RequireAuthorization("payments.write");
+
         group.MapDelete("/{id:guid}/items/{itemId:guid}", async (Guid id, Guid itemId, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
             if (!TryClaims(user, out var restaurantId, out var employeeId)) return Results.Unauthorized();
@@ -277,7 +339,7 @@ public static class OrderEndpoints
         order.Total = decimal.Round(order.Subtotal - order.DiscountTotal + order.SurchargeTotal, 4, MidpointRounding.AwayFromZero);
     }
 
-    private static object ToDto(Order order) => new
+    internal static object ToDto(Order order) => new
     {
         order.Id,
         order.DisplayNumber,
@@ -292,6 +354,19 @@ public static class OrderEndpoints
         order.Version,
         order.CreatedAt,
         order.UpdatedAt,
+        order.ClosedAt,
+        payments = order.Payments.OrderBy(x => x.CreatedAt).Select(x => new
+        {
+            x.Id,
+            x.ShiftId,
+            x.EmployeeId,
+            method = EnumText(x.Method),
+            status = EnumText(x.Status),
+            x.Amount,
+            x.CurrencyCode,
+            x.ProviderReference,
+            x.CreatedAt
+        }),
         items = order.Items.OrderBy(x => x.CreatedAt).Select(x => new
         {
             x.Id,
