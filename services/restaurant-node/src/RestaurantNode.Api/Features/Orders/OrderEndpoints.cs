@@ -1355,7 +1355,6 @@ public static class OrderEndpoints
             x.SentAt,
             x.VoidedAt,
             modifiers = x.Modifiers
-                .OrderBy(modifier => modifier.CreatedAt)
                 .Select(modifier => new
                 {
                     modifier.Id,
