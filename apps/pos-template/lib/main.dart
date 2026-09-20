@@ -38,7 +38,7 @@ class _RestaurantPosAppState extends State<RestaurantPosApp> {
               api: api,
               onLoggedIn: (value) => setState(() => session = value),
             )
-          : HallSelectionPage(
+          : ShiftGate(
               api: api,
               printer: printer,
               session: session!,
@@ -169,8 +169,8 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-class HallSelectionPage extends StatefulWidget {
-  const HallSelectionPage({
+class ShiftGate extends StatefulWidget {
+  const ShiftGate({
     super.key,
     required this.api,
     required this.printer,
@@ -180,6 +180,221 @@ class HallSelectionPage extends StatefulWidget {
   final PosApiClient api;
   final PosAgentClient printer;
   final AuthSession session;
+
+  @override
+  State<ShiftGate> createState() => _ShiftGateState();
+}
+
+class _ShiftGateState extends State<ShiftGate> {
+  ShiftDto? shift;
+  bool loading = true;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      final current = await widget.api.getCurrentShift(AppConfig.posDeviceId);
+      if (mounted) setState(() => shift = current);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> openShift(double openingCash) async {
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      final opened = await widget.api.openShift(
+        AppConfig.posDeviceId,
+        openingCash: openingCash,
+      );
+      if (mounted) setState(() => shift = opened);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  void shiftClosed() {
+    setState(() => shift = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (error != null) {
+      return Scaffold(
+        body: _ErrorPane(message: error!, onRetry: load),
+      );
+    }
+
+    if (shift == null) {
+      return OpenShiftPage(
+        employeeName: widget.session.employeeName,
+        onOpen: openShift,
+      );
+    }
+
+    return HallSelectionPage(
+      api: widget.api,
+      printer: widget.printer,
+      session: widget.session,
+      shift: shift!,
+      onShiftClosed: shiftClosed,
+    );
+  }
+}
+
+class OpenShiftPage extends StatefulWidget {
+  const OpenShiftPage({
+    super.key,
+    required this.employeeName,
+    required this.onOpen,
+  });
+
+  final String employeeName;
+  final Future<void> Function(double openingCash) onOpen;
+
+  @override
+  State<OpenShiftPage> createState() => _OpenShiftPageState();
+}
+
+class _OpenShiftPageState extends State<OpenShiftPage> {
+  final controller = TextEditingController(text: '0.00');
+  bool opening = false;
+  String? error;
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> submit() async {
+    if (opening) return;
+    final normalized = controller.text.trim().replaceAll(',', '.');
+    final amount = double.tryParse(normalized);
+    if (amount == null || amount < 0) {
+      setState(() => error = 'Введите корректную сумму наличных в кассе.');
+      return;
+    }
+
+    setState(() {
+      opening = true;
+      error = null;
+    });
+    try {
+      await widget.onOpen(amount);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => opening = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Card(
+            margin: const EdgeInsets.all(24),
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(Icons.point_of_sale_rounded, size: 58),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Открытие смены',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    widget.employeeName,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: controller,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Наличные в кассе при открытии',
+                      suffixText: 'AZN',
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: (_) => submit(),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  FilledButton.icon(
+                    onPressed: opening ? null : submit,
+                    icon: const Icon(Icons.lock_open_outlined),
+                    label: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      child: Text(
+                        opening ? 'Открываем…' : 'Открыть смену',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class HallSelectionPage extends StatefulWidget {
+  const HallSelectionPage({
+    super.key,
+    required this.api,
+    required this.printer,
+    required this.session,
+    required this.shift,
+    required this.onShiftClosed,
+  });
+
+  final PosApiClient api;
+  final PosAgentClient printer;
+  final AuthSession session;
+  final ShiftDto shift;
+  final VoidCallback onShiftClosed;
 
   @override
   State<HallSelectionPage> createState() => _HallSelectionPageState();
@@ -215,6 +430,7 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
             api: widget.api,
             printer: widget.printer,
             session: widget.session,
+            shift: widget.shift,
             hallName: hall.name,
             table: table,
             initialOrder: existingOrder,
@@ -232,12 +448,86 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
     }
   }
 
+  Future<void> closeShift() async {
+    final controller = TextEditingController(text: '0.00');
+    final closingCash = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Закрытие смены'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Фактические наличные в кассе',
+            suffixText: 'AZN',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = double.tryParse(
+                controller.text.trim().replaceAll(',', '.'),
+              );
+              if (value != null && value >= 0) {
+                Navigator.pop(dialogContext, value);
+              }
+            },
+            child: const Text('Закрыть смену'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (closingCash == null || !mounted) return;
+
+    try {
+      final result = await widget.api.closeShift(
+        widget.shift.id,
+        closingCash: closingCash,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Смена закрыта. Ожидалось наличных: '
+            '${result.expectedCash.toStringAsFixed(2)} AZN, '
+            'разница: ${result.difference.toStringAsFixed(2)} AZN',
+          ),
+        ),
+      );
+      widget.onShiftClosed();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Закрытие смены: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Залы и столы'),
         actions: [
+          Center(
+            child: Text(
+              'Смена с ${TimeOfDay.fromDateTime(widget.shift.openedAt.toLocal()).format(context)}',
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton.icon(
+            onPressed: closeShift,
+            icon: const Icon(Icons.lock_outline),
+            label: const Text('Закрыть смену'),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Center(
@@ -417,6 +707,7 @@ class OrderPage extends StatefulWidget {
     required this.api,
     required this.printer,
     required this.session,
+    required this.shift,
     required this.hallName,
     required this.table,
     this.initialOrder,
@@ -425,6 +716,7 @@ class OrderPage extends StatefulWidget {
   final PosApiClient api;
   final PosAgentClient printer;
   final AuthSession session;
+  final ShiftDto shift;
   final String hallName;
   final DiningTableDto table;
   final OrderDto? initialOrder;
@@ -439,6 +731,7 @@ class _OrderPageState extends State<OrderPage> {
   String? selectedCategoryId;
   bool mutating = false;
   bool printing = false;
+  bool paying = false;
   String? error;
 
   @override
@@ -449,7 +742,7 @@ class _OrderPageState extends State<OrderPage> {
   }
 
   Future<void> addProduct(MenuProduct product) async {
-    if (mutating || printing) return;
+    if (mutating || printing || paying) return;
     setState(() {
       mutating = true;
       error = null;
@@ -466,7 +759,7 @@ class _OrderPageState extends State<OrderPage> {
   }
 
   Future<void> incrementGroup(CartGroup group) async {
-    if (mutating || printing || order == null) return;
+    if (mutating || printing || paying || order == null) return;
     setState(() {
       mutating = true;
       error = null;
@@ -482,7 +775,7 @@ class _OrderPageState extends State<OrderPage> {
   }
 
   Future<void> decrementGroup(CartGroup group) async {
-    if (mutating || printing || order == null) return;
+    if (mutating || printing || paying || order == null) return;
     OrderLineDto? removable;
     for (final line in group.lines.reversed) {
       if (line.status == 'NEW') {
@@ -553,6 +846,153 @@ class _OrderPageState extends State<OrderPage> {
     }
   }
 
+  Future<void> openPayment() async {
+    final current = order;
+    if (current == null ||
+        current.items.isEmpty ||
+        current.isPaid ||
+        current.remaining <= 0 ||
+        mutating ||
+        printing ||
+        paying) {
+      return;
+    }
+
+    final method = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          'Оплата заказа #${current.displayNumber}',
+        ),
+        content: Text(
+          'К оплате: ${current.remaining.toStringAsFixed(2)} AZN',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Отмена'),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: () => Navigator.pop(dialogContext, 'CASH'),
+            icon: const Icon(Icons.payments_outlined),
+            label: const Text('Наличные'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, 'CARD'),
+            icon: const Icon(Icons.credit_card),
+            label: const Text('Карта'),
+          ),
+        ],
+      ),
+    );
+
+    if (method == null || !mounted) return;
+    await pay(method);
+  }
+
+  Future<void> pay(String method) async {
+    final current = order;
+    if (current == null || current.remaining <= 0 || paying) return;
+
+    setState(() {
+      paying = true;
+      error = null;
+    });
+
+    try {
+      final result = await widget.api.payOrder(
+        orderId: current.id,
+        shiftId: widget.shift.id,
+        method: method,
+        amount: current.remaining,
+      );
+
+      if (!mounted) return;
+      setState(() => order = result.order);
+
+      if (result.order.status == 'PAID') {
+        await printPaidReceiptAndClose(result.order, result.payment);
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = 'Оплата: $e');
+    } finally {
+      if (mounted) setState(() => paying = false);
+    }
+  }
+
+  Future<void> retryPaidFinalize() async {
+    final current = order;
+    if (current == null || current.status != 'PAID') return;
+    final payment = current.latestCompletedPayment;
+    if (payment == null) {
+      setState(() => error = 'Не найдена завершённая оплата для этого заказа.');
+      return;
+    }
+    await printPaidReceiptAndClose(current, payment);
+  }
+
+  Future<void> printPaidReceiptAndClose(
+    OrderDto paidOrder,
+    PaymentDto payment,
+  ) async {
+    if (printing) return;
+
+    setState(() {
+      printing = true;
+      error = null;
+    });
+
+    try {
+      final groups = CartGroup.fromOrder(paidOrder);
+      await widget.printer.printReceipt(
+        restaurantName: AppConfig.restaurantDisplayName,
+        orderNumber: paidOrder.displayNumber,
+        hallName: widget.hallName,
+        tableName: widget.table.name,
+        cashierName: widget.session.employeeName,
+        guestCount: paidOrder.guestCount,
+        currencyCode: AppConfig.currencyCode,
+        total: paidOrder.total,
+        paymentMethod: payment.method,
+        paidAmount: paidOrder.paidTotal,
+        completedAt: payment.createdAt,
+        items: groups
+            .map(
+              (group) => ReceiptPrintItem(
+                name: group.productName,
+                quantity: group.quantity,
+                unitPrice: group.unitPrice,
+                lineTotal: group.total,
+              ),
+            )
+            .toList(),
+      );
+
+      final closed = await widget.api.closeOrder(paidOrder.id);
+      if (!mounted) return;
+      setState(() => order = closed);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Заказ #${closed.displayNumber} оплачен, чек напечатан и заказ закрыт.',
+          ),
+        ),
+      );
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          order = paidOrder;
+          error =
+              'Оплата сохранена. Не удалось напечатать чек или закрыть заказ: $e';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => printing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -593,7 +1033,7 @@ class _OrderPageState extends State<OrderPage> {
             }
           }
 
-          final busy = mutating || printing;
+          final busy = mutating || printing || paying;
           return LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= 1000;
@@ -609,10 +1049,13 @@ class _OrderPageState extends State<OrderPage> {
                 order: order,
                 busy: busy,
                 printing: printing,
+                paying: paying,
                 error: error,
                 onPlus: incrementGroup,
                 onMinus: decrementGroup,
                 onPrintPrecheck: printPrecheck,
+                onPay: openPayment,
+                onFinalizePaid: retryPaidFinalize,
               );
 
               return wide
@@ -727,19 +1170,25 @@ class _OrderPane extends StatelessWidget {
     required this.order,
     required this.busy,
     required this.printing,
+    required this.paying,
     required this.error,
     required this.onPlus,
     required this.onMinus,
     required this.onPrintPrecheck,
+    required this.onPay,
+    required this.onFinalizePaid,
   });
 
   final OrderDto? order;
   final bool busy;
   final bool printing;
+  final bool paying;
   final String? error;
   final ValueChanged<CartGroup> onPlus;
   final ValueChanged<CartGroup> onMinus;
   final VoidCallback onPrintPrecheck;
+  final VoidCallback onPay;
+  final VoidCallback onFinalizePaid;
 
   @override
   Widget build(BuildContext context) {
@@ -834,7 +1283,10 @@ class _OrderPane extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: busy || order == null || order!.items.isEmpty
+              onPressed: busy ||
+                      order == null ||
+                      order!.items.isEmpty ||
+                      order!.isPaid
                   ? null
                   : onPrintPrecheck,
               icon: const Icon(Icons.print_outlined),
@@ -845,11 +1297,25 @@ class _OrderPane extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             FilledButton.icon(
-              onPressed: null,
-              icon: const Icon(Icons.payments_outlined),
-              label: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 14),
-                child: Text('Оплата — следующий этап'),
+              onPressed: busy || order == null || order!.items.isEmpty
+                  ? null
+                  : order!.status == 'PAID'
+                      ? onFinalizePaid
+                      : onPay,
+              icon: Icon(
+                order?.status == 'PAID'
+                    ? Icons.receipt_long_outlined
+                    : Icons.payments_outlined,
+              ),
+              label: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Text(
+                  order?.status == 'PAID'
+                      ? 'Печать чека и закрыть'
+                      : paying
+                          ? 'Оплата…'
+                          : 'Оплата',
+                ),
               ),
             ),
           ],
