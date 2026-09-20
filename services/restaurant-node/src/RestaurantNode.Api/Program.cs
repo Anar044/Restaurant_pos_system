@@ -85,6 +85,7 @@ app.MapPosAgentPrintJobEndpoints();
 app.MapBackOfficeEndpoints();
 app.MapBackOfficeHallEndpoints();
 app.MapBackOfficeMenuEndpoints();
+app.MapBackOfficeModifierEndpoints();
 app.MapBackOfficeKitchenEndpoints();
 app.MapBackOfficeEmployeeEndpoints();
 app.MapBackOfficeDeviceEndpoints();
