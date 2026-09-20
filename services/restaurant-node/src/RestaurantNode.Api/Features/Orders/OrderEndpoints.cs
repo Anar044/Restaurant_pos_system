@@ -18,7 +18,7 @@ public static class OrderEndpoints
             if (!TryClaims(user, out var restaurantId, out _)) return Results.Unauthorized();
             var orders = await db.Orders
                 .AsNoTracking()
-                .Include(x => x.Items)
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
                 .Include(x => x.Payments)
                 .Where(x => x.RestaurantId == restaurantId && x.Status != OrderStatus.Closed && x.Status != OrderStatus.Cancelled)
                 .OrderByDescending(x => x.UpdatedAt)
@@ -42,7 +42,7 @@ public static class OrderEndpoints
 
             var query = db.Orders
                 .AsNoTracking()
-                .Include(x => x.Items)
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
                 .Include(x => x.Payments)
                 .Where(x =>
                     x.RestaurantId == restaurantId &&
@@ -130,7 +130,7 @@ public static class OrderEndpoints
             if (!TryClaims(user, out var restaurantId, out _)) return Results.Unauthorized();
             var order = await db.Orders
                 .AsNoTracking()
-                .Include(x => x.Items)
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
                 .Include(x => x.Payments)
                 .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
             return order is null ? Results.NotFound(new { message = "Order not found." }) : Results.Ok(ToDto(order));
@@ -170,7 +170,7 @@ public static class OrderEndpoints
             if (request.Quantity <= 0 || request.Quantity > 1000) return Results.BadRequest(new { message = "Quantity must be greater than zero." });
 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
-            var order = await db.Orders.Include(x => x.Items).FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+            var order = await db.Orders.Include(x => x.Items).ThenInclude(x => x.Modifiers).FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
             if (order is null) return Results.NotFound(new { message = "Order not found." });
             if (order.Status is OrderStatus.Closed or OrderStatus.Cancelled or OrderStatus.Paid or OrderStatus.PartiallyPaid)
                 return Results.Conflict(new { message = $"Order cannot be edited in status {order.Status}." });
@@ -186,6 +186,103 @@ public static class OrderEndpoints
             if (price is null) return Results.Conflict(new { message = "Product has no active price." });
 
             var comment = NormalizeText(request.Comment, 500);
+            var selections = (request.Modifiers ?? [])
+                .Where(x => x.GroupId != Guid.Empty && x.ModifierId != Guid.Empty)
+                .ToArray();
+
+            if (selections.Any(x => x.Quantity <= 0 || x.Quantity > 100))
+                return Results.BadRequest(new { message = "Modifier quantity must be between 0 and 100." });
+
+            if (selections
+                .GroupBy(x => new { x.GroupId, x.ModifierId })
+                .Any(x => x.Count() > 1))
+            {
+                return Results.BadRequest(new { message = "The same modifier cannot be selected twice in one group." });
+            }
+
+            var productGroupLinks = await db.ProductModifierGroups
+                .AsNoTracking()
+                .Where(x => x.ProductId == product.Id)
+                .OrderBy(x => x.SortOrder)
+                .ToListAsync(ct);
+
+            var productGroupIds = productGroupLinks
+                .Select(x => x.ModifierGroupId)
+                .Distinct()
+                .ToArray();
+
+            var modifierGroups = await db.ModifierGroups
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive &&
+                    productGroupIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, ct);
+
+            if (selections.Any(x => !modifierGroups.ContainsKey(x.GroupId)))
+            {
+                return Results.BadRequest(new
+                {
+                    message = "One or more selected modifier groups are not available for this product."
+                });
+            }
+
+            var groupModifierLinks = await db.ModifierGroupModifiers
+                .AsNoTracking()
+                .Where(x => productGroupIds.Contains(x.ModifierGroupId))
+                .ToListAsync(ct);
+
+            var selectedModifierIds = selections
+                .Select(x => x.ModifierId)
+                .Distinct()
+                .ToArray();
+
+            var modifierEntities = await db.Modifiers
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive &&
+                    selectedModifierIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, ct);
+
+            foreach (var group in modifierGroups.Values)
+            {
+                var selectedForGroup = selections
+                    .Where(x => x.GroupId == group.Id)
+                    .ToArray();
+                var selectedCount = selectedForGroup.Sum(x => x.Quantity);
+
+                if (selectedCount < group.MinSelections ||
+                    selectedCount > group.MaxSelections)
+                {
+                    return Results.BadRequest(new
+                    {
+                        message = $"Modifier group '{group.Name}' requires between {group.MinSelections} and {group.MaxSelections} selections."
+                    });
+                }
+
+                foreach (var selection in selectedForGroup)
+                {
+                    var linked = groupModifierLinks.Any(x =>
+                        x.ModifierGroupId == group.Id &&
+                        x.ModifierId == selection.ModifierId);
+
+                    if (!linked || !modifierEntities.ContainsKey(selection.ModifierId))
+                    {
+                        return Results.BadRequest(new
+                        {
+                            message = $"A selected modifier is not available in group '{group.Name}'."
+                        });
+                    }
+                }
+            }
+
+            if (modifierGroups.Values.Any(group =>
+                    group.IsRequired &&
+                    selections.Where(x => x.GroupId == group.Id).Sum(x => x.Quantity) < 1))
+            {
+                return Results.BadRequest(new { message = "Complete all required modifier groups." });
+            }
 
             var line = new OrderItem
             {
@@ -195,14 +292,40 @@ public static class OrderEndpoints
                 ProductNameSnapshot = product.Name,
                 Quantity = request.Quantity,
                 UnitPrice = price.Amount,
-                LineTotal = decimal.Round(price.Amount * request.Quantity, 4, MidpointRounding.AwayFromZero),
                 Comment = comment,
                 CreatedByEmployeeId = employeeId,
                 Status = OrderItemStatus.New
             };
 
-            // Explicitly mark a client-generated UUID entity as new. Without this, EF Core may
-            // infer an existing row from the non-default key and issue UPDATE instead of INSERT.
+            foreach (var selection in selections)
+            {
+                var modifier = modifierEntities[selection.ModifierId];
+                var modifierTotal = decimal.Round(
+                    modifier.PriceDelta * selection.Quantity * request.Quantity,
+                    4,
+                    MidpointRounding.AwayFromZero);
+
+                line.Modifiers.Add(new OrderItemModifier
+                {
+                    OrderItemId = line.Id,
+                    ModifierId = modifier.Id,
+                    ModifierNameSnapshot = modifier.Name,
+                    Quantity = selection.Quantity,
+                    PriceDelta = modifier.PriceDelta,
+                    Total = modifierTotal
+                });
+            }
+
+            line.ModifiersTotal = decimal.Round(
+                line.Modifiers.Sum(x => x.Total),
+                4,
+                MidpointRounding.AwayFromZero);
+            line.LineTotal = decimal.Round(
+                price.Amount * request.Quantity + line.ModifiersTotal,
+                4,
+                MidpointRounding.AwayFromZero);
+
+            // Explicitly mark the whole graph as new because UUIDs are generated client-side.
             db.OrderItems.Add(line);
             Recalculate(order);
             order.Version++;
@@ -215,6 +338,15 @@ public static class OrderEndpoints
                 productName = product.Name,
                 request.Quantity,
                 unitPrice = price.Amount,
+                modifiersTotal = line.ModifiersTotal,
+                modifiers = line.Modifiers.Select(x => new
+                {
+                    x.ModifierId,
+                    name = x.ModifierNameSnapshot,
+                    x.Quantity,
+                    x.PriceDelta,
+                    x.Total
+                }),
                 comment
             }));
             db.OutboxEvents.Add(Outbox(restaurantId, "ORDER_CHANGED", "Order", order.Id, new { order.Id, order.Version }));
@@ -237,7 +369,7 @@ public static class OrderEndpoints
                 return Results.BadRequest(new { message = "GuestCount must be between 1 and 100." });
 
             var order = await db.Orders
-                .Include(x => x.Items)
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
                 .Include(x => x.Payments)
                 .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
 
@@ -281,7 +413,7 @@ public static class OrderEndpoints
                 return Results.Unauthorized();
 
             var order = await db.Orders
-                .Include(x => x.Items)
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
                 .Include(x => x.Payments)
                 .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
 
@@ -366,7 +498,7 @@ public static class OrderEndpoints
                 return Results.Unauthorized();
 
             var order = await db.Orders
-                .Include(x => x.Items)
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
                 .Include(x => x.Payments)
                 .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
 
@@ -427,7 +559,7 @@ public static class OrderEndpoints
             await using var tx = await db.Database.BeginTransactionAsync(ct);
 
             var order = await db.Orders
-                .Include(x => x.Items)
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
                 .Include(x => x.Payments)
                 .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
 
@@ -596,7 +728,7 @@ public static class OrderEndpoints
             await using var tx = await db.Database.BeginTransactionAsync(ct);
 
             var source = await db.Orders
-                .Include(x => x.Items)
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
                 .Include(x => x.Payments)
                 .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
 
@@ -654,7 +786,7 @@ public static class OrderEndpoints
                 });
 
             var target = await db.Orders
-                .Include(x => x.Items)
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
                 .Include(x => x.Payments)
                 .Where(x =>
                     x.RestaurantId == restaurantId &&
@@ -880,7 +1012,7 @@ public static class OrderEndpoints
 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             var order = await db.Orders
-                .Include(x => x.Items)
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
                 .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
 
             if (order is null) return Results.NotFound(new { message = "Order not found." });
@@ -1057,7 +1189,7 @@ public static class OrderEndpoints
             await using var tx = await db.Database.BeginTransactionAsync(ct);
 
             var order = await db.Orders
-                .Include(x => x.Items)
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
                 .Include(x => x.Payments)
                 .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
 
@@ -1110,7 +1242,7 @@ public static class OrderEndpoints
         {
             if (!TryClaims(user, out var restaurantId, out var employeeId)) return Results.Unauthorized();
             await using var tx = await db.Database.BeginTransactionAsync(ct);
-            var order = await db.Orders.Include(x => x.Items).FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+            var order = await db.Orders.Include(x => x.Items).ThenInclude(x => x.Modifiers).FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
             if (order is null) return Results.NotFound(new { message = "Order not found." });
             var line = order.Items.FirstOrDefault(x => x.Id == itemId);
             if (line is null) return Results.NotFound(new { message = "Order item not found." });
@@ -1221,7 +1353,18 @@ public static class OrderEndpoints
             status = EnumText(x.Status),
             x.Comment,
             x.SentAt,
-            x.VoidedAt
+            x.VoidedAt,
+            modifiers = x.Modifiers
+                .OrderBy(modifier => modifier.CreatedAt)
+                .Select(modifier => new
+                {
+                    modifier.Id,
+                    modifier.ModifierId,
+                    name = modifier.ModifierNameSnapshot,
+                    modifier.Quantity,
+                    modifier.PriceDelta,
+                    modifier.Total
+                })
         })
     };
 
@@ -1256,7 +1399,15 @@ public static class OrderEndpoints
 }
 
 public sealed record CreateOrderRequest(Guid? TableId = null, int GuestCount = 1);
-public sealed record AddOrderItemRequest(Guid ProductId, decimal Quantity = 1m, string? Comment = null);
+public sealed record ModifierSelectionRequest(
+    Guid GroupId,
+    Guid ModifierId,
+    decimal Quantity = 1m);
+public sealed record AddOrderItemRequest(
+    Guid ProductId,
+    decimal Quantity = 1m,
+    string? Comment = null,
+    ModifierSelectionRequest[]? Modifiers = null);
 public sealed record UpdateGuestCountRequest(int GuestCount);
 public sealed record MoveOrderRequest(Guid TableId);
 public sealed record TransferOrderItemsRequest(Guid TargetTableId, Guid[]? ItemIds);
