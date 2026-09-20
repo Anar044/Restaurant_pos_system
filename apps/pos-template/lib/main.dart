@@ -412,7 +412,9 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
   }
 
   void refresh() {
-    setState(() => hallsFuture = widget.api.getHalls());
+    setState(() {
+      hallsFuture = widget.api.getHalls();
+    });
   }
 
   Future<void> openTable(HallDto hall, DiningTableDto table) async {
@@ -2333,6 +2335,35 @@ class _OrderPageState extends State<OrderPage> {
     }
   }
 
+  Future<void> sendToKitchen() async {
+    if (mutating ||
+        printing ||
+        paying ||
+        order == null ||
+        !order!.hasNewItems) {
+      return;
+    }
+
+    setState(() {
+      mutating = true;
+      error = null;
+    });
+
+    try {
+      final updated = await widget.api.sendOrderToKitchen(order!.id);
+      if (!mounted) return;
+
+      setState(() => order = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Заказ отправлен на кухню')),
+      );
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => mutating = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -2370,7 +2401,11 @@ class _OrderPageState extends State<OrderPage> {
           if (snapshot.hasError) {
             return _ErrorPane(
               message: snapshot.error.toString(),
-              onRetry: () => setState(() => menuFuture = widget.api.getMenu()),
+              onRetry: () {
+                setState(() {
+                  menuFuture = widget.api.getMenu();
+                });
+              },
             );
           }
 
@@ -2408,6 +2443,7 @@ class _OrderPageState extends State<OrderPage> {
                 canVoid: widget.session.hasPermission('orders.void'),
                 onPlus: incrementGroup,
                 onMinus: decrementGroup,
+                onSend: sendToKitchen,
                 onComment: editGroupComment,
                 onVoid: voidSentItem,
                 onPrintPrecheck: printPrecheck,
@@ -3216,6 +3252,7 @@ class _OrderPane extends StatelessWidget {
     required this.canVoid,
     required this.onPlus,
     required this.onMinus,
+    required this.onSend,
     required this.onComment,
     required this.onVoid,
     required this.onPrintPrecheck,
@@ -3231,6 +3268,7 @@ class _OrderPane extends StatelessWidget {
   final bool canVoid;
   final ValueChanged<CartGroup> onPlus;
   final ValueChanged<CartGroup> onMinus;
+  final Future<void> Function() onSend;
   final ValueChanged<CartGroup> onComment;
   final ValueChanged<CartGroup> onVoid;
   final VoidCallback onPrintPrecheck;
@@ -3438,6 +3476,17 @@ class _OrderPane extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: busy || order == null || !order!.hasNewItems
+                  ? null
+                  : () async => onSend(),
+              icon: const Icon(Icons.soup_kitchen_outlined),
+              label: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Text('Отправить на кухню'),
+              ),
+            ),
+            const SizedBox(height: 10),
             FilledButton.icon(
               onPressed: busy ||
                       order == null ||
