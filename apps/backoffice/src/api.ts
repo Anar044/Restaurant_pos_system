@@ -110,6 +110,67 @@ export type BackOfficeMenu = {
   categories: MenuCategory[];
 };
 
+export type BackOfficeModifier = {
+  id: string;
+  name: string;
+  priceDelta: number;
+  isActive: boolean;
+  groupIds: string[];
+};
+
+export type BackOfficeModifierGroupItem = {
+  id: string;
+  name: string;
+  priceDelta: number;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+export type BackOfficeModifierGroup = {
+  id: string;
+  name: string;
+  minSelections: number;
+  maxSelections: number;
+  isRequired: boolean;
+  isActive: boolean;
+  modifiers: BackOfficeModifierGroupItem[];
+  productIds: string[];
+};
+
+export type ModifierProduct = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  groupIds: string[];
+};
+
+export type BackOfficeModifiers = {
+  currencyCode: string;
+  modifiers: BackOfficeModifier[];
+  groups: BackOfficeModifierGroup[];
+  products: ModifierProduct[];
+};
+
+export type CreateModifierGroupInput = {
+  name: string;
+  minSelections: number;
+  maxSelections: number;
+  isRequired: boolean;
+};
+
+export type UpdateModifierGroupInput = CreateModifierGroupInput & {
+  isActive: boolean;
+};
+
+export type CreateModifierInput = {
+  name: string;
+  priceDelta: number;
+};
+
+export type UpdateModifierInput = CreateModifierInput & {
+  isActive: boolean;
+};
+
 export type CreateCategoryInput = {
   name: string;
   sortOrder: number;
@@ -556,6 +617,74 @@ export async function updateProductPrice(
   return request(`/api/v1/backoffice/menu/products/${productId}/price`, {
     method: 'PUT',
     body: JSON.stringify({ amount }),
+  }, token);
+}
+
+export async function getBackOfficeModifiers(token: string): Promise<BackOfficeModifiers> {
+  return request<BackOfficeModifiers>('/api/v1/backoffice/modifiers', {}, token);
+}
+
+export async function createModifierGroup(
+  token: string,
+  input: CreateModifierGroupInput,
+): Promise<BackOfficeModifierGroup> {
+  return request('/api/v1/backoffice/modifiers/groups', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateModifierGroup(
+  token: string,
+  groupId: string,
+  input: UpdateModifierGroupInput,
+): Promise<BackOfficeModifierGroup> {
+  return request(`/api/v1/backoffice/modifiers/groups/${groupId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createModifier(
+  token: string,
+  input: CreateModifierInput,
+): Promise<BackOfficeModifier> {
+  return request('/api/v1/backoffice/modifiers/items', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateModifier(
+  token: string,
+  modifierId: string,
+  input: UpdateModifierInput,
+): Promise<BackOfficeModifier> {
+  return request(`/api/v1/backoffice/modifiers/items/${modifierId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function setModifierGroupItems(
+  token: string,
+  groupId: string,
+  modifierIds: string[],
+): Promise<{ groupId: string; modifierIds: string[] }> {
+  return request(`/api/v1/backoffice/modifiers/groups/${groupId}/items`, {
+    method: 'PUT',
+    body: JSON.stringify({ modifierIds }),
+  }, token);
+}
+
+export async function setProductModifierGroups(
+  token: string,
+  productId: string,
+  groupIds: string[],
+): Promise<{ productId: string; groupIds: string[] }> {
+  return request(`/api/v1/backoffice/modifiers/products/${productId}/groups`, {
+    method: 'PUT',
+    body: JSON.stringify({ groupIds }),
   }, token);
 }
 
