@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using RestaurantNode.Api.Domain;
 using RestaurantNode.Api.Features.Orders;
 using RestaurantNode.Api.Infrastructure;
+using RestaurantNode.Api.Security;
 
 namespace RestaurantNode.Api.Features.Payments;
 
@@ -330,7 +331,7 @@ public static class PaymentEndpoints
                 payment = ToDto(payment, refundedTotal),
                 refundable = Money(Math.Max(0m, payment.Amount - refundedTotal))
             });
-        }).RequireAuthorization("payments.write");
+        }).RequireAuthorization(Permissions.PaymentsRefund);
 
         group.MapGet("/order/{orderId:guid}", async (
             Guid orderId,
