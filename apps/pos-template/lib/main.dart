@@ -1737,7 +1737,11 @@ class _OrderPageState extends State<OrderPage> {
       error = null;
     });
     try {
-      final updated = await widget.api.addItem(order!.id, group.productId);
+      final updated = await widget.api.addItem(
+        order!.id,
+        group.productId,
+        comment: group.comment,
+      );
       if (mounted) setState(() => order = updated);
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
@@ -1766,6 +1770,324 @@ class _OrderPageState extends State<OrderPage> {
       if (mounted) setState(() => order = updated);
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => mutating = false);
+    }
+  }
+
+  Future<void> changeGuestCount() async {
+    final current = order;
+    if (current == null || mutating || printing || paying) return;
+
+    final controller = TextEditingController(
+      text: current.guestCount.toString(),
+    );
+
+    final value = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Количество гостей'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Гостей',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final parsed = int.tryParse(controller.text.trim());
+              if (parsed != null && parsed >= 1 && parsed <= 100) {
+                Navigator.of(dialogContext).pop(parsed);
+              }
+            },
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (value == null || !mounted || value == current.guestCount) return;
+
+    setState(() {
+      mutating = true;
+      error = null;
+    });
+    try {
+      final updated = await widget.api.updateGuestCount(current.id, value);
+      if (mounted) setState(() => order = updated);
+    } catch (e) {
+      if (mounted) setState(() => error = 'Гости: $e');
+    } finally {
+      if (mounted) setState(() => mutating = false);
+    }
+  }
+
+  Future<void> moveOrderToTable() async {
+    final current = order;
+    if (current == null || mutating || printing || paying) return;
+
+    try {
+      final halls = await widget.api.getHalls();
+      if (!mounted) return;
+
+      final targets = <_MoveOrderTarget>[
+        for (final hall in halls)
+          for (final table in hall.tables)
+            if (table.id != current.tableId && !table.occupied)
+              _MoveOrderTarget(
+                hallName: hall.name,
+                table: table,
+              ),
+      ];
+
+      if (targets.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Нет свободного стола для переноса.')),
+        );
+        return;
+      }
+
+      final target = await showDialog<_MoveOrderTarget>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Перенести заказ #${current.displayNumber}'),
+          content: SizedBox(
+            width: 480,
+            height: 430,
+            child: ListView.separated(
+              itemCount: targets.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final item = targets[index];
+                return ListTile(
+                  leading: const Icon(Icons.table_restaurant),
+                  title: Text('Стол ${item.table.name}'),
+                  subtitle: Text(
+                    '${item.hallName} · ${item.table.seats} мест',
+                  ),
+                  onTap: () => Navigator.of(dialogContext).pop(item),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Отмена'),
+            ),
+          ],
+        ),
+      );
+
+      if (target == null || !mounted) return;
+
+      setState(() {
+        mutating = true;
+        error = null;
+      });
+
+      final moved = await widget.api.moveOrder(current.id, target.table.id);
+      if (!mounted) return;
+
+      setState(() => order = moved);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Заказ #${moved.displayNumber} перенесён: '
+            '${target.hallName}, стол ${target.table.name}.',
+          ),
+        ),
+      );
+
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) setState(() => error = 'Перенос заказа: $e');
+    } finally {
+      if (mounted) setState(() => mutating = false);
+    }
+  }
+
+  Future<void> editGroupComment(CartGroup group) async {
+    final current = order;
+    if (current == null ||
+        group.status != 'NEW' ||
+        mutating ||
+        printing ||
+        paying) {
+      return;
+    }
+
+    final controller = TextEditingController(text: group.comment ?? '');
+    final value = await showDialog<String?>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Комментарий · ${group.productName}'),
+        content: SizedBox(
+          width: 460,
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 2,
+            maxLines: 5,
+            maxLength: 500,
+            decoration: const InputDecoration(
+              hintText: 'Например: без лука, хорошо прожарить',
+              labelText: 'Комментарий для кухни',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(''),
+            child: const Text('Очистить'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (value == null || !mounted) return;
+
+    final newLines = group.lines
+        .where((line) => line.status == 'NEW')
+        .toList();
+    if (newLines.isEmpty) return;
+
+    setState(() {
+      mutating = true;
+      error = null;
+    });
+
+    try {
+      OrderDto updated = current;
+      for (final line in newLines) {
+        updated = await widget.api.updateItemComment(
+          current.id,
+          line.id,
+          value.isEmpty ? null : value,
+        );
+      }
+      if (mounted) setState(() => order = updated);
+    } catch (e) {
+      if (mounted) setState(() => error = 'Комментарий: $e');
+    } finally {
+      if (mounted) setState(() => mutating = false);
+    }
+  }
+
+  Future<void> voidSentItem(CartGroup group) async {
+    final current = order;
+    if (current == null ||
+        group.status != 'SENT' ||
+        !widget.session.hasPermission('orders.void') ||
+        mutating ||
+        printing ||
+        paying) {
+      return;
+    }
+
+    OrderLineDto? target;
+    for (final line in group.lines.reversed) {
+      if (line.status == 'SENT') {
+        target = line;
+        break;
+      }
+    }
+    if (target == null) return;
+
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Отменить ${group.productName}?'),
+        content: SizedBox(
+          width: 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Позиция уже отправлена на кухню. '
+                'На кухонный принтер будет отправлен чек отмены.',
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 500,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Причина отмены',
+                  hintText: 'Например: клиент передумал',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Назад'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              if (value.isNotEmpty) {
+                Navigator.of(dialogContext).pop(value);
+              }
+            },
+            child: const Text('Отменить позицию'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (reason == null || !mounted) return;
+
+    setState(() {
+      mutating = true;
+      error = null;
+    });
+    try {
+      final updated = await widget.api.voidItem(
+        current.id,
+        target.id,
+        reason,
+      );
+      if (!mounted) return;
+      setState(() => order = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${group.productName}: отмена сохранена и отправлена на кухню.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) setState(() => error = 'Отмена позиции: $e');
     } finally {
       if (mounted) setState(() => mutating = false);
     }
@@ -2021,6 +2343,18 @@ class _OrderPageState extends State<OrderPage> {
               : 'Стол ${widget.table.name} · Заказ #${order!.displayNumber}',
         ),
         actions: [
+          if (order != null && !order!.isPaid && order!.status != 'PARTIALLY_PAID')
+            TextButton.icon(
+              onPressed: mutating ? null : changeGuestCount,
+              icon: const Icon(Icons.people_outline),
+              label: Text('Гости: ${order!.guestCount}'),
+            ),
+          if (order != null && !order!.isPaid && order!.status != 'PARTIALLY_PAID')
+            TextButton.icon(
+              onPressed: mutating ? null : moveOrderToTable,
+              icon: const Icon(Icons.swap_horiz),
+              label: const Text('Перенести'),
+            ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
             child: Center(child: Text(widget.session.employeeName)),
@@ -2071,8 +2405,11 @@ class _OrderPageState extends State<OrderPage> {
                 printing: printing,
                 paying: paying,
                 error: error,
+                canVoid: widget.session.hasPermission('orders.void'),
                 onPlus: incrementGroup,
                 onMinus: decrementGroup,
+                onComment: editGroupComment,
+                onVoid: voidSentItem,
                 onPrintPrecheck: printPrecheck,
                 onPay: openPayment,
                 onFinalizePaid: retryPaidFinalize,
@@ -2876,8 +3213,11 @@ class _OrderPane extends StatelessWidget {
     required this.printing,
     required this.paying,
     required this.error,
+    required this.canVoid,
     required this.onPlus,
     required this.onMinus,
+    required this.onComment,
+    required this.onVoid,
     required this.onPrintPrecheck,
     required this.onPay,
     required this.onFinalizePaid,
@@ -2888,8 +3228,11 @@ class _OrderPane extends StatelessWidget {
   final bool printing;
   final bool paying;
   final String? error;
+  final bool canVoid;
   final ValueChanged<CartGroup> onPlus;
   final ValueChanged<CartGroup> onMinus;
+  final ValueChanged<CartGroup> onComment;
+  final ValueChanged<CartGroup> onVoid;
   final VoidCallback onPrintPrecheck;
   final VoidCallback onPay;
   final VoidCallback onFinalizePaid;
@@ -2935,40 +3278,112 @@ class _OrderPane extends StatelessWidget {
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final group = groups[index];
-                        final canRemove = group.lines.any((x) => x.status == 'NEW');
+                        final canRemove =
+                            group.lines.any((x) => x.status == 'NEW');
+                        final canVoidGroup =
+                            canVoid && group.status == 'SENT';
+
                         return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          child: Row(
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      group.productName,
-                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                group.productName,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                            _OrderItemStatusBadge(
+                                              status: group.status,
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          '${group.quantity.g} × '
+                                          '${group.unitPrice.toStringAsFixed(2)} '
+                                          '= ${group.total.toStringAsFixed(2)}',
+                                        ),
+                                        if (group.comment != null) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Комментарий: ${group.comment}',
+                                            style: TextStyle(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      '${group.quantity.g} × ${group.unitPrice.toStringAsFixed(2)} = ${group.total.toStringAsFixed(2)}',
+                                  ),
+                                  if ((group.status == 'NEW') || canVoidGroup)
+                                    PopupMenuButton<String>(
+                                      tooltip: 'Действия',
+                                      onSelected: (value) {
+                                        if (value == 'comment') {
+                                          onComment(group);
+                                        } else if (value == 'void') {
+                                          onVoid(group);
+                                        }
+                                      },
+                                      itemBuilder: (_) => [
+                                        if (group.status == 'NEW')
+                                          const PopupMenuItem(
+                                            value: 'comment',
+                                            child: Text(
+                                              'Комментарий для кухни',
+                                            ),
+                                          ),
+                                        if (canVoidGroup)
+                                          const PopupMenuItem(
+                                            value: 'void',
+                                            child: Text(
+                                              'Отменить отправленную позицию',
+                                            ),
+                                          ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                              ),
-                              IconButton.filledTonal(
-                                onPressed: busy || editingLocked || !canRemove ? null : () => onMinus(group),
-                                icon: const Icon(Icons.remove),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                child: Text(
-                                  group.quantity.g,
-                                  style: Theme.of(context).textTheme.titleMedium,
-                                ),
-                              ),
-                              IconButton.filled(
-                                onPressed: busy || editingLocked ? null : () => onPlus(group),
-                                icon: const Icon(Icons.add),
+                                  IconButton.filledTonal(
+                                    onPressed: busy ||
+                                            editingLocked ||
+                                            !canRemove
+                                        ? null
+                                        : () => onMinus(group),
+                                    icon: const Icon(Icons.remove),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                    ),
+                                    child: Text(
+                                      group.quantity.g,
+                                      style:
+                                          Theme.of(context).textTheme.titleMedium,
+                                    ),
+                                  ),
+                                  IconButton.filled(
+                                    onPressed: busy || editingLocked
+                                        ? null
+                                        : () => onPlus(group),
+                                    icon: const Icon(Icons.add),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -3061,12 +3476,14 @@ class CartGroup {
     required this.productName,
     required this.unitPrice,
     required this.status,
+    required this.comment,
   });
 
   final String productId;
   final String productName;
   final double unitPrice;
   final String status;
+  final String? comment;
   final List<OrderLineDto> lines = [];
 
   double get quantity => lines.fold(0, (sum, line) => sum + line.quantity);
@@ -3074,9 +3491,16 @@ class CartGroup {
 
   static List<CartGroup> fromOrder(OrderDto? order) {
     if (order == null) return const [];
+
     final map = <String, CartGroup>{};
     for (final line in order.items) {
-      final key = '${line.productId}|${line.unitPrice}|${line.status}';
+      if (line.status == 'VOIDED') continue;
+
+      final normalizedComment = line.comment?.trim();
+      final key =
+          '${line.productId}|${line.unitPrice}|${line.status}|'
+          '${normalizedComment ?? ''}';
+
       final group = map.putIfAbsent(
         key,
         () => CartGroup(
@@ -3084,12 +3508,59 @@ class CartGroup {
           productName: line.productName,
           unitPrice: line.unitPrice,
           status: line.status,
+          comment: normalizedComment == null || normalizedComment.isEmpty
+              ? null
+              : normalizedComment,
         ),
       );
       group.lines.add(line);
     }
+
     return map.values.toList();
   }
+}
+
+class _OrderItemStatusBadge extends StatelessWidget {
+  const _OrderItemStatusBadge({required this.status});
+
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final sent = status == 'SENT';
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.only(left: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: sent
+            ? scheme.secondaryContainer
+            : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        sent ? 'КУХНЯ' : 'НОВОЕ',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          color: sent
+              ? scheme.onSecondaryContainer
+              : scheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+class _MoveOrderTarget {
+  const _MoveOrderTarget({
+    required this.hallName,
+    required this.table,
+  });
+
+  final String hallName;
+  final DiningTableDto table;
 }
 
 class _ErrorPane extends StatelessWidget {
