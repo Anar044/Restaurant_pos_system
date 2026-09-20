@@ -657,7 +657,13 @@ public static class OrderEndpoints
                         productId = line.ProductId,
                         name = line.ProductNameSnapshot,
                         line.Quantity,
-                        line.Comment
+                        line.Comment,
+                        modifiers = line.Modifiers.Select(modifier => new
+                        {
+                            modifier.ModifierId,
+                            name = modifier.ModifierNameSnapshot,
+                            modifier.Quantity
+                        })
                     }
                 }
             };
@@ -944,7 +950,13 @@ public static class OrderEndpoints
                             productId = x.ProductId,
                             name = x.ProductNameSnapshot,
                             x.Quantity,
-                            x.Comment
+                            x.Comment,
+                            modifiers = x.Modifiers.Select(modifier => new
+                            {
+                                modifier.ModifierId,
+                                name = modifier.ModifierNameSnapshot,
+                                modifier.Quantity
+                            })
                         })
                     };
 
