@@ -32,6 +32,11 @@ public static class BackOfficeKitchenEndpoints
                     id = station.Id,
                     name = station.Name,
                     isActive = station.IsActive,
+                    printerId = station.PrinterId,
+                    printerName = db.Printers
+                        .Where(printer => printer.Id == station.PrinterId)
+                        .Select(printer => printer.Name)
+                        .FirstOrDefault(),
                     activeProductCount = db.Products.Count(product =>
                         product.RestaurantId == restaurantId &&
                         product.KitchenStationId == station.Id &&
@@ -82,10 +87,36 @@ public static class BackOfficeKitchenEndpoints
                 })
                 .ToListAsync(ct);
 
+            var availablePrinters = await (
+                from printer in db.Printers.AsNoTracking()
+                join device in db.Devices.AsNoTracking()
+                    on printer.HostDeviceId equals device.Id
+                where printer.RestaurantId == restaurantId &&
+                      printer.IsConfigured &&
+                      printer.IsActive &&
+                      printer.HostDeviceId.HasValue &&
+                      device.RestaurantId == restaurantId &&
+                      device.Type == DeviceType.Pos &&
+                      device.IsActive
+                orderby device.Name, printer.Name
+                select new
+                {
+                    id = printer.Id,
+                    name = printer.Name,
+                    connectionType = printer.ConnectionType.ToString(),
+                    address = printer.Address,
+                    port = printer.Port,
+                    hostDeviceId = device.Id,
+                    hostDeviceName = device.Name,
+                    lastSeenAt = printer.LastSeenAt
+                })
+                .ToListAsync(ct);
+
             return Results.Ok(new
             {
                 stations,
-                unassignedProducts
+                unassignedProducts,
+                availablePrinters
             });
         });
 
@@ -108,10 +139,19 @@ public static class BackOfficeKitchenEndpoints
             if (duplicate)
                 return Results.Conflict(new { message = "A kitchen station with this name already exists." });
 
+            var printerError = await ValidateKitchenPrinterAsync(
+                db,
+                restaurantId,
+                request.PrinterId,
+                ct);
+            if (printerError is not null)
+                return printerError;
+
             var station = new KitchenStation
             {
                 RestaurantId = restaurantId,
                 Name = name,
+                PrinterId = request.PrinterId,
                 IsActive = true
             };
 
@@ -119,6 +159,7 @@ public static class BackOfficeKitchenEndpoints
             AddAudit(db, user, restaurantId, "KITCHEN_STATION_CREATED", "KitchenStation", station.Id, new
             {
                 station.Name,
+                station.PrinterId,
                 station.IsActive
             });
             await db.SaveChangesAsync(ct);
@@ -127,6 +168,7 @@ public static class BackOfficeKitchenEndpoints
             {
                 id = station.Id,
                 name = station.Name,
+                printerId = station.PrinterId,
                 isActive = station.IsActive,
                 activeProductCount = 0,
                 totalProductCount = 0
@@ -159,6 +201,14 @@ public static class BackOfficeKitchenEndpoints
             if (duplicate)
                 return Results.Conflict(new { message = "A kitchen station with this name already exists." });
 
+            var printerError = await ValidateKitchenPrinterAsync(
+                db,
+                restaurantId,
+                request.PrinterId,
+                ct);
+            if (printerError is not null)
+                return printerError;
+
             if (station.IsActive && !request.IsActive)
             {
                 var activeProducts = await db.Products
@@ -182,24 +232,76 @@ public static class BackOfficeKitchenEndpoints
             }
 
             station.Name = name;
+            station.PrinterId = request.PrinterId;
             station.IsActive = request.IsActive;
 
             AddAudit(db, user, restaurantId, "KITCHEN_STATION_UPDATED", "KitchenStation", station.Id, new
             {
                 station.Name,
+                station.PrinterId,
                 station.IsActive
             });
             await db.SaveChangesAsync(ct);
+
+            var printerName = station.PrinterId.HasValue
+                ? await db.Printers.AsNoTracking()
+                    .Where(x => x.Id == station.PrinterId.Value)
+                    .Select(x => x.Name)
+                    .FirstOrDefaultAsync(ct)
+                : null;
 
             return Results.Ok(new
             {
                 id = station.Id,
                 name = station.Name,
+                printerId = station.PrinterId,
+                printerName,
                 isActive = station.IsActive
             });
         }).RequireAuthorization(Permissions.KitchenManage);
 
         return app;
+    }
+
+    private static async Task<IResult?> ValidateKitchenPrinterAsync(
+        RestaurantDbContext db,
+        Guid restaurantId,
+        Guid? printerId,
+        CancellationToken ct)
+    {
+        if (!printerId.HasValue)
+            return null;
+
+        var printer = await db.Printers
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x =>
+                x.Id == printerId.Value &&
+                x.RestaurantId == restaurantId &&
+                x.IsConfigured &&
+                x.IsActive,
+                ct);
+
+        if (printer is null)
+            return Results.BadRequest(new { message = "Active configured printer was not found." });
+
+        if (!printer.HostDeviceId.HasValue)
+            return Results.BadRequest(new
+            {
+                message = "Kitchen printer must be attached to an active POS Agent. Configure it under Equipment > POS printers first."
+            });
+
+        var hostDeviceExists = await db.Devices
+            .AsNoTracking()
+            .AnyAsync(x =>
+                x.Id == printer.HostDeviceId.Value &&
+                x.RestaurantId == restaurantId &&
+                x.Type == DeviceType.Pos &&
+                x.IsActive,
+                ct);
+
+        return hostDeviceExists
+            ? null
+            : Results.BadRequest(new { message = "The POS device hosting this kitchen printer is unavailable." });
     }
 
     private static bool TryGetRestaurantId(ClaimsPrincipal user, out Guid restaurantId) =>
@@ -236,5 +338,5 @@ public static class BackOfficeKitchenEndpoints
     }
 }
 
-public sealed record CreateKitchenStationRequest(string Name);
-public sealed record UpdateKitchenStationRequest(string Name, bool IsActive);
+public sealed record CreateKitchenStationRequest(string Name, Guid? PrinterId = null);
+public sealed record UpdateKitchenStationRequest(string Name, bool IsActive, Guid? PrinterId = null);
