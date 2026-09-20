@@ -9,6 +9,7 @@ builder.Services.AddSingleton<NetworkRawPrinter>();
 builder.Services.AddSingleton<LocalReceiptPrinter>();
 builder.Services.AddSingleton<KitchenPrintJobExecutor>();
 builder.Services.AddSingleton<AgentCacheStore>();
+builder.Services.AddSingleton<PrintedJobStore>();
 builder.Services.AddHttpClient<RestaurantNodeClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
