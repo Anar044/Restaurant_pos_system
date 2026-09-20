@@ -1444,10 +1444,21 @@ class _OrderPageState extends State<OrderPage> {
     }
   }
 
+  List<PaymentDto> _uniqueCompletedPayments(OrderDto paidOrder) {
+    final seen = <String>{};
+    final result = <PaymentDto>[];
+    for (final payment in paidOrder.payments) {
+      if (payment.status != 'COMPLETED' && payment.status != 'REFUNDED') {
+        continue;
+      }
+      if (seen.add(payment.id)) result.add(payment);
+    }
+    return result;
+  }
+
   String _paymentSummary(OrderDto paidOrder) {
     final totals = <String, double>{};
-    for (final entry in paidOrder.payments) {
-      if (entry.status != 'COMPLETED' && entry.status != 'REFUNDED') continue;
+    for (final entry in _uniqueCompletedPayments(paidOrder)) {
       totals.update(
         entry.method,
         (value) => value + entry.amount,
@@ -1461,23 +1472,49 @@ class _OrderPageState extends State<OrderPage> {
         .join(' + ');
   }
 
-  PaymentDto? _lastCashPayment(OrderDto paidOrder) {
-    for (final entry in paidOrder.payments.reversed) {
-      if (entry.method == 'CASH' &&
-          (entry.status == 'COMPLETED' || entry.status == 'REFUNDED') &&
-          entry.tenderedAmount != null) {
-        return entry;
-      }
+  List<ReceiptPaymentPart> _receiptPaymentParts(OrderDto paidOrder) {
+    final totals = <String, double>{};
+    for (final entry in _uniqueCompletedPayments(paidOrder)) {
+      totals.update(
+        entry.method,
+        (value) => value + entry.amount,
+        ifAbsent: () => entry.amount,
+      );
     }
-    return null;
+
+    return totals.entries
+        .map(
+          (entry) => ReceiptPaymentPart(
+            method: entry.key,
+            amount: entry.value,
+          ),
+        )
+        .toList();
   }
 
-  double? _cashReceivedForReceipt(OrderDto paidOrder) =>
-      _lastCashPayment(paidOrder)?.tenderedAmount;
+  double? _cashReceivedForReceipt(OrderDto paidOrder) {
+    final cash = _uniqueCompletedPayments(paidOrder)
+        .where((payment) => payment.method == 'CASH')
+        .toList();
+    if (cash.isEmpty) return null;
+
+    var total = 0.0;
+    var hasTendered = false;
+    for (final payment in cash) {
+      if (payment.tenderedAmount != null) {
+        total += payment.tenderedAmount!;
+        hasTendered = true;
+      }
+    }
+    return hasTendered ? total : null;
+  }
 
   double? _changeForReceipt(OrderDto paidOrder) {
-    final value = _lastCashPayment(paidOrder)?.changeAmount ?? 0;
-    return value > 0 ? value : null;
+    var total = 0.0;
+    for (final payment in _uniqueCompletedPayments(paidOrder)) {
+      if (payment.method == 'CASH') total += payment.changeAmount;
+    }
+    return total > 0.005 ? total : null;
   }
 
   Future<void> retryPaidFinalize() async {
@@ -1514,6 +1551,7 @@ class _OrderPageState extends State<OrderPage> {
         currencyCode: AppConfig.currencyCode,
         total: paidOrder.total,
         paymentMethod: _paymentSummary(paidOrder),
+        payments: _receiptPaymentParts(paidOrder),
         paidAmount: paidOrder.paidTotal,
         cashReceived: _cashReceivedForReceipt(paidOrder),
         changeAmount: _changeForReceipt(paidOrder),
@@ -1661,130 +1699,188 @@ class _PaymentDialog extends StatefulWidget {
 
 class _PaymentDialogState extends State<_PaymentDialog> {
   late OrderDto currentOrder;
-  late final TextEditingController amountController;
-  late final TextEditingController cashController;
+  late final TextEditingController mixedCashController;
+  late final TextEditingController cashReceivedController;
 
-  String method = 'CASH';
+  String mode = 'CASH';
   String? error;
-  String? savedMessage;
   bool submitting = false;
 
   @override
   void initState() {
     super.initState();
     currentOrder = widget.order;
-    final initial = currentOrder.remaining.toStringAsFixed(2);
-    amountController = TextEditingController(text: initial);
-    cashController = TextEditingController(text: initial);
-    amountController.addListener(_refresh);
-    cashController.addListener(_refresh);
+    final half = currentOrder.remaining / 2;
+    mixedCashController = TextEditingController(text: half.toStringAsFixed(2));
+    cashReceivedController = TextEditingController(
+      text: currentOrder.remaining.toStringAsFixed(2),
+    );
+    mixedCashController.addListener(_refresh);
+    cashReceivedController.addListener(_refresh);
   }
 
   @override
   void dispose() {
-    amountController
+    mixedCashController
       ..removeListener(_refresh)
       ..dispose();
-    cashController
+    cashReceivedController
       ..removeListener(_refresh)
       ..dispose();
     super.dispose();
   }
 
   void _refresh() {
-    if (mounted) {
-      setState(() {
-        error = null;
-        savedMessage = null;
-      });
-    }
+    if (mounted) setState(() => error = null);
   }
 
   double? _parse(TextEditingController controller) =>
       double.tryParse(controller.text.trim().replaceAll(',', '.'));
 
-  double get _amount => _parse(amountController) ?? 0;
-  double get _cashReceived => _parse(cashController) ?? 0;
+  double get _mixedCash => _parse(mixedCashController) ?? 0;
 
-  double get _change =>
-      method == 'CASH' && _cashReceived > _amount
-          ? _cashReceived - _amount
-          : 0;
-
-  bool get _isFullPayment =>
-      (_amount - currentOrder.remaining).abs() < 0.005;
-
-  void _setAmount(double value) {
-    final safe = value.clamp(0, currentOrder.remaining).toDouble();
-    amountController.text = safe.toStringAsFixed(2);
-    if (method == 'CASH' && _cashReceived < safe) {
-      cashController.text = safe.toStringAsFixed(2);
-    }
+  double get _cashDue {
+    if (mode == 'CASH') return currentOrder.remaining;
+    if (mode == 'MIXED') return _mixedCash;
+    return 0;
   }
 
-  void _selectMethod(String value) {
+  double get _cardDue {
+    if (mode == 'CARD') return currentOrder.remaining;
+    if (mode == 'MIXED') {
+      final value = currentOrder.remaining - _mixedCash;
+      return value > 0 ? value : 0;
+    }
+    return 0;
+  }
+
+  double get _cashReceived => _parse(cashReceivedController) ?? 0;
+
+  double get _change =>
+      _cashDue > 0 && _cashReceived > _cashDue
+          ? _cashReceived - _cashDue
+          : 0;
+
+  String _methodLabel(String value) =>
+      value == 'CASH' ? 'Наличные' : 'Карта';
+
+  void _selectMode(String value) {
     setState(() {
-      method = value;
+      mode = value;
       error = null;
-      savedMessage = null;
-      if (method == 'CASH' && _cashReceived < _amount) {
-        cashController.text = _amount.toStringAsFixed(2);
+
+      if (mode == 'MIXED') {
+        final half = currentOrder.remaining / 2;
+        if (_mixedCash <= 0 || _mixedCash >= currentOrder.remaining) {
+          mixedCashController.text = half.toStringAsFixed(2);
+        }
+        cashReceivedController.text = _mixedCash.toStringAsFixed(2);
+      } else if (mode == 'CASH') {
+        cashReceivedController.text =
+            currentOrder.remaining.toStringAsFixed(2);
       }
     });
   }
 
+  void _setHalf() {
+    final half = currentOrder.remaining / 2;
+    mixedCashController.text = half.toStringAsFixed(2);
+    cashReceivedController.text = half.toStringAsFixed(2);
+  }
+
   List<double> _cashSuggestions() {
-    final amount = _amount;
+    final amount = _cashDue;
     final values = <double>[amount, 5, 10, 20, 50, 100, 200]
         .where((value) => value + 0.0001 >= amount && value > 0)
         .toSet()
         .toList()
       ..sort();
-    return values.take(5).toList();
+    return values.take(6).toList();
   }
 
-  String _methodLabel(String value) =>
-      value == 'CASH' ? 'Наличные' : 'Карта';
+  void _applyOrder(PaymentResultDto result) {
+    currentOrder = result.order;
+    widget.onOrderChanged(result.order);
+  }
 
   Future<void> submit() async {
     if (submitting) return;
 
-    final amount = _amount;
-    if (amount <= 0 || amount > currentOrder.remaining + 0.0001) {
-      setState(() {
-        error =
-            'Сумма должна быть больше 0 и не превышать остаток '
-            '${currentOrder.remaining.toStringAsFixed(2)} AZN.';
-      });
-      return;
-    }
+    final remaining = currentOrder.remaining;
+    if (remaining <= 0) return;
 
-    double? tendered;
-    if (method == 'CASH') {
-      tendered = _cashReceived;
-      if (tendered < amount) {
-        setState(() => error = 'Получено наличными меньше суммы оплаты.');
+    if (mode == 'MIXED') {
+      if (_mixedCash <= 0.005 || _mixedCash >= remaining - 0.005) {
+        setState(() {
+          error =
+              'Для смешанной оплаты укажите часть наличными. '
+              'Остаток автоматически пойдёт на карту.';
+        });
         return;
       }
+    }
+
+    if ((mode == 'CASH' || mode == 'MIXED') &&
+        _cashReceived + 0.0001 < _cashDue) {
+      setState(() {
+        error =
+            'Получено наличными меньше суммы наличной части '
+            '${_cashDue.toStringAsFixed(2)} AZN.';
+      });
+      return;
     }
 
     setState(() {
       submitting = true;
       error = null;
-      savedMessage = null;
     });
 
-    try {
-      final result = await widget.api.payOrder(
-        orderId: currentOrder.id,
-        shiftId: widget.shiftId,
-        method: method,
-        amount: amount,
-        tenderedAmount: tendered,
-      );
+    var cashPartSaved = false;
 
-      currentOrder = result.order;
-      widget.onOrderChanged(result.order);
+    try {
+      PaymentResultDto result;
+
+      if (mode == 'CASH') {
+        result = await widget.api.payOrder(
+          orderId: currentOrder.id,
+          shiftId: widget.shiftId,
+          method: 'CASH',
+          amount: remaining,
+          tenderedAmount: _cashReceived,
+        );
+        _applyOrder(result);
+      } else if (mode == 'CARD') {
+        result = await widget.api.payOrder(
+          orderId: currentOrder.id,
+          shiftId: widget.shiftId,
+          method: 'CARD',
+          amount: remaining,
+        );
+        _applyOrder(result);
+      } else {
+        final cashAmount = _mixedCash;
+        final cashResult = await widget.api.payOrder(
+          orderId: currentOrder.id,
+          shiftId: widget.shiftId,
+          method: 'CASH',
+          amount: cashAmount,
+          tenderedAmount: _cashReceived,
+        );
+        cashPartSaved = true;
+        _applyOrder(cashResult);
+
+        if (cashResult.remaining <= 0.005) {
+          result = cashResult;
+        } else {
+          result = await widget.api.payOrder(
+            orderId: currentOrder.id,
+            shiftId: widget.shiftId,
+            method: 'CARD',
+            amount: cashResult.remaining,
+          );
+          _applyOrder(result);
+        }
+      }
 
       if (!mounted) return;
 
@@ -1793,43 +1889,110 @@ class _PaymentDialogState extends State<_PaymentDialog> {
         return;
       }
 
-      final savedMethod = _methodLabel(result.payment.method);
-      final savedAmount = result.payment.amount;
-
       setState(() {
         submitting = false;
-        savedMessage =
-            '$savedMethod ${savedAmount.toStringAsFixed(2)} AZN добавлено.';
-        amountController.text = result.remaining.toStringAsFixed(2);
-        cashController.text = result.remaining.toStringAsFixed(2);
+        error =
+            'Оплата сохранена, но осталось '
+            '${result.remaining.toStringAsFixed(2)} AZN.';
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        submitting = false;
-        error = e.toString();
-      });
+
+      if (cashPartSaved) {
+        mode = 'CARD';
+        cashReceivedController.text =
+            currentOrder.remaining.toStringAsFixed(2);
+        setState(() {
+          submitting = false;
+          error =
+              'Наличная часть уже сохранена. Карта не завершилась: $e\n'
+              'Осталось ${currentOrder.remaining.toStringAsFixed(2)} AZN. '
+              'Нажмите «Оплатить картой» для повтора.';
+        });
+      } else {
+        setState(() {
+          submitting = false;
+          error = e.toString();
+        });
+      }
     }
+  }
+
+  Widget _modeButton({
+    required String value,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final selected = mode == value;
+    final child = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 28),
+          const SizedBox(height: 6),
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11),
+          ),
+        ],
+      ),
+    );
+
+    return SizedBox(
+      height: 90,
+      child: selected
+          ? FilledButton(
+              onPressed: submitting ? null : () => _selectMode(value),
+              child: child,
+            )
+          : OutlinedButton(
+              onPressed: submitting ? null : () => _selectMode(value),
+              child: child,
+            ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final remaining = currentOrder.remaining;
+    final seen = <String>{};
     final completedPayments = currentOrder.payments
         .where(
           (payment) =>
-              payment.status == 'COMPLETED' || payment.status == 'REFUNDED',
+              (payment.status == 'COMPLETED' ||
+                  payment.status == 'REFUNDED') &&
+              seen.add(payment.id),
         )
         .toList();
 
     final scheme = Theme.of(context).colorScheme;
-    final half = remaining / 2;
+
+    String buttonText;
+    if (mode == 'CASH') {
+      buttonText =
+          'Оплатить ${remaining.toStringAsFixed(2)} AZN наличными';
+    } else if (mode == 'CARD') {
+      buttonText =
+          'Оплатить ${remaining.toStringAsFixed(2)} AZN картой';
+    } else {
+      buttonText =
+          'Оплатить: ${_cashDue.toStringAsFixed(2)} наличными + '
+          '${_cardDue.toStringAsFixed(2)} картой';
+    }
 
     return AlertDialog(
-      insetPadding: const EdgeInsets.all(24),
-      titlePadding: const EdgeInsets.fromLTRB(28, 24, 28, 0),
-      contentPadding: const EdgeInsets.fromLTRB(28, 18, 28, 12),
-      actionsPadding: const EdgeInsets.fromLTRB(28, 0, 28, 24),
+      insetPadding: const EdgeInsets.all(20),
+      titlePadding: const EdgeInsets.fromLTRB(28, 22, 18, 0),
+      contentPadding: const EdgeInsets.fromLTRB(28, 16, 28, 10),
+      actionsPadding: const EdgeInsets.fromLTRB(28, 4, 28, 22),
       title: Row(
         children: [
           Expanded(
@@ -1843,13 +2006,16 @@ class _PaymentDialogState extends State<_PaymentDialog> {
         ],
       ),
       content: SizedBox(
-        width: 700,
+        width: 760,
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
-                padding: const EdgeInsets.all(18),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 16,
+                ),
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHighest.withValues(alpha: .55),
                   borderRadius: BorderRadius.circular(18),
@@ -1862,25 +2028,15 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                         value: currentOrder.total,
                       ),
                     ),
-                    Container(
-                      width: 1,
-                      height: 46,
-                      color: scheme.outlineVariant,
-                    ),
                     Expanded(
                       child: _PaymentSummaryValue(
-                        label: 'Оплачено',
+                        label: 'Уже оплачено',
                         value: currentOrder.paidTotal,
                       ),
                     ),
-                    Container(
-                      width: 1,
-                      height: 46,
-                      color: scheme.outlineVariant,
-                    ),
                     Expanded(
                       child: _PaymentSummaryValue(
-                        label: 'Осталось',
+                        label: 'ОСТАЛОСЬ',
                         value: remaining,
                         emphasized: true,
                       ),
@@ -1889,12 +2045,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                 ),
               ),
               if (completedPayments.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Text(
-                  'Уже внесено',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -1915,129 +2066,165 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                   ],
                 ),
               ],
-              const SizedBox(height: 22),
+              const SizedBox(height: 20),
               const Text(
-                'Способ оплаты',
-                style: TextStyle(fontWeight: FontWeight.w700),
+                'КАК ОПЛАЧИВАЕТ КЛИЕНТ?',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .7,
+                ),
               ),
               const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
-                    child: SizedBox(
-                      height: 58,
-                      child: method == 'CASH'
-                          ? FilledButton.icon(
-                              onPressed: submitting
-                                  ? null
-                                  : () => _selectMethod('CASH'),
-                              icon: const Icon(Icons.payments_outlined),
-                              label: const Text('Наличные'),
-                            )
-                          : OutlinedButton.icon(
-                              onPressed: submitting
-                                  ? null
-                                  : () => _selectMethod('CASH'),
-                              icon: const Icon(Icons.payments_outlined),
-                              label: const Text('Наличные'),
-                            ),
+                    child: _modeButton(
+                      value: 'CASH',
+                      icon: Icons.payments_outlined,
+                      title: 'НАЛИЧНЫЕ',
+                      subtitle: 'Вся оставшаяся сумма',
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
-                    child: SizedBox(
-                      height: 58,
-                      child: method == 'CARD'
-                          ? FilledButton.icon(
-                              onPressed: submitting
-                                  ? null
-                                  : () => _selectMethod('CARD'),
-                              icon: const Icon(Icons.credit_card),
-                              label: const Text('Карта'),
-                            )
-                          : OutlinedButton.icon(
-                              onPressed: submitting
-                                  ? null
-                                  : () => _selectMethod('CARD'),
-                              icon: const Icon(Icons.credit_card),
-                              label: const Text('Карта'),
+                    child: _modeButton(
+                      value: 'CARD',
+                      icon: Icons.credit_card,
+                      title: 'КАРТА',
+                      subtitle: 'Вся оставшаяся сумма',
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _modeButton(
+                      value: 'MIXED',
+                      icon: Icons.call_split,
+                      title: 'СМЕШАННАЯ',
+                      subtitle: 'Часть наличными + часть картой',
+                    ),
+                  ),
+                ],
+              ),
+              if (mode == 'MIXED') ...[
+                const SizedBox(height: 22),
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: scheme.outlineVariant),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'РАСПРЕДЕЛЕНИЕ ОПЛАТЫ',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
-                    ),
+                          ),
+                          ActionChip(
+                            label: const Text('50 / 50'),
+                            onPressed: submitting ? null : _setHalf,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: mixedCashController,
+                              enabled: !submitting,
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
+                              ),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              decoration: const InputDecoration(
+                                labelText: 'Наличными',
+                                suffixText: 'AZN',
+                                prefixIcon:
+                                    Icon(Icons.payments_outlined),
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 14),
+                            child: Icon(Icons.add, size: 26),
+                          ),
+                          Expanded(
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Картой',
+                                suffixText: 'AZN',
+                                prefixIcon: Icon(Icons.credit_card),
+                                border: OutlineInputBorder(),
+                              ),
+                              child: Text(
+                                _cardDue.toStringAsFixed(2),
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Введите только сумму наличными — сумма по карте '
+                        'посчитается автоматически.',
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 22),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Сумма текущей оплаты',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  Text(
-                    'Можно оплатить часть суммы',
-                    style: TextStyle(
-                      color: scheme.onSurfaceVariant,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: amountController,
-                enabled: !submitting,
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
                 ),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  suffixText: 'AZN',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  ActionChip(
-                    label: const Text('Весь остаток'),
-                    onPressed:
-                        submitting ? null : () => _setAmount(remaining),
-                  ),
-                  if (remaining > 0.02)
-                    ActionChip(
-                      label: Text('1/2 · ${half.toStringAsFixed(2)}'),
-                      onPressed: submitting ? null : () => _setAmount(half),
-                    ),
-                ],
-              ),
-              if (method == 'CASH') ...[
+              ],
+              if (mode == 'CASH' || mode == 'MIXED') ...[
                 const SizedBox(height: 20),
-                const Text(
-                  'Получено от клиента',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                Text(
+                  mode == 'CASH'
+                      ? 'КЛИЕНТ ДАЛ НАЛИЧНЫМИ'
+                      : 'КЛИЕНТ ДАЛ ДЛЯ НАЛИЧНОЙ ЧАСТИ',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .6,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
-                  controller: cashController,
+                  controller: cashReceivedController,
                   enabled: !submitting,
                   style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
                   ),
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.payments_outlined),
                     suffixText: 'AZN',
-                    border: OutlineInputBorder(),
+                    helperText:
+                        'Наличная часть: ${_cashDue.toStringAsFixed(2)} AZN',
+                    border: const OutlineInputBorder(),
                   ),
                 ),
-                const SizedBox(height: 9),
+                const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -2045,14 +2232,14 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                     for (final value in _cashSuggestions())
                       ActionChip(
                         label: Text(
-                          value == _amount
+                          (value - _cashDue).abs() < 0.005
                               ? 'Ровно'
                               : value.toStringAsFixed(0),
                         ),
                         onPressed: submitting
                             ? null
                             : () {
-                                cashController.text =
+                                cashReceivedController.text =
                                     value.toStringAsFixed(2);
                               },
                       ),
@@ -2060,8 +2247,10 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                 ),
                 const SizedBox(height: 12),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   decoration: BoxDecoration(
                     color: _change > 0
                         ? scheme.primaryContainer
@@ -2071,37 +2260,16 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                   child: Row(
                     children: [
                       const Text(
-                        'Сдача',
-                        style: TextStyle(fontWeight: FontWeight.w700),
+                        'СДАЧА',
+                        style: TextStyle(fontWeight: FontWeight.w900),
                       ),
                       const Spacer(),
                       Text(
                         '${_change.toStringAsFixed(2)} AZN',
                         style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              if (savedMessage != null) ...[
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withValues(alpha: .55),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.check_circle_outline),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(savedMessage!)),
-                      Text(
-                        'Осталось ${remaining.toStringAsFixed(2)} AZN',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ],
                   ),
@@ -2109,11 +2277,18 @@ class _PaymentDialogState extends State<_PaymentDialog> {
               ],
               if (error != null) ...[
                 const SizedBox(height: 14),
-                Text(
-                  error!,
-                  style: TextStyle(
-                    color: scheme.error,
-                    fontWeight: FontWeight.w600,
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: scheme.errorContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    error!,
+                    style: TextStyle(
+                      color: scheme.onErrorContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
@@ -2124,11 +2299,11 @@ class _PaymentDialogState extends State<_PaymentDialog> {
       actions: [
         TextButton(
           onPressed: submitting ? null : () => Navigator.of(context).pop(),
-          child: const Text('Закрыть'),
+          child: const Text('Отмена'),
         ),
         const SizedBox(width: 8),
         SizedBox(
-          height: 50,
+          height: 54,
           child: FilledButton.icon(
             onPressed: submitting ? null : submit,
             icon: submitting
@@ -2137,17 +2312,9 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Icon(
-                    method == 'CASH'
-                        ? Icons.payments_outlined
-                        : Icons.credit_card,
-                  ),
+                : const Icon(Icons.check_circle_outline),
             label: Text(
-              submitting
-                  ? 'Сохраняем…'
-                  : _isFullPayment
-                      ? 'Оплатить остаток'
-                      : 'Добавить часть оплаты',
+              submitting ? 'Проводим оплату…' : buttonText,
             ),
           ),
         ),
