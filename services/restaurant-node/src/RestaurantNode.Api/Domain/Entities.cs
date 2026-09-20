@@ -241,8 +241,22 @@ public sealed class Payment : Entity
     public PaymentMethod Method { get; set; }
     public PaymentStatus Status { get; set; } = PaymentStatus.Pending;
     public decimal Amount { get; set; }
+    public decimal? TenderedAmount { get; set; }
+    public decimal ChangeAmount { get; set; }
     public string CurrencyCode { get; set; } = "AZN";
     public string? ProviderReference { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class PaymentRefund : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public Guid PaymentId { get; set; }
+    public Guid OrderId { get; set; }
+    public Guid ShiftId { get; set; }
+    public Guid EmployeeId { get; set; }
+    public decimal Amount { get; set; }
+    public string? Reason { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
