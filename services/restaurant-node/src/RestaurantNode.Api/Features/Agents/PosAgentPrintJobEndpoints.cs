@@ -38,7 +38,7 @@ public static class PosAgentPrintJobEndpoints
             var take = Math.Clamp(limit ?? 10, 1, 25);
             var staleBefore = DateTimeOffset.UtcNow.AddSeconds(-90);
 
-            var jobs = await db.PrintJobs
+            var candidates = await db.PrintJobs
                 .Where(x =>
                     x.RestaurantId == restaurantId &&
                     x.Type == "KITCHEN_TICKET" &&
@@ -50,24 +50,60 @@ public static class PosAgentPrintJobEndpoints
                       x.PrintedAt.HasValue &&
                       x.PrintedAt.Value < staleBefore)))
                 .OrderBy(x => x.CreatedAt)
-                .Take(take)
+                .Take(Math.Min(take * 5, 100))
                 .ToListAsync(ct);
 
-            if (jobs.Count == 0)
+            if (candidates.Count == 0)
                 return Results.Ok(new { jobs = Array.Empty<object>() });
 
+            var orderIds = candidates
+                .Select(x => TryGetOrderId(x.PayloadJson))
+                .Where(x => x.HasValue)
+                .Select(x => x!.Value)
+                .Distinct()
+                .ToArray();
+
+            var printableOrderIds = await db.Orders
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    orderIds.Contains(x.Id) &&
+                    x.Status != OrderStatus.Closed &&
+                    x.Status != OrderStatus.Cancelled)
+                .Select(x => x.Id)
+                .ToHashSetAsync(ct);
+
+            var jobs = new List<PrintJob>(take);
             var claimedAt = DateTimeOffset.UtcNow;
-            foreach (var job in jobs)
+
+            foreach (var job in candidates)
             {
+                var orderId = TryGetOrderId(job.PayloadJson);
+                if (!orderId.HasValue || !printableOrderIds.Contains(orderId.Value))
+                {
+                    job.Status = PrintJobStatus.Failed;
+                    job.Attempts = MaxAttempts;
+                    job.PrintedAt = null;
+                    job.LastError = "Kitchen print suppressed because the order is closed, cancelled, or unavailable.";
+                    continue;
+                }
+
+                if (jobs.Count >= take)
+                    continue;
+
                 job.Status = PrintJobStatus.Printing;
                 job.Attempts++;
                 // While PRINTING, PrintedAt is used as the lease timestamp.
                 // On failure it is cleared; on success it becomes the actual printed timestamp.
                 job.PrintedAt = claimedAt;
                 job.LastError = null;
+                jobs.Add(job);
             }
 
             await db.SaveChangesAsync(ct);
+
+            if (jobs.Count == 0)
+                return Results.Ok(new { jobs = Array.Empty<object>() });
 
             return Results.Ok(new
             {
@@ -215,6 +251,26 @@ public static class PosAgentPrintJobEndpoints
             x.Type == DeviceType.Pos &&
             x.IsActive,
             ct);
+
+    private static Guid? TryGetOrderId(string payloadJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            if (document.RootElement.TryGetProperty("orderId", out var orderIdElement) &&
+                orderIdElement.ValueKind == JsonValueKind.String &&
+                Guid.TryParse(orderIdElement.GetString(), out var orderId))
+            {
+                return orderId;
+            }
+        }
+        catch (JsonException)
+        {
+            // Invalid legacy payloads are suppressed instead of being printed blindly.
+        }
+
+        return null;
+    }
 
     private static Guid? TryGetTicketId(string payloadJson)
     {
