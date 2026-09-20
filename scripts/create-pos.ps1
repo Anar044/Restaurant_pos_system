@@ -18,6 +18,9 @@ flutter create --org com.restaurantplatform --project-name restaurant_pos --plat
 Copy-Item (Join-Path $template "pubspec.yaml") (Join-Path $target "pubspec.yaml") -Force
 Remove-Item -Recurse -Force (Join-Path $target "lib")
 Copy-Item (Join-Path $template "lib") (Join-Path $target "lib") -Recurse -Force
+if (Test-Path (Join-Path $template ".template-version")) {
+    Copy-Item (Join-Path $template ".template-version") (Join-Path $target ".template-version") -Force
+}
 
 # Keep this script ASCII-only so Windows PowerShell 5.1 can parse it reliably.
 # The Dart source itself is read and written explicitly as UTF-8.
@@ -138,7 +141,7 @@ $mainText = Replace-Required $mainText $paymentAnchor $kitchenAndPaymentAnchor '
 # Add a compact NEW/SENT indicator without widening the cart too much.
 $minusAnchor = @(
     '                              IconButton.filledTonal(',
-    '                                onPressed: busy || !canRemove ? null : () => onMinus(group),'
+    '                                onPressed: busy || editingLocked || !canRemove ? null : () => onMinus(group),'
 ) -join "`n"
 
 $statusAndMinusAnchor = @(
@@ -155,7 +158,7 @@ $statusAndMinusAnchor = @(
     '                              ),',
     '                              const SizedBox(width: 4),',
     '                              IconButton.filledTonal(',
-    '                                onPressed: busy || !canRemove ? null : () => onMinus(group),'
+    '                                onPressed: busy || editingLocked || !canRemove ? null : () => onMinus(group),'
 ) -join "`n"
 
 $mainText = Replace-Required $mainText $minusAnchor $statusAndMinusAnchor 'item status indicator'
