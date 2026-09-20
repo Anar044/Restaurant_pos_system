@@ -306,7 +306,17 @@ function Start-Platform {
     Start-LoggedProcess -name "restaurant-node" -filePath "dotnet" -argumentList @("run", "--no-launch-profile") -workingDirectory $nodeDir | Out-Null
 
     if (-not (Wait-Http "http://127.0.0.1:8080/health" 45)) {
-        throw "Restaurant Node did not start. Check .devlogs\restaurant-node.err.log"
+        Write-Host ""
+        Write-Host "Restaurant Node startup log:" -ForegroundColor Yellow
+        $nodeErr = Join-Path $logsDir "restaurant-node.err.log"
+        $nodeOut = Join-Path $logsDir "restaurant-node.log"
+        if (Test-Path $nodeErr) {
+            Get-Content $nodeErr -Tail 50 | ForEach-Object { Write-Host $_ }
+        }
+        if (Test-Path $nodeOut) {
+            Get-Content $nodeOut -Tail 30 | ForEach-Object { Write-Host $_ }
+        }
+        throw "Restaurant Node did not start."
     }
     Write-Host "Restaurant Node is ready." -ForegroundColor Green
 
