@@ -1717,13 +1717,26 @@ class _OrderPageState extends State<OrderPage> {
 
   Future<void> addProduct(MenuProduct product) async {
     if (mutating || printing || paying) return;
+
+    List<ModifierSelectionDto> selections = const [];
+    if (product.hasModifiers) {
+      final selected = await showModifierDialog(product);
+      if (selected == null || !mounted) return;
+      selections = selected;
+    }
+
     setState(() {
       mutating = true;
       error = null;
     });
     try {
-      var current = order ?? await widget.api.createOrder(tableId: widget.table.id);
-      current = await widget.api.addItem(current.id, product.id);
+      var current =
+          order ?? await widget.api.createOrder(tableId: widget.table.id);
+      current = await widget.api.addItem(
+        current.id,
+        product.id,
+        modifiers: selections,
+      );
       if (mounted) setState(() => order = current);
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
@@ -1732,8 +1745,408 @@ class _OrderPageState extends State<OrderPage> {
     }
   }
 
+  Future<List<ModifierSelectionDto>?> showModifierDialog(
+    MenuProduct product,
+  ) async {
+    final quantities = <String, int>{};
+
+    int selectedInGroup(MenuModifierGroup group) {
+      var total = 0;
+      for (final option in group.modifiers) {
+        total += quantities['${group.id}:${option.id}'] ?? 0;
+      }
+      return total;
+    }
+
+    bool groupIsValid(MenuModifierGroup group) {
+      final count = selectedInGroup(group);
+      return count >= group.minSelections && count <= group.maxSelections;
+    }
+
+    bool allValid() => product.modifierGroups.every(groupIsValid);
+
+    double selectedDelta() {
+      var total = 0.0;
+      for (final group in product.modifierGroups) {
+        for (final option in group.modifiers) {
+          final quantity = quantities['${group.id}:${option.id}'] ?? 0;
+          total += option.priceDelta * quantity;
+        }
+      }
+      return total;
+    }
+
+    return showDialog<List<ModifierSelectionDto>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final delta = selectedDelta();
+          final finalPrice = product.price + delta;
+
+          return AlertDialog(
+            insetPadding: const EdgeInsets.all(18),
+            titlePadding: const EdgeInsets.fromLTRB(24, 20, 12, 0),
+            contentPadding: const EdgeInsets.fromLTRB(24, 14, 24, 8),
+            actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(product.name),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Базовая цена: ${product.price.toStringAsFixed(2)} '
+                        '${product.currencyCode}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Закрыть',
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 720,
+              height: 570,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: product.modifierGroups.length,
+                      separatorBuilder: (_, __) =>
+                          const SizedBox(height: 16),
+                      itemBuilder: (context, groupIndex) {
+                        final group = product.modifierGroups[groupIndex];
+                        final selectedCount = selectedInGroup(group);
+                        final valid = groupIsValid(group);
+
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: valid
+                                  ? Theme.of(context)
+                                      .colorScheme
+                                      .outlineVariant
+                                  : Theme.of(context).colorScheme.error,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      group.name,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 9,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: group.isRequired
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .errorContainer
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .surfaceContainerHighest,
+                                      borderRadius:
+                                          BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      group.isRequired
+                                          ? 'ОБЯЗАТЕЛЬНО'
+                                          : 'НЕОБЯЗАТЕЛЬНО',
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                group.minSelections == group.maxSelections
+                                    ? 'Выберите: ${group.minSelections}'
+                                    : 'Выберите от ${group.minSelections} '
+                                      'до ${group.maxSelections} · '
+                                      'сейчас $selectedCount',
+                                style: TextStyle(
+                                  color: valid
+                                      ? Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant
+                                      : Theme.of(context).colorScheme.error,
+                                  fontSize: 12,
+                                  fontWeight: valid
+                                      ? FontWeight.w500
+                                      : FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              for (final option in group.modifiers) ...[
+                                Builder(
+                                  builder: (context) {
+                                    final key =
+                                        '${group.id}:${option.id}';
+                                    final quantity =
+                                        quantities[key] ?? 0;
+                                    final singleChoice =
+                                        group.maxSelections == 1;
+                                    final canIncrease =
+                                        selectedCount <
+                                            group.maxSelections ||
+                                        quantity > 0;
+
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 4,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: InkWell(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              onTap: () {
+                                                setDialogState(() {
+                                                  if (singleChoice) {
+                                                    for (final other
+                                                        in group.modifiers) {
+                                                      quantities[
+                                                          '${group.id}:${other.id}'] = 0;
+                                                    }
+                                                    quantities[key] =
+                                                        quantity > 0 ? 0 : 1;
+                                                  } else if (quantity == 0 &&
+                                                      selectedCount <
+                                                          group.maxSelections) {
+                                                    quantities[key] = 1;
+                                                  }
+                                                });
+                                              },
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.all(9),
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      quantity > 0
+                                                          ? Icons
+                                                              .check_circle
+                                                          : Icons
+                                                              .radio_button_unchecked,
+                                                      color: quantity > 0
+                                                          ? Theme.of(context)
+                                                              .colorScheme
+                                                              .primary
+                                                          : null,
+                                                    ),
+                                                    const SizedBox(width: 10),
+                                                    Expanded(
+                                                      child: Text(
+                                                        option.name,
+                                                        style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w650,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      option.priceDelta == 0
+                                                          ? 'без доплаты'
+                                                          : '${option.priceDelta > 0 ? '+' : ''}'
+                                                            '${option.priceDelta.toStringAsFixed(2)} '
+                                                            '${product.currencyCode}',
+                                                      style: TextStyle(
+                                                        color: option
+                                                                    .priceDelta >
+                                                                0
+                                                            ? Theme.of(context)
+                                                                .colorScheme
+                                                                .primary
+                                                            : Theme.of(context)
+                                                                .colorScheme
+                                                                .onSurfaceVariant,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          if (!singleChoice) ...[
+                                            const SizedBox(width: 8),
+                                            IconButton.filledTonal(
+                                              onPressed: quantity > 0
+                                                  ? () => setDialogState(() {
+                                                        quantities[key] =
+                                                            quantity - 1;
+                                                      })
+                                                  : null,
+                                              icon: const Icon(Icons.remove),
+                                            ),
+                                            SizedBox(
+                                              width: 34,
+                                              child: Text(
+                                                '$quantity',
+                                                textAlign: TextAlign.center,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                            IconButton.filledTonal(
+                                              onPressed: canIncrease &&
+                                                      selectedCount <
+                                                          group.maxSelections
+                                                  ? () => setDialogState(() {
+                                                        quantities[key] =
+                                                            quantity + 1;
+                                                      })
+                                                  : null,
+                                              icon: const Icon(Icons.add),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Цена блюда',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const Spacer(),
+                        if (delta.abs() > 0.0001)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 10),
+                            child: Text(
+                              'модификаторы '
+                              '${delta > 0 ? '+' : ''}'
+                              '${delta.toStringAsFixed(2)}',
+                            ),
+                          ),
+                        Text(
+                          '${finalPrice.toStringAsFixed(2)} '
+                          '${product.currencyCode}',
+                          style: const TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Отмена'),
+              ),
+              FilledButton.icon(
+                onPressed: allValid()
+                    ? () {
+                        final result = <ModifierSelectionDto>[];
+                        for (final group in product.modifierGroups) {
+                          for (final option in group.modifiers) {
+                            final quantity = quantities[
+                                    '${group.id}:${option.id}'] ??
+                                0;
+                            if (quantity > 0) {
+                              result.add(
+                                ModifierSelectionDto(
+                                  groupId: group.id,
+                                  modifierId: option.id,
+                                  quantity: quantity.toDouble(),
+                                ),
+                              );
+                            }
+                          }
+                        }
+                        Navigator.of(dialogContext).pop(result);
+                      }
+                    : null,
+                icon: const Icon(Icons.add_shopping_cart),
+                label: const Text('Добавить в заказ'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> incrementGroup(CartGroup group) async {
     if (mutating || printing || paying || order == null) return;
+
+    if (group.hasModifiers) {
+      try {
+        final categories = await menuFuture;
+        MenuProduct? product;
+        for (final category in categories) {
+          for (final candidate in category.products) {
+            if (candidate.id == group.productId) {
+              product = candidate;
+              break;
+            }
+          }
+          if (product != null) break;
+        }
+        if (product == null) {
+          if (mounted) {
+            setState(() => error = 'Блюдо больше не найдено в меню.');
+          }
+          return;
+        }
+        await addProduct(product);
+        return;
+      } catch (e) {
+        if (mounted) setState(() => error = 'Модификаторы: $e');
+        return;
+      }
+    }
+
     setState(() {
       mutating = true;
       error = null;
