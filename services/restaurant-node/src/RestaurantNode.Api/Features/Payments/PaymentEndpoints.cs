@@ -47,7 +47,7 @@ public static class PaymentEndpoints
                 return Results.Conflict(new { message = "An open POS shift is required before payment." });
 
             var order = await db.Orders
-                .Include(x => x.Items)
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
                 .Include(x => x.Payments)
                 .FirstOrDefaultAsync(x =>
                     x.Id == request.OrderId &&
