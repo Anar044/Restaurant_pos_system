@@ -59,10 +59,12 @@ public sealed class KitchenPrintJobExecutor(
     private static string BuildWindowsText(KitchenTicketPayload payload)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("КУХНЯ / KITCHEN");
+        sb.AppendLine(payload.IsVoid ? "ОТМЕНА / VOID" : "КУХНЯ / KITCHEN");
         sb.AppendLine(payload.StationName.Trim());
         sb.AppendLine(new string('=', 42));
         sb.AppendLine($"ЗАКАЗ / ORDER #{payload.OrderNumber}");
+        if (payload.IsVoid && !string.IsNullOrWhiteSpace(payload.VoidReason))
+            sb.AppendLine($"Причина / Reason: {payload.VoidReason!.Trim()}");
         if (!string.IsNullOrWhiteSpace(payload.HallName))
             sb.AppendLine($"Зал / Hall: {payload.HallName!.Trim()}");
         if (!string.IsNullOrWhiteSpace(payload.TableName))
@@ -88,7 +90,7 @@ public sealed class KitchenPrintJobExecutor(
         bytes.AddRange([0x1B, 0x40]);
         bytes.AddRange([0x1B, 0x61, 0x01]);
         bytes.AddRange([0x1B, 0x45, 0x01]);
-        AppendAscii(bytes, "KITCHEN\n");
+        AppendAscii(bytes, payload.IsVoid ? "VOID\n" : "KITCHEN\n");
         AppendAscii(bytes, ToAscii(payload.StationName.Trim()) + "\n");
         bytes.AddRange([0x1D, 0x21, 0x11]);
         AppendAscii(bytes, $"ORDER #{payload.OrderNumber}\n");
@@ -102,6 +104,8 @@ public sealed class KitchenPrintJobExecutor(
         if (!string.IsNullOrWhiteSpace(payload.TableName))
             AppendAscii(bytes, $"Table: {ToAscii(payload.TableName!.Trim())}\n");
         AppendAscii(bytes, $"Time: {payload.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}\n");
+        if (payload.IsVoid && !string.IsNullOrWhiteSpace(payload.VoidReason))
+            AppendAscii(bytes, $"Reason: {ToAscii(payload.VoidReason!.Trim())}\n");
         AppendAscii(bytes, "--------------------------------\n");
 
         foreach (var item in payload.Items)
@@ -114,6 +118,8 @@ public sealed class KitchenPrintJobExecutor(
         }
 
         AppendAscii(bytes, "--------------------------------\n");
+        if (payload.IsVoid)
+            AppendAscii(bytes, "VOID / CANCEL\n");
         AppendAscii(bytes, $"ORDER #{payload.OrderNumber}\n\n\n");
         return bytes.ToArray();
     }
@@ -160,7 +166,9 @@ public sealed record KitchenTicketPayload(
     Guid StationId,
     string StationName,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<KitchenTicketItemPayload> Items);
+    IReadOnlyList<KitchenTicketItemPayload> Items,
+    bool IsVoid = false,
+    string? VoidReason = null);
 
 public sealed record KitchenTicketItemPayload(
     Guid LineId,
