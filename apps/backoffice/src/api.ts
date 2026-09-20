@@ -147,23 +147,39 @@ export type KitchenProductSummary = {
 };
 
 export type BackOfficeKitchenStation = KitchenStation & {
+  printerId: string | null;
+  printerName: string | null;
   activeProductCount: number;
   totalProductCount: number;
   products: KitchenProductSummary[];
 };
 
+export type KitchenPrinterOption = {
+  id: string;
+  name: string;
+  connectionType: string;
+  address: string;
+  port: number | null;
+  hostDeviceId: string;
+  hostDeviceName: string;
+  lastSeenAt: string | null;
+};
+
 export type BackOfficeKitchen = {
   stations: BackOfficeKitchenStation[];
   unassignedProducts: KitchenProductSummary[];
+  availablePrinters: KitchenPrinterOption[];
 };
 
 export type CreateKitchenStationInput = {
   name: string;
+  printerId: string | null;
 };
 
 export type UpdateKitchenStationInput = {
   name: string;
   isActive: boolean;
+  printerId: string | null;
 };
 
 export type EmployeeRole = {
