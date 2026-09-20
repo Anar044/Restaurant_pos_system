@@ -161,7 +161,7 @@ export function KitchenPage({ token }: { token: string }) {
         <KitchenStationEditor
           editor={editor}
           token={token}
-          availablePrinters={data.availablePrinters}
+          availablePrinters={data?.availablePrinters ?? []}
           onClose={() => setEditor(null)}
           onSaved={async () => {
             setEditor(null);
