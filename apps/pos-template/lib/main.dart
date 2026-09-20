@@ -590,9 +590,9 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
       items: groups
           .map(
             (group) => ReceiptPrintItem(
-              name: group.productName,
+              name: group.receiptName,
               quantity: group.quantity,
-              unitPrice: group.unitPrice,
+              unitPrice: group.effectiveUnitPrice,
               lineTotal: group.total,
             ),
           )
@@ -1966,7 +1966,7 @@ class _OrderPageState extends State<OrderPage> {
                                                         option.name,
                                                         style: const TextStyle(
                                                           fontWeight:
-                                                              FontWeight.w650,
+                                                              FontWeight.w600,
                                                         ),
                                                       ),
                                                     ),
@@ -2677,7 +2677,9 @@ class _OrderPageState extends State<OrderPage> {
                           subtitle: Text(
                             [
                               '${group.quantity.g} × '
-                                  '${group.unitPrice.toStringAsFixed(2)} AZN',
+                                  '${group.effectiveUnitPrice.toStringAsFixed(2)} AZN',
+                              if (group.modifierSummary != null)
+                                group.modifierSummary!,
                               group.status == 'SENT'
                                   ? 'Уже отправлено на кухню'
                                   : 'Новое',
@@ -3165,9 +3167,9 @@ class _OrderPageState extends State<OrderPage> {
         items: groups
             .map(
               (group) => ReceiptPrintItem(
-                name: group.productName,
+                name: group.receiptName,
                 quantity: group.quantity,
-                unitPrice: group.unitPrice,
+                unitPrice: group.effectiveUnitPrice,
                 lineTotal: group.total,
               ),
             )
@@ -3349,9 +3351,9 @@ class _OrderPageState extends State<OrderPage> {
         items: groups
             .map(
               (group) => ReceiptPrintItem(
-                name: group.productName,
+                name: group.receiptName,
                 quantity: group.quantity,
-                unitPrice: group.unitPrice,
+                unitPrice: group.effectiveUnitPrice,
                 lineTotal: group.total,
               ),
             )
@@ -4280,6 +4282,31 @@ class _MenuArea extends StatelessWidget {
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                           ),
+                          if (product.hasModifiers) ...[
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .secondaryContainer,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                'НАСТРОЙКИ',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSecondaryContainer,
+                                ),
+                              ),
+                            ),
+                          ],
                           Text(
                             '${product.price.toStringAsFixed(2)} ${product.currencyCode}',
                             style: Theme.of(context).textTheme.titleSmall,
@@ -4407,9 +4434,22 @@ class _OrderPane extends StatelessWidget {
                                         const SizedBox(height: 3),
                                         Text(
                                           '${group.quantity.g} × '
-                                          '${group.unitPrice.toStringAsFixed(2)} '
+                                          '${group.effectiveUnitPrice.toStringAsFixed(2)} '
                                           '= ${group.total.toStringAsFixed(2)}',
                                         ),
+                                        if (group.modifierSummary != null) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            group.modifierSummary!,
+                                            style: TextStyle(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .secondary,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
                                         if (group.comment != null) ...[
                                           const SizedBox(height: 4),
                                           Text(
@@ -4582,6 +4622,7 @@ class CartGroup {
     required this.unitPrice,
     required this.status,
     required this.comment,
+    required this.modifiers,
   });
 
   final String productId;
@@ -4589,10 +4630,34 @@ class CartGroup {
   final double unitPrice;
   final String status;
   final String? comment;
+  final List<OrderLineModifierDto> modifiers;
   final List<OrderLineDto> lines = [];
+
+  bool get hasModifiers => modifiers.isNotEmpty;
 
   double get quantity => lines.fold(0, (sum, line) => sum + line.quantity);
   double get total => lines.fold(0, (sum, line) => sum + line.lineTotal);
+
+  double get effectiveUnitPrice {
+    if (lines.isEmpty || lines.first.quantity == 0) return unitPrice;
+    return lines.first.lineTotal / lines.first.quantity;
+  }
+
+  String? get modifierSummary {
+    if (modifiers.isEmpty) return null;
+    return modifiers
+        .map(
+          (item) => item.quantity == 1
+              ? item.name
+              : '${item.name} × ${item.quantity.g}',
+        )
+        .join(' · ');
+  }
+
+  String get receiptName {
+    final summary = modifierSummary;
+    return summary == null ? productName : '$productName [$summary]';
+  }
 
   static List<CartGroup> fromOrder(OrderDto? order) {
     if (order == null) return const [];
@@ -4602,9 +4667,23 @@ class CartGroup {
       if (line.status == 'VOIDED') continue;
 
       final normalizedComment = line.comment?.trim();
+      final sortedModifiers = [...line.modifiers]
+        ..sort((a, b) {
+          final byId = a.modifierId.compareTo(b.modifierId);
+          if (byId != 0) return byId;
+          return a.quantity.compareTo(b.quantity);
+        });
+
+      final modifierKey = sortedModifiers
+          .map(
+            (item) =>
+                '${item.modifierId}:${item.quantity}:${item.priceDelta}',
+          )
+          .join(',');
+
       final key =
           '${line.productId}|${line.unitPrice}|${line.status}|'
-          '${normalizedComment ?? ''}';
+          '${normalizedComment ?? ''}|$modifierKey';
 
       final group = map.putIfAbsent(
         key,
@@ -4616,6 +4695,7 @@ class CartGroup {
           comment: normalizedComment == null || normalizedComment.isEmpty
               ? null
               : normalizedComment,
+          modifiers: sortedModifiers,
         ),
       );
       group.lines.add(line);
