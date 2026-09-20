@@ -168,6 +168,34 @@ public static class OrderEndpoints
             if (stations.Count != stationIds.Length)
                 return Results.Conflict(new { message = "One or more kitchen stations are unavailable." });
 
+            var stationWithoutPrinter = stations.Values.FirstOrDefault(x => !x.PrinterId.HasValue);
+            if (stationWithoutPrinter is not null)
+                return Results.Conflict(new
+                {
+                    message = $"Kitchen station '{stationWithoutPrinter.Name}' has no printer assigned. Configure it in BackOffice > Kitchen."
+                });
+
+            var kitchenPrinterIds = stations.Values
+                .Select(x => x.PrinterId!.Value)
+                .Distinct()
+                .ToArray();
+
+            var configuredKitchenPrinterCount = await db.Printers
+                .AsNoTracking()
+                .CountAsync(x =>
+                    x.RestaurantId == restaurantId &&
+                    kitchenPrinterIds.Contains(x.Id) &&
+                    x.IsConfigured &&
+                    x.IsActive &&
+                    x.HostDeviceId.HasValue,
+                    ct);
+
+            if (configuredKitchenPrinterCount != kitchenPrinterIds.Length)
+                return Results.Conflict(new
+                {
+                    message = "One or more kitchen printers are unavailable or are not attached to a POS Agent."
+                });
+
             string? tableName = null;
             string? hallName = null;
             if (order.TableId.HasValue)
