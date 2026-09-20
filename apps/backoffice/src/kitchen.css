@@ -203,3 +203,23 @@
   .kitchen-station-header { flex-direction: column; }
   .kitchen-station-header > .text-button { width: 100%; }
 }
+
+
+.station-printer-line {
+  margin-top: 7px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.station-printer-line strong {
+  color: #344054;
+  font-weight: 700;
+}
+
+.field-hint {
+  display: block;
+  margin-top: 6px;
+  color: #98a2b3;
+  font-size: 11px;
+  line-height: 1.4;
+}
