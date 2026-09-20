@@ -48,6 +48,29 @@ public static class ShiftEndpoints
             });
         }).RequireAuthorization("shifts.manage");
 
+        group.MapGet("/{id:guid}/report", async (
+            Guid id,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out _))
+                return Results.Unauthorized();
+
+            var shift = await db.Shifts
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x =>
+                    x.Id == id &&
+                    x.RestaurantId == restaurantId,
+                    ct);
+
+            if (shift is null)
+                return Results.NotFound(new { message = "Shift not found." });
+
+            var report = await BuildReportAsync(db, restaurantId, shift, ct);
+            return Results.Ok(report);
+        }).RequireAuthorization("shifts.manage");
+
         group.MapPost("/open", async (
             OpenShiftRequest request,
             ClaimsPrincipal user,
@@ -96,7 +119,7 @@ public static class ShiftEndpoints
                 RestaurantId = restaurantId,
                 DeviceId = request.DeviceId,
                 OpenedByEmployeeId = employeeId,
-                OpeningCash = decimal.Round(request.OpeningCash, 4, MidpointRounding.AwayFromZero),
+                OpeningCash = Money(request.OpeningCash),
                 Status = ShiftStatus.Open,
                 OpenedAt = DateTimeOffset.UtcNow
             };
@@ -132,6 +155,80 @@ public static class ShiftEndpoints
             await tx.CommitAsync(ct);
 
             return Results.Created($"/api/v1/shifts/{shift.Id}", ToDto(shift));
+        }).RequireAuthorization("shifts.manage");
+
+        group.MapPost("/{id:guid}/cash-transactions", async (
+            Guid id,
+            CashTransactionRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            if (request.Amount <= 0)
+                return Results.BadRequest(new { message = "Cash transaction amount must be greater than zero." });
+
+            if (!Enum.TryParse<CashTransactionType>(request.Type, true, out var type) ||
+                !Enum.IsDefined(type))
+                return Results.BadRequest(new { message = "Cash transaction type must be DEPOSIT or WITHDRAWAL." });
+
+            var reason = request.Reason?.Trim();
+            if (string.IsNullOrWhiteSpace(reason))
+                return Results.BadRequest(new { message = "Cash transaction reason is required." });
+            if (reason.Length > 500)
+                reason = reason[..500];
+
+            var shift = await db.Shifts
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x =>
+                    x.Id == id &&
+                    x.RestaurantId == restaurantId &&
+                    x.Status == ShiftStatus.Open,
+                    ct);
+
+            if (shift is null)
+                return Results.Conflict(new { message = "An open shift is required." });
+
+            var entry = new CashTransaction
+            {
+                RestaurantId = restaurantId,
+                ShiftId = shift.Id,
+                EmployeeId = employeeId,
+                Type = type,
+                Amount = Money(request.Amount),
+                Reason = reason,
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+
+            db.CashTransactions.Add(entry);
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                shift.DeviceId,
+                type == CashTransactionType.Deposit ? "CASH_DEPOSIT" : "CASH_WITHDRAWAL",
+                entry.Id,
+                new
+                {
+                    entry.Id,
+                    shiftId = shift.Id,
+                    type = EnumText(type),
+                    entry.Amount,
+                    entry.Reason
+                }));
+
+            await db.SaveChangesAsync(ct);
+
+            return Results.Created($"/api/v1/shifts/{shift.Id}/cash-transactions/{entry.Id}", new
+            {
+                entry.Id,
+                entry.ShiftId,
+                type = EnumText(entry.Type),
+                entry.Amount,
+                entry.Reason,
+                entry.CreatedAt
+            });
         }).RequireAuthorization("shifts.manage");
 
         group.MapPost("/{id:guid}/close", async (
@@ -172,35 +269,8 @@ public static class ShiftEndpoints
             if (pendingPayments)
                 return Results.Conflict(new { message = "Shift has pending payments and cannot be closed." });
 
-            var completedPayments = await db.Payments
-                .AsNoTracking()
-                .Where(x =>
-                    x.RestaurantId == restaurantId &&
-                    x.ShiftId == shift.Id &&
-                    x.Status == PaymentStatus.Completed)
-                .GroupBy(x => x.Method)
-                .Select(x => new
-                {
-                    Method = x.Key,
-                    Total = x.Sum(p => p.Amount)
-                })
-                .ToListAsync(ct);
-
-            var cashSales = completedPayments
-                .Where(x => x.Method == PaymentMethod.Cash)
-                .Sum(x => x.Total);
-
-            var cashAdjustments = await db.CashTransactions
-                .AsNoTracking()
-                .Where(x =>
-                    x.RestaurantId == restaurantId &&
-                    x.ShiftId == shift.Id)
-                .SumAsync(
-                    x => x.Type == CashTransactionType.Deposit ? x.Amount : -x.Amount,
-                    ct);
-
-            var expectedCash = shift.OpeningCash + cashSales + cashAdjustments;
-            var closingCash = decimal.Round(request.ClosingCash, 4, MidpointRounding.AwayFromZero);
+            var report = await BuildReportAsync(db, restaurantId, shift, ct);
+            var closingCash = Money(request.ClosingCash);
 
             shift.ClosingCash = closingCash;
             shift.ClosedByEmployeeId = employeeId;
@@ -219,13 +289,13 @@ public static class ShiftEndpoints
                     shift.DeviceId,
                     shift.OpeningCash,
                     closingCash,
-                    expectedCash,
-                    difference = closingCash - expectedCash,
-                    payments = completedPayments.Select(x => new
-                    {
-                        method = x.Method.ToString().ToUpperInvariant(),
-                        x.Total
-                    })
+                    report.ExpectedCash,
+                    difference = Money(closingCash - report.ExpectedCash),
+                    report.GrossSales,
+                    report.Refunds,
+                    report.NetSales,
+                    report.OrdersCount,
+                    report.Payments
                 }));
             db.OutboxEvents.Add(Outbox(
                 restaurantId,
@@ -238,7 +308,7 @@ public static class ShiftEndpoints
                     shift.DeviceId,
                     shift.ClosedAt,
                     closingCash,
-                    expectedCash
+                    report.ExpectedCash
                 }));
 
             await db.SaveChangesAsync(ct);
@@ -247,17 +317,114 @@ public static class ShiftEndpoints
             return Results.Ok(new
             {
                 shift = ToDto(shift),
-                expectedCash,
-                difference = closingCash - expectedCash,
-                payments = completedPayments.Select(x => new
+                report = report with
                 {
-                    method = x.Method.ToString().ToUpperInvariant(),
-                    x.Total
-                })
+                    Status = EnumText(shift.Status),
+                    ClosedAt = shift.ClosedAt,
+                    ClosingCash = shift.ClosingCash,
+                    CashDifference = Money(closingCash - report.ExpectedCash)
+                }
             });
         }).RequireAuthorization("shifts.manage");
 
         return app;
+    }
+
+    private static async Task<ShiftReportDto> BuildReportAsync(
+        RestaurantDbContext db,
+        Guid restaurantId,
+        Shift shift,
+        CancellationToken ct)
+    {
+        var payments = await db.Payments
+            .AsNoTracking()
+            .Where(x =>
+                x.RestaurantId == restaurantId &&
+                x.ShiftId == shift.Id &&
+                (x.Status == PaymentStatus.Completed || x.Status == PaymentStatus.Refunded))
+            .ToListAsync(ct);
+
+        var refunds = await (
+            from refund in db.PaymentRefunds.AsNoTracking()
+            join payment in db.Payments.AsNoTracking() on refund.PaymentId equals payment.Id
+            where refund.RestaurantId == restaurantId &&
+                  refund.ShiftId == shift.Id
+            select new
+            {
+                refund.Amount,
+                payment.Method
+            })
+            .ToListAsync(ct);
+
+        var cashEntries = await db.CashTransactions
+            .AsNoTracking()
+            .Where(x =>
+                x.RestaurantId == restaurantId &&
+                x.ShiftId == shift.Id)
+            .ToListAsync(ct);
+
+        var methodRows = Enum.GetValues<PaymentMethod>()
+            .Select(method =>
+            {
+                var gross = payments
+                    .Where(x => x.Method == method)
+                    .Sum(x => x.Amount);
+                var refunded = refunds
+                    .Where(x => x.Method == method)
+                    .Sum(x => x.Amount);
+                return new ShiftPaymentTotalDto(
+                    EnumText(method),
+                    Money(gross),
+                    Money(refunded),
+                    Money(gross - refunded));
+            })
+            .Where(x => x.Gross > 0 || x.Refunds > 0)
+            .ToArray();
+
+        var grossSales = Money(payments.Sum(x => x.Amount));
+        var refundedTotal = Money(refunds.Sum(x => x.Amount));
+        var netSales = Money(grossSales - refundedTotal);
+
+        var cashGross = payments
+            .Where(x => x.Method == PaymentMethod.Cash)
+            .Sum(x => x.Amount);
+        var cashRefunds = refunds
+            .Where(x => x.Method == PaymentMethod.Cash)
+            .Sum(x => x.Amount);
+        var deposits = cashEntries
+            .Where(x => x.Type == CashTransactionType.Deposit)
+            .Sum(x => x.Amount);
+        var withdrawals = cashEntries
+            .Where(x => x.Type == CashTransactionType.Withdrawal)
+            .Sum(x => x.Amount);
+
+        var expectedCash = Money(
+            shift.OpeningCash +
+            cashGross -
+            cashRefunds +
+            deposits -
+            withdrawals);
+
+        return new ShiftReportDto(
+            shift.Id,
+            shift.DeviceId,
+            EnumText(shift.Status),
+            shift.OpenedAt,
+            shift.ClosedAt,
+            shift.OpeningCash,
+            shift.ClosingCash,
+            expectedCash,
+            shift.ClosingCash.HasValue
+                ? Money(shift.ClosingCash.Value - expectedCash)
+                : null,
+            payments.Select(x => x.OrderId).Distinct().Count(),
+            payments.Count,
+            grossSales,
+            refundedTotal,
+            netSales,
+            Money(deposits),
+            Money(withdrawals),
+            methodRows);
     }
 
     private static object ToDto(Shift shift) => new
@@ -267,12 +434,18 @@ public static class ShiftEndpoints
         shift.DeviceId,
         shift.OpenedByEmployeeId,
         shift.ClosedByEmployeeId,
-        status = shift.Status.ToString().ToUpperInvariant(),
+        status = EnumText(shift.Status),
         shift.OpeningCash,
         shift.ClosingCash,
         shift.OpenedAt,
         shift.ClosedAt
     };
+
+    private static decimal Money(decimal value) =>
+        decimal.Round(value, 4, MidpointRounding.AwayFromZero);
+
+    private static string EnumText<TEnum>(TEnum value) where TEnum : struct, Enum =>
+        value.ToString().ToUpperInvariant();
 
     private static bool TryClaims(
         ClaimsPrincipal user,
@@ -318,3 +491,29 @@ public static class ShiftEndpoints
 
 public sealed record OpenShiftRequest(Guid DeviceId, decimal OpeningCash = 0m);
 public sealed record CloseShiftRequest(decimal ClosingCash);
+public sealed record CashTransactionRequest(string Type, decimal Amount, string? Reason);
+
+public sealed record ShiftPaymentTotalDto(
+    string Method,
+    decimal Gross,
+    decimal Refunds,
+    decimal Net);
+
+public sealed record ShiftReportDto(
+    Guid ShiftId,
+    Guid DeviceId,
+    string Status,
+    DateTimeOffset OpenedAt,
+    DateTimeOffset? ClosedAt,
+    decimal OpeningCash,
+    decimal? ClosingCash,
+    decimal ExpectedCash,
+    decimal? CashDifference,
+    int OrdersCount,
+    int PaymentsCount,
+    decimal GrossSales,
+    decimal Refunds,
+    decimal NetSales,
+    decimal Deposits,
+    decimal Withdrawals,
+    IReadOnlyList<ShiftPaymentTotalDto> Payments);
