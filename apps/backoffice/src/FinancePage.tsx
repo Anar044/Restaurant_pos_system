@@ -29,8 +29,9 @@ export function FinancePage({ token }: { token: string }) {
 
   const totals = useMemo(() => {
     const payments = data?.payments ?? [];
+    const refundsList = data?.refunds ?? [];
     const gross = payments.reduce((sum, payment) => sum + payment.amount, 0);
-    const refunds = payments.reduce((sum, payment) => sum + payment.refundedAmount, 0);
+    const refunds = refundsList.reduce((sum, refund) => sum + refund.amount, 0);
     return { gross, refunds, net: gross - refunds, count: payments.length };
   }, [data]);
 
