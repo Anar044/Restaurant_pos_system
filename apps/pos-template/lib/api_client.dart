@@ -184,11 +184,13 @@ class PosApiClient {
 
   Future<List<OrderHistoryItemDto>> getOrderHistory({
     String? shiftId,
+    int? orderNumber,
     int take = 200,
   }) async {
     final query = <String, String>{
       'take': take.toString(),
       if (shiftId != null && shiftId.isNotEmpty) 'shiftId': shiftId,
+      if (orderNumber != null) 'orderNumber': orderNumber.toString(),
     };
     final uri = _uri('/api/v1/orders/history').replace(queryParameters: query);
     final response = await _http.get(uri, headers: _headers);
