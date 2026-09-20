@@ -278,6 +278,7 @@ function Start-Platform {
     $env:Jwt__Key = $jwtKey
     $env:Seed__AdminPin = "1234"
     $env:Agent__SharedKey = $agentKey
+    $env:ASPNETCORE_ENVIRONMENT = "Development"
     $env:ASPNETCORE_URLS = "http://0.0.0.0:8080"
     Start-LoggedProcess -name "restaurant-node" -filePath "dotnet" -argumentList @("run", "--no-launch-profile") -workingDirectory $nodeDir | Out-Null
 
