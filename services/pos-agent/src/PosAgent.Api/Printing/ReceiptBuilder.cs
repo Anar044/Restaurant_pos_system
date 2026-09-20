@@ -10,7 +10,8 @@ public static class ReceiptBuilder
         Validate(receipt);
 
         var sb = new StringBuilder();
-        var paid = !string.IsNullOrWhiteSpace(receipt.PaymentMethod);
+        var paid = (receipt.Payments?.Count ?? 0) > 0 ||
+            !string.IsNullOrWhiteSpace(receipt.PaymentMethod);
         var when = receipt.CompletedAt?.ToLocalTime() ?? DateTimeOffset.Now;
         var currency = Normalize(receipt.CurrencyCode, "AZN");
 
@@ -40,10 +41,20 @@ public static class ReceiptBuilder
 
         if (paid)
         {
-            sb.AppendLine($"Оплата / Payment: {receipt.PaymentMethod!.Trim()}");
+            if ((receipt.Payments?.Count ?? 0) > 0)
+            {
+                sb.AppendLine("Оплата / Payment:");
+                foreach (var part in receipt.Payments!)
+                    sb.AppendLine($"  {PaymentLabel(part.Method)}: {Money(part.Amount)} {currency}");
+            }
+            else
+            {
+                sb.AppendLine($"Оплата / Payment: {receipt.PaymentMethod!.Trim()}");
+            }
+
             sb.AppendLine($"Оплачено / Paid: {Money(receipt.PaidAmount ?? receipt.Total)} {currency}");
             if (receipt.CashReceived.HasValue)
-                sb.AppendLine($"Получено / Cash received: {Money(receipt.CashReceived.Value)} {currency}");
+                sb.AppendLine($"Получено наличными / Cash received: {Money(receipt.CashReceived.Value)} {currency}");
             if ((receipt.ChangeAmount ?? 0m) > 0)
                 sb.AppendLine($"Сдача / Change: {Money(receipt.ChangeAmount!.Value)} {currency}");
         }
@@ -62,7 +73,8 @@ public static class ReceiptBuilder
         Validate(receipt);
 
         var bytes = new List<byte>();
-        var paid = !string.IsNullOrWhiteSpace(receipt.PaymentMethod);
+        var paid = (receipt.Payments?.Count ?? 0) > 0 ||
+            !string.IsNullOrWhiteSpace(receipt.PaymentMethod);
         var when = receipt.CompletedAt?.ToLocalTime() ?? DateTimeOffset.Now;
         var currency = ToAscii(Normalize(receipt.CurrencyCode, "AZN"));
 
@@ -100,7 +112,17 @@ public static class ReceiptBuilder
 
         if (paid)
         {
-            AppendAscii(bytes, $"Payment: {ToAscii(receipt.PaymentMethod!.Trim())}\n");
+            if ((receipt.Payments?.Count ?? 0) > 0)
+            {
+                AppendAscii(bytes, "Payment:\n");
+                foreach (var part in receipt.Payments!)
+                    AppendAscii(bytes, $"  {ToAscii(PaymentLabel(part.Method))}: {Money(part.Amount)} {currency}\n");
+            }
+            else
+            {
+                AppendAscii(bytes, $"Payment: {ToAscii(receipt.PaymentMethod!.Trim())}\n");
+            }
+
             AppendAscii(bytes, $"Paid: {Money(receipt.PaidAmount ?? receipt.Total)} {currency}\n");
             if (receipt.CashReceived.HasValue)
                 AppendAscii(bytes, $"Cash received: {Money(receipt.CashReceived.Value)} {currency}\n");
@@ -139,6 +161,14 @@ public static class ReceiptBuilder
                 throw new ArgumentException("Receipt item prices cannot be negative.");
         }
     }
+
+    private static string PaymentLabel(string? method) =>
+        method?.Trim().ToUpperInvariant() switch
+        {
+            "CASH" => "Наличные / Cash",
+            "CARD" => "Карта / Card",
+            _ => Normalize(method, "Другое / Other")
+        };
 
     private static string Normalize(string? value, string fallback)
     {
