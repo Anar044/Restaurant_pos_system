@@ -51,7 +51,8 @@ public static class AuthEndpoints
                 restaurant.OrganizationId,
                 employee.RestaurantId,
                 restaurant.Name,
-                restaurant.CurrencyCode));
+                restaurant.CurrencyCode,
+                employee.Role.Permissions));
         }).RequireRateLimiting("pin-login");
 
         app.MapGet("/api/v1/me", (ClaimsPrincipal user) =>
@@ -81,4 +82,5 @@ public sealed record PinLoginResponse(
     Guid OrganizationId,
     Guid RestaurantId,
     string RestaurantName,
-    string CurrencyCode);
+    string CurrencyCode,
+    string[] Permissions);
