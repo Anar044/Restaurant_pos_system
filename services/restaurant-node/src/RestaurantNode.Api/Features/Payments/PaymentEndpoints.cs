@@ -128,7 +128,8 @@ public static class PaymentEndpoints
             };
 
             db.Payments.Add(payment);
-            order.Payments.Add(payment);
+            if (!order.Payments.Any(x => x.Id == payment.Id))
+                order.Payments.Add(payment);
 
             var newPaidTotal = Money(completedTotal + amount);
             order.PaidTotal = newPaidTotal;
