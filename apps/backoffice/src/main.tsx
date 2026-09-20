@@ -16,11 +16,12 @@ import { FinancePage } from './FinancePage';
 import { HallsPage } from './HallsPage';
 import { KitchenPage } from './KitchenPage';
 import { MenuPage } from './MenuPage';
+import { ModifiersPage } from './ModifiersPage';
 import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'halls' | 'menu' | 'kitchen' | 'employees' | 'devices' | 'finance';
+type PageKey = 'overview' | 'halls' | 'menu' | 'modifiers' | 'kitchen' | 'employees' | 'devices' | 'finance';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -156,6 +157,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'overview', label: 'Обзор', icon: '⌂' },
     { key: 'halls', label: 'Залы и столы', icon: '▦', ready: true },
     { key: 'menu', label: 'Меню', icon: '≡', ready: true },
+    { key: 'modifiers', label: 'Модификаторы', icon: '±', ready: true },
     { key: 'kitchen', label: 'Кухня', icon: '◫', ready: true },
     { key: 'employees', label: 'Сотрудники', icon: '◎', ready: true },
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
@@ -232,6 +234,8 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             />
           ) : page === 'menu' ? (
             <MenuPage token={session.token} />
+          ) : page === 'modifiers' ? (
+            <ModifiersPage token={session.token} />
           ) : page === 'kitchen' ? (
             <KitchenPage token={session.token} />
           ) : page === 'employees' ? (
