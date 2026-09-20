@@ -1,13 +1,9 @@
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using RestaurantNode.Api.Infrastructure;
 
 #nullable disable
 
 namespace RestaurantNode.Api.Infrastructure.Migrations
 {
-    [DbContext(typeof(RestaurantDbContext))]
-    [Migration("20260920222000_AddPaymentCashDetailsAndRefunds")]
     public partial class AddPaymentCashDetailsAndRefunds : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
