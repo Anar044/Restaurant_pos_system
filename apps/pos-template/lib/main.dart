@@ -1841,52 +1841,279 @@ class _OrderPageState extends State<OrderPage> {
       final halls = await widget.api.getHalls();
       if (!mounted) return;
 
-      final targets = <_MoveOrderTarget>[
-        for (final hall in halls)
-          for (final table in hall.tables)
-            if (table.id != current.tableId && !table.occupied)
-              _MoveOrderTarget(
-                hallName: hall.name,
-                table: table,
-              ),
-      ];
+      final availableHalls = halls
+          .where((hall) => hall.tables.isNotEmpty)
+          .toList();
 
-      if (targets.isEmpty) {
+      final hasTransferTarget = availableHalls.any(
+        (hall) => hall.tables.any(
+          (table) => table.id != current.tableId && !table.occupied,
+        ),
+      );
+
+      if (!hasTransferTarget) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Нет свободного стола для переноса.')),
         );
         return;
       }
 
+      String selectedHallId = availableHalls.first.id;
+      for (final hall in availableHalls) {
+        if (hall.tables.any((table) => table.id == current.tableId)) {
+          selectedHallId = hall.id;
+          break;
+        }
+      }
+
       final target = await showDialog<_MoveOrderTarget>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text('Перенести заказ #${current.displayNumber}'),
-          content: SizedBox(
-            width: 480,
-            height: 430,
-            child: ListView.separated(
-              itemCount: targets.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final item = targets[index];
-                return ListTile(
-                  leading: const Icon(Icons.table_restaurant),
-                  title: Text('Стол ${item.table.name}'),
-                  subtitle: Text(
-                    '${item.hallName} · ${item.table.seats} мест',
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            var selectedHall = availableHalls.first;
+            for (final hall in availableHalls) {
+              if (hall.id == selectedHallId) {
+                selectedHall = hall;
+                break;
+              }
+            }
+
+            final freeCount = selectedHall.tables
+                .where(
+                  (table) =>
+                      table.id != current.tableId && !table.occupied,
+                )
+                .length;
+
+            return AlertDialog(
+              insetPadding: const EdgeInsets.all(20),
+              titlePadding: const EdgeInsets.fromLTRB(26, 22, 16, 0),
+              contentPadding: const EdgeInsets.fromLTRB(26, 16, 26, 10),
+              actionsPadding: const EdgeInsets.fromLTRB(26, 4, 26, 20),
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Перенести заказ #${current.displayNumber}',
+                    ),
                   ),
-                  onTap: () => Navigator.of(dialogContext).pop(item),
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Отмена'),
-            ),
-          ],
+                  IconButton(
+                    tooltip: 'Закрыть',
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 760,
+                height: 520,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'ВЫБЕРИТЕ ЗАЛ',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .7,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 52,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: availableHalls.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final hall = availableHalls[index];
+                          final selected = hall.id == selectedHallId;
+                          final hallFreeCount = hall.tables
+                              .where(
+                                (table) =>
+                                    table.id != current.tableId &&
+                                    !table.occupied,
+                              )
+                              .length;
+
+                          final label =
+                              '${hall.name} · свободно ${hallFreeCount}';
+
+                          return selected
+                              ? FilledButton.icon(
+                                  onPressed: () {},
+                                  icon: const Icon(
+                                    Icons.meeting_room_outlined,
+                                  ),
+                                  label: Text(label),
+                                )
+                              : OutlinedButton.icon(
+                                  onPressed: () {
+                                    setDialogState(
+                                      () => selectedHallId = hall.id,
+                                    );
+                                  },
+                                  icon: const Icon(
+                                    Icons.meeting_room_outlined,
+                                  ),
+                                  label: Text(label),
+                                );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Text(
+                          selectedHall.name,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        const Spacer(),
+                        Text(
+                          'Свободно: $freeCount',
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: GridView.builder(
+                        gridDelegate:
+                            const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 190,
+                          childAspectRatio: 1.5,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                        ),
+                        itemCount: selectedHall.tables.length,
+                        itemBuilder: (context, index) {
+                          final table = selectedHall.tables[index];
+                          final isCurrent = table.id == current.tableId;
+                          final isOccupied = table.occupied && !isCurrent;
+                          final canSelect = !isCurrent && !isOccupied;
+
+                          String status;
+                          IconData icon;
+                          if (isCurrent) {
+                            status = 'Текущий стол';
+                            icon = Icons.location_on_outlined;
+                          } else if (isOccupied) {
+                            status = 'Занят';
+                            icon = Icons.lock_outline;
+                          } else {
+                            status = 'Свободен';
+                            icon = Icons.check_circle_outline;
+                          }
+
+                          return Card(
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              onTap: canSelect
+                                  ? () => Navigator.of(dialogContext).pop(
+                                        _MoveOrderTarget(
+                                          hallName: selectedHall.name,
+                                          table: table,
+                                        ),
+                                      )
+                                  : null,
+                              child: Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.table_restaurant,
+                                          size: 24,
+                                          color: canSelect
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                              : Theme.of(context)
+                                                  .disabledColor,
+                                        ),
+                                        const Spacer(),
+                                        Icon(
+                                          icon,
+                                          size: 18,
+                                          color: canSelect
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                              : Theme.of(context)
+                                                  .disabledColor,
+                                        ),
+                                      ],
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      'Стол ${table.name}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w800,
+                                        color: canSelect
+                                            ? null
+                                            : Theme.of(context)
+                                                .disabledColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '${table.seats} мест · $status',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: canSelect
+                                            ? Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant
+                                            : Theme.of(context)
+                                                .disabledColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Нажмите на свободный стол — заказ сразу будет перенесён.',
+                      style: TextStyle(
+                        color:
+                            Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Отмена'),
+                ),
+              ],
+            );
+          },
         ),
       );
 
