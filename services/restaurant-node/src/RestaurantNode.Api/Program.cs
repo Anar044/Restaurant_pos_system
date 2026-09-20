@@ -91,6 +91,7 @@ app.MapBackOfficePosPrinterEndpoints();
 app.MapHallEndpoints();
 app.MapMenuEndpoints();
 app.MapOrderEndpoints();
+app.MapShiftPaymentEndpoints();
 app.MapShiftEndpoints();
 app.MapPaymentEndpoints();
 
