@@ -168,6 +168,22 @@ public static class OrderEndpoints
             if (stations.Count != stationIds.Length)
                 return Results.Conflict(new { message = "One or more kitchen stations are unavailable." });
 
+            string? tableName = null;
+            string? hallName = null;
+            if (order.TableId.HasValue)
+            {
+                var tableInfo = await (
+                    from table in db.DiningTables.AsNoTracking()
+                    join hall in db.Halls.AsNoTracking() on table.HallId equals hall.Id
+                    where table.Id == order.TableId.Value &&
+                          table.RestaurantId == restaurantId
+                    select new { TableName = table.Name, HallName = hall.Name })
+                    .FirstOrDefaultAsync(ct);
+
+                tableName = tableInfo?.TableName;
+                hallName = tableInfo?.HallName;
+            }
+
             var now = DateTimeOffset.UtcNow;
             var ticketIds = new List<Guid>();
 
@@ -195,6 +211,8 @@ public static class OrderEndpoints
                     orderId = order.Id,
                     orderNumber = order.DisplayNumber,
                     order.TableId,
+                    tableName,
+                    hallName,
                     stationId,
                     stationName = station.Name,
                     createdAt = now,
