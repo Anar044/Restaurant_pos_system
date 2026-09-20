@@ -6,6 +6,10 @@ public sealed record ReceiptLineRequest(
     decimal UnitPrice,
     decimal LineTotal);
 
+public sealed record ReceiptPaymentPartRequest(
+    string Method,
+    decimal Amount);
+
 public sealed record ReceiptPrintRequest(
     string RestaurantName,
     long OrderNumber,
@@ -21,7 +25,8 @@ public sealed record ReceiptPrintRequest(
     decimal? ChangeAmount,
     DateTimeOffset? CompletedAt,
     IReadOnlyList<ReceiptLineRequest> Items,
-    bool IsCopy = false);
+    bool IsCopy = false,
+    IReadOnlyList<ReceiptPaymentPartRequest>? Payments = null);
 
 public sealed record ReceiptPrintResult(
     Guid PrinterId,
