@@ -56,7 +56,7 @@ $orderBuildAnchor = @(
 
 $sendMethodAndAnchor = @(
     '  Future<void> sendToKitchen() async {',
-    '    if (mutating || order == null || !order!.hasNewItems) return;',
+    '    if (mutating || printing || paying || order == null || !order!.hasNewItems) return;',
     '    setState(() {',
     '      mutating = true;',
     '      error = null;',
@@ -104,8 +104,9 @@ $mainText = Replace-Required $mainText `
 # Insert the kitchen button immediately before the existing payment button.
 $paymentAnchor = @(
     '            FilledButton.icon(',
-    '              onPressed: null,',
-    '              icon: const Icon(Icons.payments_outlined),'
+    '              onPressed: busy || order == null || order!.items.isEmpty',
+    '                  ? null',
+    "                  : order!.status == 'PAID'"
 ) -join "`n"
 
 $kitchenAndPaymentAnchor = @(
@@ -121,8 +122,9 @@ $kitchenAndPaymentAnchor = @(
     '            ),',
     '            const SizedBox(height: 10),',
     '            FilledButton.icon(',
-    '              onPressed: null,',
-    '              icon: const Icon(Icons.payments_outlined),'
+    '              onPressed: busy || order == null || order!.items.isEmpty',
+    '                  ? null',
+    "                  : order!.status == 'PAID'"
 ) -join "`n"
 
 $mainText = Replace-Required $mainText $paymentAnchor $kitchenAndPaymentAnchor 'kitchen button'
@@ -160,4 +162,4 @@ dart format lib
 Pop-Location
 
 Write-Host "POS created at apps/pos"
-Write-Host "Windows example: flutter run -d windows --dart-define=API_BASE_URL=http://127.0.0.1:8080"
+Write-Host "Windows example: flutter run -d windows --dart-define=API_BASE_URL=http://127.0.0.1:8080 --dart-define=POS_AGENT_BASE_URL=http://127.0.0.1:8791 --dart-define=POS_DEVICE_ID=01a0b072-5a20-7a10-add0-4f890c477588"
