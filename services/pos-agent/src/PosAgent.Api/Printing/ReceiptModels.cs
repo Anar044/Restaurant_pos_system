@@ -20,7 +20,8 @@ public sealed record ReceiptPrintRequest(
     decimal? CashReceived,
     decimal? ChangeAmount,
     DateTimeOffset? CompletedAt,
-    IReadOnlyList<ReceiptLineRequest> Items);
+    IReadOnlyList<ReceiptLineRequest> Items,
+    bool IsCopy = false);
 
 public sealed record ReceiptPrintResult(
     Guid PrinterId,
