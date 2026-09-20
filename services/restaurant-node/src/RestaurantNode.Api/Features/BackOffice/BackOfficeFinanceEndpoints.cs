@@ -72,7 +72,23 @@ public static class BackOfficeFinanceEndpoints
 
             var paymentIds = paymentRows.Select(x => x.Payment.Id).ToArray();
 
-            var refunds = await (
+            var refundTotals = await db.PaymentRefunds
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    paymentIds.Contains(x.PaymentId))
+                .GroupBy(x => x.PaymentId)
+                .Select(group => new
+                {
+                    PaymentId = group.Key,
+                    Amount = group.Sum(x => x.Amount)
+                })
+                .ToListAsync(ct);
+
+            var refundedByPayment = refundTotals
+                .ToDictionary(x => x.PaymentId, x => x.Amount);
+
+            var refundQuery =
                 from refund in db.PaymentRefunds.AsNoTracking()
                 join payment in db.Payments.AsNoTracking()
                     on refund.PaymentId equals payment.Id
@@ -80,9 +96,7 @@ public static class BackOfficeFinanceEndpoints
                     on refund.OrderId equals order.Id
                 join employee in db.Employees.AsNoTracking()
                     on refund.EmployeeId equals employee.Id
-                where refund.RestaurantId == restaurantId &&
-                      paymentIds.Contains(refund.PaymentId)
-                orderby refund.CreatedAt descending
+                where refund.RestaurantId == restaurantId
                 select new
                 {
                     refund.Id,
@@ -96,12 +110,15 @@ public static class BackOfficeFinanceEndpoints
                     payment.CurrencyCode,
                     refund.Reason,
                     refund.CreatedAt
-                })
-                .ToListAsync(ct);
+                };
 
-            var refundedByPayment = refunds
-                .GroupBy(x => x.PaymentId)
-                .ToDictionary(x => x.Key, x => x.Sum(r => r.Amount));
+            if (shiftId.HasValue)
+                refundQuery = refundQuery.Where(x => x.ShiftId == shiftId.Value);
+
+            var refunds = await refundQuery
+                .OrderByDescending(x => x.CreatedAt)
+                .Take(limit)
+                .ToListAsync(ct);
 
             var openShifts = shifts
                 .Where(x => x.status == "OPEN")
