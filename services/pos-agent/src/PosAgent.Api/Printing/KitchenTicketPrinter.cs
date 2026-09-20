@@ -59,12 +59,36 @@ public sealed class KitchenPrintJobExecutor(
     private static string BuildWindowsText(KitchenTicketPayload payload)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(payload.IsVoid ? "ОТМЕНА / VOID" : "КУХНЯ / KITCHEN");
+        sb.AppendLine(
+            payload.IsVoid
+                ? "ОТМЕНА / VOID"
+                : payload.IsTransfer
+                    ? "ПЕРЕНОС / TRANSFER"
+                    : "КУХНЯ / KITCHEN");
         sb.AppendLine(payload.StationName.Trim());
         sb.AppendLine(new string('=', 42));
         sb.AppendLine($"ЗАКАЗ / ORDER #{payload.OrderNumber}");
         if (payload.IsVoid && !string.IsNullOrWhiteSpace(payload.VoidReason))
             sb.AppendLine($"Причина / Reason: {payload.VoidReason!.Trim()}");
+        if (payload.IsTransfer)
+        {
+            if (payload.FromOrderNumber.HasValue)
+                sb.AppendLine($"Из заказа / From order: #{payload.FromOrderNumber.Value}");
+            if (payload.ToOrderNumber.HasValue)
+                sb.AppendLine($"В заказ / To order: #{payload.ToOrderNumber.Value}");
+            if (!string.IsNullOrWhiteSpace(payload.FromHallName) ||
+                !string.IsNullOrWhiteSpace(payload.FromTableName))
+            {
+                sb.AppendLine(
+                    $"Откуда / From: {JoinPlace(payload.FromHallName, payload.FromTableName)}");
+            }
+            if (!string.IsNullOrWhiteSpace(payload.ToHallName) ||
+                !string.IsNullOrWhiteSpace(payload.ToTableName))
+            {
+                sb.AppendLine(
+                    $"Куда / To: {JoinPlace(payload.ToHallName, payload.ToTableName)}");
+            }
+        }
         if (!string.IsNullOrWhiteSpace(payload.HallName))
             sb.AppendLine($"Зал / Hall: {payload.HallName!.Trim()}");
         if (!string.IsNullOrWhiteSpace(payload.TableName))
@@ -90,7 +114,13 @@ public sealed class KitchenPrintJobExecutor(
         bytes.AddRange([0x1B, 0x40]);
         bytes.AddRange([0x1B, 0x61, 0x01]);
         bytes.AddRange([0x1B, 0x45, 0x01]);
-        AppendAscii(bytes, payload.IsVoid ? "VOID\n" : "KITCHEN\n");
+        AppendAscii(
+            bytes,
+            payload.IsVoid
+                ? "VOID\n"
+                : payload.IsTransfer
+                    ? "TRANSFER\n"
+                    : "KITCHEN\n");
         AppendAscii(bytes, ToAscii(payload.StationName.Trim()) + "\n");
         bytes.AddRange([0x1D, 0x21, 0x11]);
         AppendAscii(bytes, $"ORDER #{payload.OrderNumber}\n");
@@ -106,6 +136,27 @@ public sealed class KitchenPrintJobExecutor(
         AppendAscii(bytes, $"Time: {payload.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}\n");
         if (payload.IsVoid && !string.IsNullOrWhiteSpace(payload.VoidReason))
             AppendAscii(bytes, $"Reason: {ToAscii(payload.VoidReason!.Trim())}\n");
+        if (payload.IsTransfer)
+        {
+            if (payload.FromOrderNumber.HasValue)
+                AppendAscii(bytes, $"From order: #{payload.FromOrderNumber.Value}\n");
+            if (payload.ToOrderNumber.HasValue)
+                AppendAscii(bytes, $"To order: #{payload.ToOrderNumber.Value}\n");
+            if (!string.IsNullOrWhiteSpace(payload.FromHallName) ||
+                !string.IsNullOrWhiteSpace(payload.FromTableName))
+            {
+                AppendAscii(
+                    bytes,
+                    $"From: {ToAscii(JoinPlace(payload.FromHallName, payload.FromTableName))}\n");
+            }
+            if (!string.IsNullOrWhiteSpace(payload.ToHallName) ||
+                !string.IsNullOrWhiteSpace(payload.ToTableName))
+            {
+                AppendAscii(
+                    bytes,
+                    $"To: {ToAscii(JoinPlace(payload.ToHallName, payload.ToTableName))}\n");
+            }
+        }
         AppendAscii(bytes, "--------------------------------\n");
 
         foreach (var item in payload.Items)
@@ -120,8 +171,25 @@ public sealed class KitchenPrintJobExecutor(
         AppendAscii(bytes, "--------------------------------\n");
         if (payload.IsVoid)
             AppendAscii(bytes, "VOID / CANCEL\n");
+        else if (payload.IsTransfer)
+            AppendAscii(bytes, "TRANSFER\n");
         AppendAscii(bytes, $"ORDER #{payload.OrderNumber}\n\n\n");
         return bytes.ToArray();
+    }
+
+    private static string JoinPlace(string? hall, string? table)
+    {
+        var hallText = hall?.Trim();
+        var tableText = table?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(hallText) &&
+            !string.IsNullOrWhiteSpace(tableText))
+            return $"{hallText}, стол {tableText}";
+
+        if (!string.IsNullOrWhiteSpace(tableText))
+            return $"стол {tableText}";
+
+        return hallText ?? "-";
     }
 
     private static void Validate(KitchenTicketPayload payload)
@@ -168,7 +236,14 @@ public sealed record KitchenTicketPayload(
     DateTimeOffset CreatedAt,
     IReadOnlyList<KitchenTicketItemPayload> Items,
     bool IsVoid = false,
-    string? VoidReason = null);
+    string? VoidReason = null,
+    bool IsTransfer = false,
+    long? FromOrderNumber = null,
+    long? ToOrderNumber = null,
+    string? FromTableName = null,
+    string? FromHallName = null,
+    string? ToTableName = null,
+    string? ToHallName = null);
 
 public sealed record KitchenTicketItemPayload(
     Guid LineId,
