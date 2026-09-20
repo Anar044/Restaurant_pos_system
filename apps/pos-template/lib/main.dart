@@ -457,6 +457,10 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
         builder: (_) => _OrderHistoryDialog(
           orders: history,
           canRefund: widget.session.hasPermission('payments.refund'),
+          onSearchOrderNumber: (orderNumber) => widget.api.getOrderHistory(
+            orderNumber: orderNumber,
+            take: 20,
+          ),
           onReprint: reprintHistoryOrder,
           onRefund: refundHistoryOrder,
         ),
@@ -874,12 +878,15 @@ class _OrderHistoryDialog extends StatefulWidget {
   const _OrderHistoryDialog({
     required this.orders,
     required this.canRefund,
+    required this.onSearchOrderNumber,
     required this.onReprint,
     required this.onRefund,
   });
 
   final List<OrderHistoryItemDto> orders;
   final bool canRefund;
+  final Future<List<OrderHistoryItemDto>> Function(int orderNumber)
+      onSearchOrderNumber;
   final Future<void> Function(OrderHistoryItemDto item) onReprint;
   final Future<void> Function(OrderHistoryItemDto item) onRefund;
 
@@ -889,6 +896,8 @@ class _OrderHistoryDialog extends StatefulWidget {
 
 class _OrderHistoryDialogState extends State<_OrderHistoryDialog> {
   final searchController = TextEditingController();
+  List<OrderHistoryItemDto>? remoteResults;
+  bool searching = false;
   String? busyOrderId;
   String? error;
 
@@ -907,12 +916,18 @@ class _OrderHistoryDialogState extends State<_OrderHistoryDialog> {
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {
+        remoteResults = null;
+        error = null;
+      });
+    }
   }
 
   List<OrderHistoryItemDto> get filteredOrders {
     final query = searchController.text.trim().toLowerCase();
     if (query.isEmpty) return widget.orders;
+    if (remoteResults != null) return remoteResults!;
 
     return widget.orders.where((item) {
       final order = item.order;
@@ -925,6 +940,31 @@ class _OrderHistoryDialogState extends State<_OrderHistoryDialog> {
       ].join(' ').toLowerCase();
       return haystack.contains(query);
     }).toList();
+  }
+
+  Future<void> searchOldOrder() async {
+    final value = int.tryParse(searchController.text.trim());
+    if (value == null || value <= 0) {
+      setState(() {
+        error = 'Для поиска по старым сменам введите номер заказа.';
+        remoteResults = null;
+      });
+      return;
+    }
+
+    setState(() {
+      searching = true;
+      error = null;
+    });
+    try {
+      final result = await widget.onSearchOrderNumber(value);
+      if (!mounted) return;
+      setState(() => remoteResults = result);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => searching = false);
+    }
   }
 
   Future<void> runAction(
@@ -960,11 +1000,27 @@ class _OrderHistoryDialogState extends State<_OrderHistoryDialog> {
           children: [
             TextField(
               controller: searchController,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
+              onSubmitted: (_) => searchOldOrder(),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
                 labelText: 'Найти заказ',
-                hintText: 'Номер заказа, стол, зал, кассир или дата',
-                border: OutlineInputBorder(),
+                hintText:
+                    'В последних заказах — любой текст; старый заказ — по номеру',
+                border: const OutlineInputBorder(),
+                suffixIcon: searching
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : IconButton(
+                        tooltip: 'Найти по номеру во всех сменах',
+                        onPressed: searchOldOrder,
+                        icon: const Icon(Icons.manage_search),
+                      ),
               ),
             ),
             const SizedBox(height: 10),
