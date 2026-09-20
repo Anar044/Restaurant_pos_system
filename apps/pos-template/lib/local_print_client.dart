@@ -12,6 +12,30 @@ class LocalPrintException implements Exception {
   String toString() => message;
 }
 
+class PosAgentConfig {
+  const PosAgentConfig({
+    required this.deviceId,
+    required this.deviceName,
+  });
+
+  final String deviceId;
+  final String deviceName;
+
+  factory PosAgentConfig.fromJson(Map<String, dynamic> json) {
+    final deviceId = json['deviceId'] as String?;
+    if (deviceId == null || deviceId.isEmpty) {
+      throw LocalPrintException(
+        'POS Agent is not bound to a device. Configure Device__Id and restart the agent.',
+      );
+    }
+
+    return PosAgentConfig(
+      deviceId: deviceId,
+      deviceName: json['deviceName'] as String? ?? 'POS',
+    );
+  }
+}
+
 class ReceiptPrintItem {
   const ReceiptPrintItem({
     required this.name,
@@ -65,6 +89,12 @@ class PosAgentClient {
   final http.Client _http;
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
+
+  Future<PosAgentConfig> getConfig() async {
+    final response = await _http.get(_uri('/api/v1/config'));
+    final data = _decode(response);
+    return PosAgentConfig.fromJson(data);
+  }
 
   Future<LocalReceiptPrintResult> printReceipt({
     required String restaurantName,
