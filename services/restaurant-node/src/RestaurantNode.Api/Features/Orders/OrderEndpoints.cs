@@ -575,6 +575,305 @@ public static class OrderEndpoints
             return Results.Ok(ToDto(order));
         }).RequireAuthorization("orders.void");
 
+        group.MapPost("/{id:guid}/transfer-items", async (
+            Guid id,
+            TransferOrderItemsRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            var itemIds = (request.ItemIds ?? [])
+                .Where(x => x != Guid.Empty)
+                .Distinct()
+                .ToArray();
+
+            if (itemIds.Length == 0)
+                return Results.BadRequest(new { message = "Select at least one order item to transfer." });
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            var source = await db.Orders
+                .Include(x => x.Items)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (source is null)
+                return Results.NotFound(new { message = "Source order not found." });
+
+            if (!CanEditOrder(source.Status))
+                return Results.Conflict(new { message = $"Order cannot be edited in status {source.Status}." });
+
+            if (!source.TableId.HasValue)
+                return Results.Conflict(new { message = "Source order is not assigned to a table." });
+
+            if (source.TableId.Value == request.TargetTableId)
+                return Results.BadRequest(new { message = "Target table must be different from the current table." });
+
+            var sourceTableInfo = await (
+                from table in db.DiningTables.AsNoTracking()
+                join hall in db.Halls.AsNoTracking() on table.HallId equals hall.Id
+                where table.Id == source.TableId.Value &&
+                      table.RestaurantId == restaurantId
+                select new
+                {
+                    TableId = table.Id,
+                    TableName = table.Name,
+                    HallName = hall.Name
+                })
+                .FirstOrDefaultAsync(ct);
+
+            var targetTableInfo = await (
+                from table in db.DiningTables.AsNoTracking()
+                join hall in db.Halls.AsNoTracking() on table.HallId equals hall.Id
+                where table.Id == request.TargetTableId &&
+                      table.RestaurantId == restaurantId &&
+                      table.IsActive &&
+                      hall.IsActive
+                select new
+                {
+                    TableId = table.Id,
+                    TableName = table.Name,
+                    HallName = hall.Name
+                })
+                .FirstOrDefaultAsync(ct);
+
+            if (targetTableInfo is null)
+                return Results.BadRequest(new { message = "Target table is not available." });
+
+            var selected = source.Items
+                .Where(x => itemIds.Contains(x.Id) && x.Status != OrderItemStatus.Voided)
+                .ToList();
+
+            if (selected.Count != itemIds.Length)
+                return Results.BadRequest(new
+                {
+                    message = "One or more selected positions are unavailable or already voided."
+                });
+
+            var target = await db.Orders
+                .Include(x => x.Items)
+                .Include(x => x.Payments)
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.TableId == request.TargetTableId &&
+                    x.Status != OrderStatus.Closed &&
+                    x.Status != OrderStatus.Cancelled)
+                .OrderByDescending(x => x.UpdatedAt)
+                .FirstOrDefaultAsync(ct);
+
+            var targetCreated = false;
+            if (target is not null && !CanEditOrder(target.Status))
+                return Results.Conflict(new
+                {
+                    message = $"Target table order cannot accept positions in status {target.Status}."
+                });
+
+            if (target is null)
+            {
+                target = new Order
+                {
+                    RestaurantId = restaurantId,
+                    TableId = request.TargetTableId,
+                    CreatedByEmployeeId = employeeId,
+                    GuestCount = 1,
+                    Status = OrderStatus.Open
+                };
+                db.Orders.Add(target);
+                targetCreated = true;
+
+                db.AuditEvents.Add(Audit(
+                    restaurantId,
+                    employeeId,
+                    "ORDER_CREATED_BY_ITEM_TRANSFER",
+                    "Order",
+                    target.Id,
+                    new
+                    {
+                        sourceOrderId = source.Id,
+                        sourceOrderNumber = source.DisplayNumber,
+                        request.TargetTableId
+                    }));
+
+                // Generate the target display number before building transfer kitchen tickets.
+                await db.SaveChangesAsync(ct);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var movedSentItems = selected
+                .Where(x => x.Status == OrderItemStatus.Sent)
+                .ToList();
+
+            foreach (var item in selected)
+            {
+                source.Items.Remove(item);
+                item.OrderId = target.Id;
+                item.Order = target;
+                target.Items.Add(item);
+            }
+
+            Recalculate(source);
+            Recalculate(target);
+
+            if (source.Items.Any(x => x.Status != OrderItemStatus.Voided))
+            {
+                RefreshOrderStatus(source);
+            }
+            else
+            {
+                source.Status = OrderStatus.Cancelled;
+            }
+
+            RefreshOrderStatus(target);
+
+            source.Version++;
+            source.UpdatedAt = now;
+            target.Version++;
+            target.UpdatedAt = now;
+
+            var transferTicketIds = new List<Guid>();
+
+            if (movedSentItems.Count > 0)
+            {
+                var productIds = movedSentItems
+                    .Select(x => x.ProductId)
+                    .Distinct()
+                    .ToArray();
+
+                var routing = await db.Products
+                    .AsNoTracking()
+                    .Where(x => x.RestaurantId == restaurantId && productIds.Contains(x.Id))
+                    .Select(x => new { x.Id, x.KitchenStationId })
+                    .ToDictionaryAsync(x => x.Id, ct);
+
+                var stationIds = routing.Values
+                    .Where(x => x.KitchenStationId.HasValue)
+                    .Select(x => x.KitchenStationId!.Value)
+                    .Distinct()
+                    .ToArray();
+
+                var stations = await db.KitchenStations
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.RestaurantId == restaurantId &&
+                        stationIds.Contains(x.Id) &&
+                        x.IsActive &&
+                        x.PrinterId.HasValue)
+                    .ToDictionaryAsync(x => x.Id, ct);
+
+                foreach (var stationId in stationIds)
+                {
+                    if (!stations.TryGetValue(stationId, out var station))
+                        continue;
+
+                    var stationItems = movedSentItems
+                        .Where(x =>
+                            routing.TryGetValue(x.ProductId, out var route) &&
+                            route.KitchenStationId == stationId)
+                        .ToList();
+
+                    if (stationItems.Count == 0)
+                        continue;
+
+                    var ticket = new KitchenTicket
+                    {
+                        RestaurantId = restaurantId,
+                        OrderId = target.Id,
+                        KitchenStationId = stationId,
+                        Status = KitchenTicketStatus.Pending,
+                        CreatedAt = now
+                    };
+                    db.KitchenTickets.Add(ticket);
+                    transferTicketIds.Add(ticket.Id);
+
+                    var payload = new
+                    {
+                        ticketId = ticket.Id,
+                        orderId = target.Id,
+                        orderNumber = target.DisplayNumber,
+                        target.TableId,
+                        tableName = targetTableInfo.TableName,
+                        hallName = targetTableInfo.HallName,
+                        stationId,
+                        stationName = station.Name,
+                        createdAt = now,
+                        isTransfer = true,
+                        fromOrderNumber = source.DisplayNumber,
+                        toOrderNumber = target.DisplayNumber,
+                        fromTableName = sourceTableInfo?.TableName,
+                        fromHallName = sourceTableInfo?.HallName,
+                        toTableName = targetTableInfo.TableName,
+                        toHallName = targetTableInfo.HallName,
+                        items = stationItems.Select(x => new
+                        {
+                            lineId = x.Id,
+                            productId = x.ProductId,
+                            name = x.ProductNameSnapshot,
+                            x.Quantity,
+                            x.Comment
+                        })
+                    };
+
+                    db.PrintJobs.Add(new PrintJob
+                    {
+                        RestaurantId = restaurantId,
+                        PrinterKey = $"kitchen:{stationId:N}",
+                        Type = "KITCHEN_TICKET",
+                        PayloadJson = JsonSerializer.Serialize(payload),
+                        Status = PrintJobStatus.Pending,
+                        CreatedAt = now
+                    });
+                }
+            }
+
+            var movedItemIds = selected.Select(x => x.Id).ToArray();
+
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "ORDER_ITEMS_TRANSFERRED",
+                "Order",
+                source.Id,
+                new
+                {
+                    sourceOrderId = source.Id,
+                    sourceOrderNumber = source.DisplayNumber,
+                    targetOrderId = target.Id,
+                    targetOrderNumber = target.DisplayNumber,
+                    targetCreated,
+                    sourceTableId = source.TableId,
+                    targetTableId = request.TargetTableId,
+                    itemIds = movedItemIds,
+                    transferTicketIds
+                }));
+
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CHANGED",
+                "Order",
+                source.Id,
+                new { source.Id, source.Version }));
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CHANGED",
+                "Order",
+                target.Id,
+                new { target.Id, target.Version }));
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+
+            return Results.Ok(new
+            {
+                sourceOrder = ToDto(source),
+                targetOrder = ToDto(target),
+                targetCreated,
+                movedItemIds
+            });
+        }).RequireAuthorization("orders.write");
+
         group.MapPost("/{id:guid}/send", async (Guid id, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
             if (!TryClaims(user, out var restaurantId, out var employeeId)) return Results.Unauthorized();
@@ -960,5 +1259,6 @@ public sealed record CreateOrderRequest(Guid? TableId = null, int GuestCount = 1
 public sealed record AddOrderItemRequest(Guid ProductId, decimal Quantity = 1m, string? Comment = null);
 public sealed record UpdateGuestCountRequest(int GuestCount);
 public sealed record MoveOrderRequest(Guid TableId);
+public sealed record TransferOrderItemsRequest(Guid TargetTableId, Guid[]? ItemIds);
 public sealed record UpdateOrderItemCommentRequest(string? Comment);
 public sealed record VoidOrderItemRequest(string? Reason);
