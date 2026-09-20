@@ -2145,6 +2145,413 @@ class _OrderPageState extends State<OrderPage> {
     }
   }
 
+  Future<void> transferOrderItems() async {
+    final current = order;
+    if (current == null ||
+        current.items.where((item) => item.status != 'VOIDED').isEmpty ||
+        mutating ||
+        printing ||
+        paying) {
+      return;
+    }
+
+    final groups = CartGroup.fromOrder(current);
+    if (groups.isEmpty) return;
+
+    final selectedIds = <String>{};
+
+    final itemIds = await showDialog<List<String>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final selectedCount = groups
+              .where(
+                (group) =>
+                    group.lines.isNotEmpty &&
+                    group.lines.every((line) => selectedIds.contains(line.id)),
+              )
+              .length;
+
+          return AlertDialog(
+            insetPadding: const EdgeInsets.all(20),
+            title: Text('Перенести позиции · заказ #${current.displayNumber}'),
+            content: SizedBox(
+              width: 680,
+              height: 500,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    '1. ВЫБЕРИТЕ ПОЗИЦИИ',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .7,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Можно выбрать одну или несколько позиций. '
+                    'Уже отправленные на кухню позиции тоже можно перенести.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          setDialogState(() {
+                            selectedIds
+                              ..clear()
+                              ..addAll(
+                                groups.expand(
+                                  (group) => group.lines.map((line) => line.id),
+                                ),
+                              );
+                          });
+                        },
+                        child: const Text('Выбрать все'),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            setDialogState(() => selectedIds.clear()),
+                        child: const Text('Снять выбор'),
+                      ),
+                      const Spacer(),
+                      Text(
+                        'Выбрано: $selectedCount',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: groups.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final group = groups[index];
+                        final lineIds =
+                            group.lines.map((line) => line.id).toList();
+                        final selected = lineIds.isNotEmpty &&
+                            lineIds.every(selectedIds.contains);
+
+                        return CheckboxListTile(
+                          value: selected,
+                          onChanged: (value) {
+                            setDialogState(() {
+                              if (value == true) {
+                                selectedIds.addAll(lineIds);
+                              } else {
+                                selectedIds.removeAll(lineIds);
+                              }
+                            });
+                          },
+                          secondary: Icon(
+                            group.status == 'SENT'
+                                ? Icons.soup_kitchen_outlined
+                                : Icons.receipt_long_outlined,
+                          ),
+                          title: Text(
+                            group.productName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          subtitle: Text(
+                            [
+                              '${group.quantity.g} × '
+                                  '${group.unitPrice.toStringAsFixed(2)} AZN',
+                              group.status == 'SENT'
+                                  ? 'Уже отправлено на кухню'
+                                  : 'Новое',
+                              if (group.comment != null)
+                                'Комментарий: ${group.comment}',
+                            ].join(' · '),
+                          ),
+                          controlAffinity: ListTileControlAffinity.leading,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Отмена'),
+              ),
+              FilledButton.icon(
+                onPressed: selectedIds.isEmpty
+                    ? null
+                    : () => Navigator.of(dialogContext)
+                        .pop(selectedIds.toList()),
+                icon: const Icon(Icons.arrow_forward),
+                label: const Text('Далее · выбрать стол'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (itemIds == null || itemIds.isEmpty || !mounted) return;
+
+    try {
+      final halls = await widget.api.getHalls();
+      if (!mounted) return;
+
+      final availableHalls =
+          halls.where((hall) => hall.tables.isNotEmpty).toList();
+      if (availableHalls.isEmpty) {
+        setState(() => error = 'Нет доступных столов для переноса.');
+        return;
+      }
+
+      String selectedHallId = availableHalls.first.id;
+      for (final hall in availableHalls) {
+        if (hall.tables.any((table) => table.id == current.tableId)) {
+          selectedHallId = hall.id;
+          break;
+        }
+      }
+
+      final target = await showDialog<_MoveOrderTarget>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            var selectedHall = availableHalls.first;
+            for (final hall in availableHalls) {
+              if (hall.id == selectedHallId) {
+                selectedHall = hall;
+                break;
+              }
+            }
+
+            return AlertDialog(
+              insetPadding: const EdgeInsets.all(20),
+              title: Text(
+                '2. Куда перенести ${itemIds.length} поз.',
+              ),
+              content: SizedBox(
+                width: 760,
+                height: 520,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'ВЫБЕРИТЕ ЗАЛ',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .7,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 52,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: availableHalls.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final hall = availableHalls[index];
+                          final selected = hall.id == selectedHallId;
+
+                          return selected
+                              ? FilledButton.icon(
+                                  onPressed: () {},
+                                  icon: const Icon(
+                                    Icons.meeting_room_outlined,
+                                  ),
+                                  label: Text(hall.name),
+                                )
+                              : OutlinedButton.icon(
+                                  onPressed: () => setDialogState(
+                                    () => selectedHallId = hall.id,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.meeting_room_outlined,
+                                  ),
+                                  label: Text(hall.name),
+                                );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: GridView.builder(
+                        gridDelegate:
+                            const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 190,
+                          childAspectRatio: 1.42,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                        ),
+                        itemCount: selectedHall.tables.length,
+                        itemBuilder: (context, index) {
+                          final table = selectedHall.tables[index];
+                          final isCurrent = table.id == current.tableId;
+                          final targetOrder = table.openOrder;
+                          final paymentStarted = targetOrder != null &&
+                              (targetOrder.status == 'PARTIALLY_PAID' ||
+                                  targetOrder.status == 'PAID');
+                          final canSelect = !isCurrent && !paymentStarted;
+
+                          String status;
+                          if (isCurrent) {
+                            status = 'Текущий стол';
+                          } else if (paymentStarted) {
+                            status =
+                                'Заказ #${targetOrder.displayNumber} · оплата начата';
+                          } else if (targetOrder != null) {
+                            status =
+                                'Добавить в заказ #${targetOrder.displayNumber}';
+                          } else {
+                            status = 'Свободен · создать новый заказ';
+                          }
+
+                          return Card(
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              onTap: canSelect
+                                  ? () => Navigator.of(dialogContext).pop(
+                                        _MoveOrderTarget(
+                                          hallName: selectedHall.name,
+                                          table: table,
+                                        ),
+                                      )
+                                  : null,
+                              child: Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.table_restaurant,
+                                          color: canSelect
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                              : Theme.of(context)
+                                                  .disabledColor,
+                                        ),
+                                        const Spacer(),
+                                        if (targetOrder != null && !isCurrent)
+                                          const Icon(
+                                            Icons.receipt_long_outlined,
+                                            size: 18,
+                                          ),
+                                      ],
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      'Стол ${table.name}',
+                                      style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w800,
+                                        color: canSelect
+                                            ? null
+                                            : Theme.of(context)
+                                                .disabledColor,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      status,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: canSelect
+                                            ? Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant
+                                            : Theme.of(context)
+                                                .disabledColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Можно перенести как на свободный стол, так и '
+                      'добавить позиции в уже открытый заказ.',
+                      style: TextStyle(
+                        color:
+                            Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Назад'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+
+      if (target == null || !mounted) return;
+
+      setState(() {
+        mutating = true;
+        error = null;
+      });
+
+      final result = await widget.api.transferOrderItems(
+        orderId: current.id,
+        targetTableId: target.table.id,
+        itemIds: itemIds,
+      );
+
+      if (!mounted) return;
+
+      setState(() => order = result.sourceOrder);
+
+      final destinationText = result.targetCreated
+          ? 'создан заказ #${result.targetOrder.displayNumber}'
+          : 'добавлено в заказ #${result.targetOrder.displayNumber}';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Позиции перенесены: ${target.hallName}, '
+            'стол ${target.table.name} · $destinationText.',
+          ),
+        ),
+      );
+
+      if (result.sourceOrder.status == 'CANCELLED') {
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = 'Перенос позиций: $e');
+    } finally {
+      if (mounted) setState(() => mutating = false);
+    }
+  }
+
   Future<void> editGroupComment(CartGroup group) async {
     final current = order;
     if (current == null ||
@@ -2612,6 +3019,15 @@ class _OrderPageState extends State<OrderPage> {
               onPressed: mutating ? null : moveOrderToTable,
               icon: const Icon(Icons.swap_horiz),
               label: const Text('Перенести'),
+            ),
+          if (order != null &&
+              !order!.isPaid &&
+              order!.status != 'PARTIALLY_PAID' &&
+              order!.items.any((item) => item.status != 'VOIDED'))
+            TextButton.icon(
+              onPressed: mutating ? null : transferOrderItems,
+              icon: const Icon(Icons.call_split),
+              label: const Text('Позиции'),
             ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
