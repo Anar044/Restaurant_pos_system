@@ -99,6 +99,13 @@ public sealed class KitchenPrintJobExecutor(
         foreach (var item in payload.Items)
         {
             sb.AppendLine($"{FormatQuantity(item.Quantity)} x {item.Name.Trim()}");
+            foreach (var modifier in item.Modifiers ?? [])
+            {
+                var quantity = modifier.Quantity == 1m
+                    ? string.Empty
+                    : $" x{FormatQuantity(modifier.Quantity)}";
+                sb.AppendLine($"  + {modifier.Name.Trim()}{quantity}");
+            }
             if (!string.IsNullOrWhiteSpace(item.Comment))
                 sb.AppendLine($"  ! {item.Comment!.Trim()}");
         }
@@ -164,6 +171,13 @@ public sealed class KitchenPrintJobExecutor(
             bytes.AddRange([0x1B, 0x45, 0x01]);
             AppendAscii(bytes, $"{FormatQuantity(item.Quantity)} x {ToAscii(item.Name.Trim())}\n");
             bytes.AddRange([0x1B, 0x45, 0x00]);
+            foreach (var modifier in item.Modifiers ?? [])
+            {
+                var quantity = modifier.Quantity == 1m
+                    ? string.Empty
+                    : $" x{FormatQuantity(modifier.Quantity)}";
+                AppendAscii(bytes, $" + {ToAscii(modifier.Name.Trim())}{quantity}\n");
+            }
             if (!string.IsNullOrWhiteSpace(item.Comment))
                 AppendAscii(bytes, $" ! {ToAscii(item.Comment!.Trim())}\n");
         }
@@ -209,6 +223,14 @@ public sealed class KitchenPrintJobExecutor(
                 throw new InvalidOperationException("Kitchen item name is missing.");
             if (item.Quantity <= 0)
                 throw new InvalidOperationException("Kitchen item quantity is invalid.");
+
+            foreach (var modifier in item.Modifiers ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(modifier.Name))
+                    throw new InvalidOperationException("Kitchen modifier name is missing.");
+                if (modifier.Quantity <= 0)
+                    throw new InvalidOperationException("Kitchen modifier quantity is invalid.");
+            }
         }
     }
 
@@ -250,4 +272,10 @@ public sealed record KitchenTicketItemPayload(
     Guid ProductId,
     string Name,
     decimal Quantity,
-    string? Comment);
+    string? Comment,
+    IReadOnlyList<KitchenTicketModifierPayload>? Modifiers = null);
+
+public sealed record KitchenTicketModifierPayload(
+    Guid ModifierId,
+    string Name,
+    decimal Quantity);
