@@ -319,7 +319,7 @@ public static class ShiftPaymentEndpoints
                     payment.Amount,
                     payment.CurrencyCode,
                     order.PaidTotal,
-                    remaining = decimal.Max(0m, order.Total - order.PaidTotal)
+                    remaining = Math.Max(0m, order.Total - order.PaidTotal)
                 }));
             db.OutboxEvents.Add(Outbox(
                 restaurantId,
@@ -345,7 +345,7 @@ public static class ShiftPaymentEndpoints
             {
                 payment = ToPaymentDto(payment),
                 order = ToOrderDto(order),
-                remaining = decimal.Max(0m, order.Total - order.PaidTotal)
+                remaining = Math.Max(0m, order.Total - order.PaidTotal)
             });
         }).RequireAuthorization("payments.write");
 
