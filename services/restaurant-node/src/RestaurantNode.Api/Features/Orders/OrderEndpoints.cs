@@ -95,14 +95,15 @@ public static class OrderEndpoints
             {
                 orders = orders.Select(order =>
                 {
-                    var hasTable = order.TableId.HasValue &&
-                                   tables.TryGetValue(order.TableId.Value, out var tableInfo);
+                    var tableInfo = order.TableId.HasValue
+                        ? tables.GetValueOrDefault(order.TableId.Value)
+                        : null;
 
                     return new
                     {
                         order = ToDto(order),
-                        hallName = hasTable ? tableInfo!.HallName : null,
-                        tableName = hasTable ? tableInfo!.TableName : null,
+                        hallName = tableInfo?.HallName,
+                        tableName = tableInfo?.TableName,
                         cashierName = employees.GetValueOrDefault(
                             order.CreatedByEmployeeId,
                             "Employee")
