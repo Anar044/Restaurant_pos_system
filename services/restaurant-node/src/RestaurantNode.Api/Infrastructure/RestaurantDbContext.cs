@@ -26,6 +26,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<OrderItemModifier> OrderItemModifiers => Set<OrderItemModifier>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentRefund> PaymentRefunds => Set<PaymentRefund>();
     public DbSet<CashTransaction> CashTransactions => Set<CashTransaction>();
     public DbSet<KitchenTicket> KitchenTickets => Set<KitchenTicket>();
     public DbSet<PrintJob> PrintJobs => Set<PrintJob>();
@@ -57,6 +58,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<OrderItem>().ToTable("order_items");
         modelBuilder.Entity<OrderItemModifier>().ToTable("order_item_modifiers");
         modelBuilder.Entity<Payment>().ToTable("payments");
+        modelBuilder.Entity<PaymentRefund>().ToTable("payment_refunds");
         modelBuilder.Entity<CashTransaction>().ToTable("cash_transactions");
         modelBuilder.Entity<KitchenTicket>().ToTable("kitchen_tickets");
         modelBuilder.Entity<PrintJob>().ToTable("print_jobs");
@@ -96,6 +98,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<OrderItemModifier>().Property(x => x.PriceDelta).HasPrecision(18, 4);
         modelBuilder.Entity<OrderItemModifier>().Property(x => x.Total).HasPrecision(18, 4);
         modelBuilder.Entity<Payment>().Property(x => x.Amount).HasPrecision(18, 4);
+        modelBuilder.Entity<Payment>().Property(x => x.TenderedAmount).HasPrecision(18, 4);
+        modelBuilder.Entity<Payment>().Property(x => x.ChangeAmount).HasPrecision(18, 4);
+        modelBuilder.Entity<PaymentRefund>().Property(x => x.Amount).HasPrecision(18, 4);
         modelBuilder.Entity<CashTransaction>().Property(x => x.Amount).HasPrecision(18, 4);
 
         modelBuilder.Entity<Order>()
@@ -115,6 +120,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Name });
         modelBuilder.Entity<ProductPrice>().HasIndex(x => new { x.ProductId, x.ValidFrom });
         modelBuilder.Entity<Order>().HasIndex(x => new { x.RestaurantId, x.Status, x.CreatedAt });
+        modelBuilder.Entity<Payment>().HasIndex(x => new { x.RestaurantId, x.ShiftId, x.CreatedAt });
+        modelBuilder.Entity<PaymentRefund>().HasIndex(x => new { x.RestaurantId, x.ShiftId, x.CreatedAt });
+        modelBuilder.Entity<PaymentRefund>().HasIndex(x => x.PaymentId);
         modelBuilder.Entity<OutboxEvent>().HasIndex(x => new { x.ProcessedAt, x.OccurredAt });
         modelBuilder.Entity<AuditEvent>().HasIndex(x => new { x.RestaurantId, x.EntityId, x.CreatedAt });
 
@@ -155,6 +163,12 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .HasMany(x => x.Payments)
             .WithOne()
             .HasForeignKey(x => x.OrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PaymentRefund>()
+            .HasOne<Payment>()
+            .WithMany()
+            .HasForeignKey(x => x.PaymentId)
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<OrderItem>()
