@@ -1773,8 +1773,11 @@ class _OrderPageState extends State<OrderPage> {
   }
 
   Future<List<ModifierSelectionDto>?> showModifierDialog(
-    MenuProduct product,
-  ) async {
+    MenuProduct product, {
+    List<OrderLineModifierDto> initialModifiers = const [],
+    bool editing = false,
+    String? note,
+  }) async {
     final quantities = <String, int>{};
 
     int selectedInGroup(MenuModifierGroup group) {
@@ -1791,6 +1794,32 @@ class _OrderPageState extends State<OrderPage> {
     }
 
     bool allValid() => product.modifierGroups.every(groupIsValid);
+
+    for (final existing in initialModifiers) {
+      var remaining = existing.quantity.round();
+      if (remaining <= 0) continue;
+
+      for (final group in product.modifierGroups) {
+        if (remaining <= 0) break;
+
+        MenuModifierOption? matched;
+        for (final option in group.modifiers) {
+          if (option.id == existing.modifierId) {
+            matched = option;
+            break;
+          }
+        }
+        if (matched == null) continue;
+
+        final alreadySelected = selectedInGroup(group);
+        final capacity = group.maxSelections - alreadySelected;
+        if (capacity <= 0) continue;
+
+        final quantity = remaining < capacity ? remaining : capacity;
+        quantities['${group.id}:${matched.id}'] = quantity;
+        remaining -= quantity;
+      }
+    }
 
     double selectedDelta() {
       var total = 0.0;
@@ -1822,7 +1851,11 @@ class _OrderPageState extends State<OrderPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(product.name),
+                      Text(
+                        editing
+                            ? 'Изменить · ${product.name}'
+                            : product.name,
+                      ),
                       const SizedBox(height: 3),
                       Text(
                         'Базовая цена: ${product.price.toStringAsFixed(2)} '
@@ -1845,6 +1878,28 @@ class _OrderPageState extends State<OrderPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (note != null && note.trim().isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(11),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .secondaryContainer,
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                      child: Text(
+                        note,
+                        style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSecondaryContainer,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   Expanded(
                     child: ListView.separated(
                       itemCount: product.modifierGroups.length,
@@ -2133,8 +2188,12 @@ class _OrderPageState extends State<OrderPage> {
                         Navigator.of(dialogContext).pop(result);
                       }
                     : null,
-                icon: const Icon(Icons.add_shopping_cart),
-                label: const Text('Добавить в заказ'),
+                icon: Icon(
+                  editing ? Icons.save_outlined : Icons.add_shopping_cart,
+                ),
+                label: Text(
+                  editing ? 'Сохранить изменения' : 'Добавить в заказ',
+                ),
               ),
             ],
           );
@@ -2982,6 +3041,85 @@ class _OrderPageState extends State<OrderPage> {
     }
   }
 
+  Future<void> editGroupModifiers(CartGroup group) async {
+    final current = order;
+    if (current == null ||
+        group.status != 'NEW' ||
+        mutating ||
+        printing ||
+        paying) {
+      return;
+    }
+
+    final editable = group.lines
+        .where((line) => line.status == 'NEW')
+        .toList();
+
+    if (editable.isEmpty) return;
+
+    final target = editable.last;
+
+    setState(() {
+      mutating = true;
+      error = null;
+    });
+
+    try {
+      final product = await _loadFreshProduct(group.productId);
+      if (!mounted) return;
+
+      if (!product.hasModifiers) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'У этого блюда сейчас нет доступных модификаторов.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final selected = await showModifierDialog(
+        product,
+        initialModifiers: target.modifiers,
+        editing: true,
+        note: editable.length > 1
+            ? 'В этой строке ${editable.length} одинаковых позиций. '
+              'Изменится одна позиция; после сохранения она будет '
+              'показана отдельно.'
+            : 'Изменения применятся к этой позиции до отправки на кухню.',
+      );
+
+      if (selected == null || !mounted) return;
+
+      final updated = await widget.api.updateItemModifiers(
+        current.id,
+        target.id,
+        selected,
+      );
+
+      if (!mounted) return;
+      setState(() => order = updated);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Модификаторы «${group.productName}» обновлены.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          error = 'Модификаторы: '
+              '${e.toString().replaceFirst('Bad state: ', '')}';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => mutating = false);
+    }
+  }
+
   Future<void> editGroupComment(CartGroup group) async {
     final current = order;
     if (current == null ||
@@ -3493,6 +3631,12 @@ class _OrderPageState extends State<OrderPage> {
             }
           }
 
+          final modifierProductIds = categories
+              .expand((category) => category.products)
+              .where((product) => product.hasModifiers)
+              .map((product) => product.id)
+              .toSet();
+
           final busy = mutating || printing || paying;
           final editingLocked =
               order?.status == 'PARTIALLY_PAID' || (order?.isPaid ?? false);
@@ -3514,9 +3658,11 @@ class _OrderPageState extends State<OrderPage> {
                 paying: paying,
                 error: error,
                 canVoid: widget.session.hasPermission('orders.void'),
+                modifierProductIds: modifierProductIds,
                 onPlus: incrementGroup,
                 onMinus: decrementGroup,
                 onSend: sendToKitchen,
+                onModifiers: editGroupModifiers,
                 onComment: editGroupComment,
                 onVoid: voidSentItem,
                 onPrintPrecheck: printPrecheck,
@@ -4348,9 +4494,11 @@ class _OrderPane extends StatelessWidget {
     required this.paying,
     required this.error,
     required this.canVoid,
+    required this.modifierProductIds,
     required this.onPlus,
     required this.onMinus,
     required this.onSend,
+    required this.onModifiers,
     required this.onComment,
     required this.onVoid,
     required this.onPrintPrecheck,
@@ -4364,9 +4512,11 @@ class _OrderPane extends StatelessWidget {
   final bool paying;
   final String? error;
   final bool canVoid;
+  final Set<String> modifierProductIds;
   final ValueChanged<CartGroup> onPlus;
   final ValueChanged<CartGroup> onMinus;
   final Future<void> Function() onSend;
+  final ValueChanged<CartGroup> onModifiers;
   final ValueChanged<CartGroup> onComment;
   final ValueChanged<CartGroup> onVoid;
   final VoidCallback onPrintPrecheck;
@@ -4485,13 +4635,24 @@ class _OrderPane extends StatelessWidget {
                                     PopupMenuButton<String>(
                                       tooltip: 'Действия',
                                       onSelected: (value) {
-                                        if (value == 'comment') {
+                                        if (value == 'modifiers') {
+                                          onModifiers(group);
+                                        } else if (value == 'comment') {
                                           onComment(group);
                                         } else if (value == 'void') {
                                           onVoid(group);
                                         }
                                       },
                                       itemBuilder: (_) => [
+                                        if (group.status == 'NEW' &&
+                                            modifierProductIds
+                                                .contains(group.productId))
+                                          const PopupMenuItem(
+                                            value: 'modifiers',
+                                            child: Text(
+                                              'Изменить модификаторы',
+                                            ),
+                                          ),
                                         if (group.status == 'NEW')
                                           const PopupMenuItem(
                                             value: 'comment',
