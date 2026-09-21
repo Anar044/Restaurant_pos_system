@@ -1777,8 +1777,10 @@ class _OrderPageState extends State<OrderPage> {
     List<OrderLineModifierDto> initialModifiers = const [],
     bool editing = false,
     String? note,
+    double? basePriceOverride,
   }) async {
     final quantities = <String, int>{};
+    final basePrice = basePriceOverride ?? product.price;
 
     int selectedInGroup(MenuModifierGroup group) {
       var total = 0;
@@ -1838,7 +1840,7 @@ class _OrderPageState extends State<OrderPage> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) {
           final delta = selectedDelta();
-          final finalPrice = product.price + delta;
+          final finalPrice = basePrice + delta;
 
           return AlertDialog(
             insetPadding: const EdgeInsets.all(18),
@@ -1858,7 +1860,7 @@ class _OrderPageState extends State<OrderPage> {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        'Базовая цена: ${product.price.toStringAsFixed(2)} '
+                        'Базовая цена: ${basePrice.toStringAsFixed(2)} '
                         '${product.currencyCode}',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
@@ -3083,6 +3085,7 @@ class _OrderPageState extends State<OrderPage> {
         product,
         initialModifiers: target.modifiers,
         editing: true,
+        basePriceOverride: target.unitPrice,
         note: editable.length > 1
             ? 'В этой строке ${editable.length} одинаковых позиций. '
               'Изменится одна позиция; после сохранения она будет '
@@ -3110,10 +3113,8 @@ class _OrderPageState extends State<OrderPage> {
       );
     } catch (e) {
       if (mounted) {
-        setState(() {
-          error = 'Модификаторы: '
-              '${e.toString().replaceFirst('Bad state: ', '')}';
-        });
+        final message = e.toString().replaceFirst('Bad state: ', '');
+        setState(() => error = 'Модификаторы: $message');
       }
     } finally {
       if (mounted) setState(() => mutating = false);
