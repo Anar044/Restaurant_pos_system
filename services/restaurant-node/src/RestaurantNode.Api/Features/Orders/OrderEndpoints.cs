@@ -541,6 +541,244 @@ public static class OrderEndpoints
             return Results.Ok(ToDto(order));
         }).RequireAuthorization("orders.write");
 
+        group.MapPut("/{id:guid}/items/{itemId:guid}/modifiers", async (
+            Guid id,
+            Guid itemId,
+            UpdateOrderItemModifiersRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            var order = await db.Orders
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (order is null)
+                return Results.NotFound(new { message = "Order not found." });
+
+            if (!CanEditOrder(order.Status))
+                return Results.Conflict(new { message = $"Order cannot be edited in status {order.Status}." });
+
+            var line = order.Items.FirstOrDefault(x => x.Id == itemId);
+            if (line is null)
+                return Results.NotFound(new { message = "Order item not found." });
+
+            if (line.Status != OrderItemStatus.New)
+            {
+                return Results.Conflict(new
+                {
+                    message = "Modifiers can only be changed before the item is sent to the kitchen."
+                });
+            }
+
+            var product = await db.Products
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x =>
+                    x.Id == line.ProductId &&
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive,
+                    ct);
+
+            if (product is null)
+                return Results.Conflict(new { message = "Product is no longer available." });
+
+            var selections = (request.Modifiers ?? [])
+                .Where(x => x.GroupId != Guid.Empty && x.ModifierId != Guid.Empty)
+                .ToArray();
+
+            if (selections.Any(x => x.Quantity <= 0 || x.Quantity > 100))
+                return Results.BadRequest(new { message = "Modifier quantity must be between 0 and 100." });
+
+            if (selections
+                .GroupBy(x => new { x.GroupId, x.ModifierId })
+                .Any(x => x.Count() > 1))
+            {
+                return Results.BadRequest(new
+                {
+                    message = "The same modifier cannot be selected twice in one group."
+                });
+            }
+
+            var productGroupLinks = await db.ProductModifierGroups
+                .AsNoTracking()
+                .Where(x => x.ProductId == product.Id)
+                .OrderBy(x => x.SortOrder)
+                .ToListAsync(ct);
+
+            var productGroupIds = productGroupLinks
+                .Select(x => x.ModifierGroupId)
+                .Distinct()
+                .ToArray();
+
+            var modifierGroups = await db.ModifierGroups
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive &&
+                    productGroupIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, ct);
+
+            if (selections.Any(x => !modifierGroups.ContainsKey(x.GroupId)))
+            {
+                return Results.BadRequest(new
+                {
+                    message = "One or more selected modifier groups are not available for this product."
+                });
+            }
+
+            var groupModifierLinks = await db.ModifierGroupModifiers
+                .AsNoTracking()
+                .Where(x => productGroupIds.Contains(x.ModifierGroupId))
+                .ToListAsync(ct);
+
+            var selectedModifierIds = selections
+                .Select(x => x.ModifierId)
+                .Distinct()
+                .ToArray();
+
+            var modifierEntities = await db.Modifiers
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive &&
+                    selectedModifierIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, ct);
+
+            foreach (var group in modifierGroups.Values)
+            {
+                var selectedForGroup = selections
+                    .Where(x => x.GroupId == group.Id)
+                    .ToArray();
+                var selectedCount = selectedForGroup.Sum(x => x.Quantity);
+
+                if (selectedCount < group.MinSelections ||
+                    selectedCount > group.MaxSelections)
+                {
+                    return Results.BadRequest(new
+                    {
+                        message = $"Modifier group '{group.Name}' requires between {group.MinSelections} and {group.MaxSelections} selections."
+                    });
+                }
+
+                foreach (var selection in selectedForGroup)
+                {
+                    var linked = groupModifierLinks.Any(x =>
+                        x.ModifierGroupId == group.Id &&
+                        x.ModifierId == selection.ModifierId);
+
+                    if (!linked || !modifierEntities.ContainsKey(selection.ModifierId))
+                    {
+                        return Results.BadRequest(new
+                        {
+                            message = $"A selected modifier is not available in group '{group.Name}'."
+                        });
+                    }
+                }
+            }
+
+            if (modifierGroups.Values.Any(group =>
+                    group.IsRequired &&
+                    selections.Where(x => x.GroupId == group.Id).Sum(x => x.Quantity) < 1))
+            {
+                return Results.BadRequest(new { message = "Complete all required modifier groups." });
+            }
+
+            var previous = line.Modifiers
+                .Select(x => new
+                {
+                    x.ModifierId,
+                    name = x.ModifierNameSnapshot,
+                    x.Quantity,
+                    x.PriceDelta,
+                    x.Total
+                })
+                .ToArray();
+
+            var oldModifiers = line.Modifiers.ToArray();
+            db.OrderItemModifiers.RemoveRange(oldModifiers);
+            line.Modifiers.Clear();
+
+            var replacement = new List<OrderItemModifier>();
+            foreach (var selection in selections)
+            {
+                var modifier = modifierEntities[selection.ModifierId];
+                var total = decimal.Round(
+                    modifier.PriceDelta * selection.Quantity * line.Quantity,
+                    4,
+                    MidpointRounding.AwayFromZero);
+
+                replacement.Add(new OrderItemModifier
+                {
+                    OrderItemId = line.Id,
+                    ModifierId = modifier.Id,
+                    ModifierNameSnapshot = modifier.Name,
+                    Quantity = selection.Quantity,
+                    PriceDelta = modifier.PriceDelta,
+                    Total = total
+                });
+            }
+
+            if (replacement.Count > 0)
+            {
+                line.Modifiers.AddRange(replacement);
+                db.OrderItemModifiers.AddRange(replacement);
+            }
+
+            line.ModifiersTotal = decimal.Round(
+                replacement.Sum(x => x.Total),
+                4,
+                MidpointRounding.AwayFromZero);
+            line.LineTotal = decimal.Round(
+                line.UnitPrice * line.Quantity + line.ModifiersTotal,
+                4,
+                MidpointRounding.AwayFromZero);
+
+            Recalculate(order);
+            order.Version++;
+            order.UpdatedAt = DateTimeOffset.UtcNow;
+
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "ITEM_MODIFIERS_CHANGED",
+                "Order",
+                order.Id,
+                new
+                {
+                    lineId = line.Id,
+                    line.ProductId,
+                    line.ProductNameSnapshot,
+                    previous,
+                    current = replacement.Select(x => new
+                    {
+                        x.ModifierId,
+                        name = x.ModifierNameSnapshot,
+                        x.Quantity,
+                        x.PriceDelta,
+                        x.Total
+                    }),
+                    line.ModifiersTotal,
+                    line.LineTotal
+                }));
+
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CHANGED",
+                "Order",
+                order.Id,
+                new { order.Id, order.Version }));
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return Results.Ok(ToDto(order));
+        }).RequireAuthorization("orders.write");
+
         group.MapPost("/{id:guid}/items/{itemId:guid}/void", async (
             Guid id,
             Guid itemId,
@@ -1429,4 +1667,5 @@ public sealed record UpdateGuestCountRequest(int GuestCount);
 public sealed record MoveOrderRequest(Guid TableId);
 public sealed record TransferOrderItemsRequest(Guid TargetTableId, Guid[]? ItemIds);
 public sealed record UpdateOrderItemCommentRequest(string? Comment);
+public sealed record UpdateOrderItemModifiersRequest(ModifierSelectionRequest[]? Modifiers);
 public sealed record VoidOrderItemRequest(string? Reason);
