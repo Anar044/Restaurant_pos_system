@@ -4854,7 +4854,7 @@ class CartGroup {
       final modifierKey = sortedModifiers
           .map(
             (item) =>
-                '${item.modifierId}:${item.quantity}:${item.priceDelta}',
+                '${item.modifierId}:${item.name}:${item.quantity}:${item.priceDelta}',
           )
           .join(',');
 
