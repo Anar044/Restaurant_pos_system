@@ -278,6 +278,21 @@ class PosApiClient {
     );
     return OrderDto.fromJson(_decode(response));
   }
+  Future<OrderDto> updateItemModifiers(
+    String orderId,
+    String itemId,
+    List<ModifierSelectionDto> modifiers,
+  ) async {
+    final response = await _http.put(
+      _uri('/api/v1/orders/$orderId/items/$itemId/modifiers'),
+      headers: _headers,
+      body: jsonEncode({
+        'modifiers': modifiers.map((item) => item.toJson()).toList(),
+      }),
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
 
   Future<OrderDto> voidItem(
     String orderId,
