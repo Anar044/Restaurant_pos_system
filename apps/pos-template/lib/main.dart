@@ -4687,6 +4687,73 @@ class _MenuArea extends StatelessWidget {
   }
 }
 
+class _GuestSelector extends StatelessWidget {
+  const _GuestSelector({
+    required this.guestCount,
+    required this.selectedGuestNumber,
+    required this.busy,
+    required this.onSelected,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final int guestCount;
+  final int selectedGuestNumber;
+  final bool busy;
+  final ValueChanged<int> onSelected;
+  final Future<void> Function() onAdd;
+  final Future<void> Function()? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 1,
+      color: Theme.of(context).colorScheme.surface,
+      child: SizedBox(
+        height: 62,
+        child: Row(
+          children: [
+            const SizedBox(width: 14),
+            const Icon(Icons.people_outline, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                itemCount: guestCount,
+                separatorBuilder: (_, __) => const SizedBox(width: 7),
+                itemBuilder: (context, index) {
+                  final guest = index + 1;
+                  return ChoiceChip(
+                    avatar: const Icon(Icons.person_outline, size: 16),
+                    label: Text('Гость $guest'),
+                    selected: guest == selectedGuestNumber,
+                    onSelected: busy ? null : (_) => onSelected(guest),
+                  );
+                },
+              ),
+            ),
+            IconButton.filledTonal(
+              tooltip: 'Добавить гостя',
+              onPressed: busy ? null : () async => onAdd(),
+              icon: const Icon(Icons.person_add_alt_1),
+            ),
+            const SizedBox(width: 6),
+            IconButton(
+              tooltip: 'Удалить выбранного пустого гостя',
+              onPressed: busy || onRemove == null
+                  ? null
+                  : () async => onRemove!(),
+              icon: const Icon(Icons.person_remove_outlined),
+            ),
+            const SizedBox(width: 10),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _OrderPane extends StatelessWidget {
   const _OrderPane({
     required this.order,
@@ -5040,6 +5107,7 @@ class CartGroup {
   CartGroup({
     required this.productId,
     required this.productName,
+    required this.guestNumber,
     required this.unitPrice,
     required this.status,
     required this.comment,
@@ -5048,6 +5116,7 @@ class CartGroup {
 
   final String productId;
   final String productName;
+  final int guestNumber;
   final double unitPrice;
   final String status;
   final String? comment;
@@ -5103,14 +5172,15 @@ class CartGroup {
           .join(',');
 
       final key =
-          '${line.productId}|${line.unitPrice}|${line.status}|'
-          '${normalizedComment ?? ''}|$modifierKey';
+          '${line.guestNumber}|${line.productId}|${line.unitPrice}|'
+          '${line.status}|${normalizedComment ?? ''}|$modifierKey';
 
       final group = map.putIfAbsent(
         key,
         () => CartGroup(
           productId: line.productId,
           productName: line.productName,
+          guestNumber: line.guestNumber,
           unitPrice: line.unitPrice,
           status: line.status,
           comment: normalizedComment == null || normalizedComment.isEmpty
@@ -5122,7 +5192,13 @@ class CartGroup {
       group.lines.add(line);
     }
 
-    return map.values.toList();
+    final result = map.values.toList()
+      ..sort((a, b) {
+        final byGuest = a.guestNumber.compareTo(b.guestNumber);
+        if (byGuest != 0) return byGuest;
+        return a.productName.compareTo(b.productName);
+      });
+    return result;
   }
 }
 
