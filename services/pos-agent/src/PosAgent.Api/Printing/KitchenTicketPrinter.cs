@@ -96,8 +96,17 @@ public sealed class KitchenPrintJobExecutor(
         sb.AppendLine($"Время / Time: {payload.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine(new string('-', 42));
 
+        int? currentGuestNumber = null;
         foreach (var item in payload.Items)
         {
+            if (currentGuestNumber != item.GuestNumber)
+            {
+                if (currentGuestNumber.HasValue)
+                    sb.AppendLine(new string('-', 20));
+                sb.AppendLine($"ГОСТЬ / GUEST {item.GuestNumber}");
+                currentGuestNumber = item.GuestNumber;
+            }
+
             sb.AppendLine($"{FormatQuantity(item.Quantity)} x {item.Name.Trim()}");
             foreach (var modifier in item.Modifiers ?? [])
             {
@@ -166,8 +175,19 @@ public sealed class KitchenPrintJobExecutor(
         }
         AppendAscii(bytes, "--------------------------------\n");
 
+        int? currentGuestNumber = null;
         foreach (var item in payload.Items)
         {
+            if (currentGuestNumber != item.GuestNumber)
+            {
+                if (currentGuestNumber.HasValue)
+                    AppendAscii(bytes, "----------------\n");
+                bytes.AddRange([0x1B, 0x45, 0x01]);
+                AppendAscii(bytes, $"GUEST {item.GuestNumber}\n");
+                bytes.AddRange([0x1B, 0x45, 0x00]);
+                currentGuestNumber = item.GuestNumber;
+            }
+
             bytes.AddRange([0x1B, 0x45, 0x01]);
             AppendAscii(bytes, $"{FormatQuantity(item.Quantity)} x {ToAscii(item.Name.Trim())}\n");
             bytes.AddRange([0x1B, 0x45, 0x00]);
@@ -223,6 +243,8 @@ public sealed class KitchenPrintJobExecutor(
                 throw new InvalidOperationException("Kitchen item name is missing.");
             if (item.Quantity <= 0)
                 throw new InvalidOperationException("Kitchen item quantity is invalid.");
+            if (item.GuestNumber <= 0)
+                throw new InvalidOperationException("Kitchen item guest number is invalid.");
 
             foreach (var modifier in item.Modifiers ?? [])
             {
@@ -273,7 +295,8 @@ public sealed record KitchenTicketItemPayload(
     string Name,
     decimal Quantity,
     string? Comment,
-    IReadOnlyList<KitchenTicketModifierPayload>? Modifiers = null);
+    IReadOnlyList<KitchenTicketModifierPayload>? Modifiers = null,
+    int GuestNumber = 1);
 
 public sealed record KitchenTicketModifierPayload(
     Guid ModifierId,
