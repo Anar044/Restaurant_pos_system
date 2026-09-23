@@ -1084,6 +1084,7 @@ public static class OrderEndpoints
                         lineId = line.Id,
                         productId = line.ProductId,
                         name = line.ProductNameSnapshot,
+                        line.GuestNumber,
                         line.Quantity,
                         line.Comment,
                         modifiers = line.Modifiers.Select(modifier => new
@@ -1277,6 +1278,7 @@ public static class OrderEndpoints
                 source.Items.Remove(item);
                 item.OrderId = target.Id;
                 item.Order = target;
+                item.GuestNumber = Math.Clamp(item.GuestNumber, 1, target.GuestCount);
                 target.Items.Add(item);
             }
 
@@ -1377,6 +1379,7 @@ public static class OrderEndpoints
                             lineId = x.Id,
                             productId = x.ProductId,
                             name = x.ProductNameSnapshot,
+                            x.GuestNumber,
                             x.Quantity,
                             x.Comment,
                             modifiers = x.Modifiers.Select(modifier => new
@@ -1574,6 +1577,7 @@ public static class OrderEndpoints
                         lineId = x.Id,
                         productId = x.ProductId,
                         name = x.ProductNameSnapshot,
+                        x.GuestNumber,
                         x.Quantity,
                         x.Comment,
                         modifiers = x.Modifiers.Select(modifier => new
