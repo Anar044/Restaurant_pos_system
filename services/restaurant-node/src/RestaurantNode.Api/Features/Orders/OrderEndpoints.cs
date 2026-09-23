@@ -565,6 +565,104 @@ public static class OrderEndpoints
             order.Version++;
             order.UpdatedAt = DateTimeOffset.UtcNow;
 
+            Guid? guestTransferTicketId = null;
+            if (line.Status == OrderItemStatus.Sent)
+            {
+                var route = await (
+                    from product in db.Products.AsNoTracking()
+                    join station in db.KitchenStations.AsNoTracking()
+                        on product.KitchenStationId equals (Guid?)station.Id
+                    where product.Id == line.ProductId &&
+                          product.RestaurantId == restaurantId &&
+                          station.RestaurantId == restaurantId &&
+                          station.IsActive
+                    select new
+                    {
+                        StationId = station.Id,
+                        StationName = station.Name
+                    })
+                    .FirstOrDefaultAsync(ct);
+
+                if (route is not null)
+                {
+                    string? tableName = null;
+                    string? hallName = null;
+                    if (order.TableId.HasValue)
+                    {
+                        var tableInfo = await (
+                            from table in db.DiningTables.AsNoTracking()
+                            join hall in db.Halls.AsNoTracking() on table.HallId equals hall.Id
+                            where table.Id == order.TableId.Value &&
+                                  table.RestaurantId == restaurantId
+                            select new
+                            {
+                                TableName = table.Name,
+                                HallName = hall.Name
+                            })
+                            .FirstOrDefaultAsync(ct);
+
+                        tableName = tableInfo?.TableName;
+                        hallName = tableInfo?.HallName;
+                    }
+
+                    var now = DateTimeOffset.UtcNow;
+                    var ticket = new KitchenTicket
+                    {
+                        RestaurantId = restaurantId,
+                        OrderId = order.Id,
+                        KitchenStationId = route.StationId,
+                        Status = KitchenTicketStatus.Pending,
+                        CreatedAt = now
+                    };
+                    db.KitchenTickets.Add(ticket);
+                    guestTransferTicketId = ticket.Id;
+
+                    var payload = new
+                    {
+                        ticketId = ticket.Id,
+                        orderId = order.Id,
+                        orderNumber = order.DisplayNumber,
+                        order.TableId,
+                        tableName,
+                        hallName,
+                        stationId = route.StationId,
+                        stationName = route.StationName,
+                        createdAt = now,
+                        isGuestTransfer = true,
+                        fromGuestNumber = previousGuestNumber,
+                        toGuestNumber = line.GuestNumber,
+                        items = new[]
+                        {
+                            new
+                            {
+                                lineId = line.Id,
+                                productId = line.ProductId,
+                                name = line.ProductNameSnapshot,
+                                line.GuestNumber,
+                                line.Quantity,
+                                line.Comment,
+                                modifiers = line.Modifiers.Select(modifier => new
+                                {
+                                    modifier.ModifierId,
+                                    name = modifier.ModifierNameSnapshot,
+                                    modifier.Quantity
+                                })
+                            }
+                        }
+                    };
+
+                    db.PrintJobs.Add(new PrintJob
+                    {
+                        RestaurantId = restaurantId,
+                        PrinterKey = $"kitchen:{route.StationId:N}",
+                        Type = "KITCHEN_TICKET",
+                        PayloadJson = JsonSerializer.Serialize(payload),
+                        Status = PrintJobStatus.Pending,
+                        CreatedAt = now
+                    });
+                }
+            }
+
             db.AuditEvents.Add(Audit(
                 restaurantId,
                 employeeId,
@@ -578,7 +676,8 @@ public static class OrderEndpoints
                     line.ProductNameSnapshot,
                     previousGuestNumber,
                     currentGuestNumber = line.GuestNumber,
-                    line.Status
+                    line.Status,
+                    guestTransferTicketId
                 }));
             db.OutboxEvents.Add(Outbox(
                 restaurantId,
