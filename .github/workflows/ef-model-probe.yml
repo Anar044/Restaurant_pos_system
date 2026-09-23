@@ -1,0 +1,39 @@
+name: EF Model Probe
+
+on:
+  push:
+    branches:
+      - diag/ef-model-probe-20260923
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dotnet tools
+        run: dotnet tool restore
+
+      - name: Restore project
+        run: dotnet restore services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj
+
+      - name: Scaffold probe migration
+        run: |
+          dotnet ef migrations add PendingModelProbe \
+            --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+            --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+            --output-dir Infrastructure/Migrations/Probe
+
+      - name: Show generated migration
+        if: always()
+        run: |
+          echo "===== GIT STATUS ====="
+          git status --short
+          echo "===== PROBE MIGRATION ====="
+          find services/restaurant-node/src/RestaurantNode.Api/Infrastructure/Migrations/Probe -maxdepth 1 -type f -name '*PendingModelProbe.cs' -print -exec cat {} \; || true
+          echo "===== SNAPSHOT DIFF ====="
+          git diff -- services/restaurant-node/src/RestaurantNode.Api/Infrastructure/Migrations/RestaurantDbContextModelSnapshot.cs || true
