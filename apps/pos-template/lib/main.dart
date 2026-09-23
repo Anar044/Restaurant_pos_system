@@ -2425,7 +2425,8 @@ class _OrderPageState extends State<OrderPage> {
         break;
       }
     }
-    if (target == null) return;
+    final targetLine = target;
+    if (targetLine == null) return;
 
     final destination = await showDialog<int>(
       context: context,
@@ -2448,7 +2449,7 @@ class _OrderPageState extends State<OrderPage> {
                 const SizedBox(height: 12),
               ],
               for (var guest = 1; guest <= current.guestCount; guest++)
-                if (guest != target!.guestNumber)
+                if (guest != targetLine.guestNumber)
                   ListTile(
                     leading: const CircleAvatar(
                       child: Icon(Icons.person_outline),
@@ -2480,7 +2481,7 @@ class _OrderPageState extends State<OrderPage> {
     try {
       final updated = await widget.api.moveItemToGuest(
         current.id,
-        target.id,
+        targetLine.id,
         destination,
       );
       if (!mounted) return;
