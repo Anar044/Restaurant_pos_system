@@ -64,7 +64,9 @@ public sealed class KitchenPrintJobExecutor(
                 ? "ОТМЕНА / VOID"
                 : payload.IsTransfer
                     ? "ПЕРЕНОС / TRANSFER"
-                    : "КУХНЯ / KITCHEN");
+                    : payload.IsGuestTransfer
+                        ? "ПЕРЕНОС ГОСТЯ / GUEST MOVE"
+                        : "КУХНЯ / KITCHEN");
         sb.AppendLine(payload.StationName.Trim());
         sb.AppendLine(new string('=', 42));
         sb.AppendLine($"ЗАКАЗ / ORDER #{payload.OrderNumber}");
@@ -88,6 +90,13 @@ public sealed class KitchenPrintJobExecutor(
                 sb.AppendLine(
                     $"Куда / To: {JoinPlace(payload.ToHallName, payload.ToTableName)}");
             }
+        }
+        if (payload.IsGuestTransfer &&
+            payload.FromGuestNumber.HasValue &&
+            payload.ToGuestNumber.HasValue)
+        {
+            sb.AppendLine(
+                $"Гость / Guest: {payload.FromGuestNumber.Value} -> {payload.ToGuestNumber.Value}");
         }
         if (!string.IsNullOrWhiteSpace(payload.HallName))
             sb.AppendLine($"Зал / Hall: {payload.HallName!.Trim()}");
@@ -136,7 +145,9 @@ public sealed class KitchenPrintJobExecutor(
                 ? "VOID\n"
                 : payload.IsTransfer
                     ? "TRANSFER\n"
-                    : "KITCHEN\n");
+                    : payload.IsGuestTransfer
+                        ? "GUEST MOVE\n"
+                        : "KITCHEN\n");
         AppendAscii(bytes, ToAscii(payload.StationName.Trim()) + "\n");
         bytes.AddRange([0x1D, 0x21, 0x11]);
         AppendAscii(bytes, $"ORDER #{payload.OrderNumber}\n");
@@ -173,6 +184,14 @@ public sealed class KitchenPrintJobExecutor(
                     $"To: {ToAscii(JoinPlace(payload.ToHallName, payload.ToTableName))}\n");
             }
         }
+        if (payload.IsGuestTransfer &&
+            payload.FromGuestNumber.HasValue &&
+            payload.ToGuestNumber.HasValue)
+        {
+            AppendAscii(
+                bytes,
+                $"Guest: {payload.FromGuestNumber.Value} -> {payload.ToGuestNumber.Value}\n");
+        }
         AppendAscii(bytes, "--------------------------------\n");
 
         int? currentGuestNumber = null;
@@ -207,6 +226,8 @@ public sealed class KitchenPrintJobExecutor(
             AppendAscii(bytes, "VOID / CANCEL\n");
         else if (payload.IsTransfer)
             AppendAscii(bytes, "TRANSFER\n");
+        else if (payload.IsGuestTransfer)
+            AppendAscii(bytes, "GUEST MOVE\n");
         AppendAscii(bytes, $"ORDER #{payload.OrderNumber}\n\n\n");
         return bytes.ToArray();
     }
@@ -287,7 +308,10 @@ public sealed record KitchenTicketPayload(
     string? FromTableName = null,
     string? FromHallName = null,
     string? ToTableName = null,
-    string? ToHallName = null);
+    string? ToHallName = null,
+    bool IsGuestTransfer = false,
+    int? FromGuestNumber = null,
+    int? ToGuestNumber = null);
 
 public sealed record KitchenTicketItemPayload(
     Guid LineId,
