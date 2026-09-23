@@ -120,6 +120,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Name });
         modelBuilder.Entity<ProductPrice>().HasIndex(x => new { x.ProductId, x.ValidFrom });
         modelBuilder.Entity<Order>().HasIndex(x => new { x.RestaurantId, x.Status, x.CreatedAt });
+        modelBuilder.Entity<OrderItem>().HasIndex(x => new { x.OrderId, x.GuestNumber });
         modelBuilder.Entity<Payment>().HasIndex(x => new { x.RestaurantId, x.ShiftId, x.CreatedAt });
         modelBuilder.Entity<PaymentRefund>().HasIndex(x => new { x.RestaurantId, x.ShiftId, x.CreatedAt });
         modelBuilder.Entity<PaymentRefund>().HasIndex(x => x.PaymentId);
