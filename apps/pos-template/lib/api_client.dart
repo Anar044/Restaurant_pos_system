@@ -217,6 +217,7 @@ class PosApiClient {
     String productId, {
     String? comment,
     List<ModifierSelectionDto> modifiers = const [],
+    int guestNumber = 1,
   }) async {
     final response = await _http.post(
       _uri('/api/v1/orders/$orderId/items'),
@@ -224,6 +225,7 @@ class PosApiClient {
       body: jsonEncode({
         'productId': productId,
         'quantity': 1,
+        'guestNumber': guestNumber,
         if (comment != null && comment.trim().isNotEmpty)
           'comment': comment.trim(),
         'modifiers': modifiers.map((item) => item.toJson()).toList(),
@@ -237,6 +239,35 @@ class PosApiClient {
       _uri('/api/v1/orders/$orderId/guest-count'),
       headers: _headers,
       body: jsonEncode({'guestCount': guestCount}),
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> addGuest(String orderId) async {
+    final response = await _http.post(
+      _uri('/api/v1/orders/$orderId/guests'),
+      headers: _headers,
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> removeGuest(String orderId, int guestNumber) async {
+    final response = await _http.delete(
+      _uri('/api/v1/orders/$orderId/guests/$guestNumber'),
+      headers: _headers,
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> moveItemToGuest(
+    String orderId,
+    String itemId,
+    int guestNumber,
+  ) async {
+    final response = await _http.put(
+      _uri('/api/v1/orders/$orderId/items/$itemId/guest'),
+      headers: _headers,
+      body: jsonEncode({'guestNumber': guestNumber}),
     );
     return OrderDto.fromJson(_decode(response));
   }
@@ -818,6 +849,7 @@ class OrderLineDto {
     required this.id,
     required this.productId,
     required this.productName,
+    required this.guestNumber,
     required this.quantity,
     required this.unitPrice,
     required this.modifiersTotal,
@@ -832,6 +864,7 @@ class OrderLineDto {
   final String id;
   final String productId;
   final String productName;
+  final int guestNumber;
   final double quantity;
   final double unitPrice;
   final double modifiersTotal;
@@ -846,6 +879,7 @@ class OrderLineDto {
         id: json['id'] as String,
         productId: json['productId'] as String,
         productName: json['productName'] as String,
+        guestNumber: (json['guestNumber'] as num?)?.toInt() ?? 1,
         quantity: (json['quantity'] as num).toDouble(),
         unitPrice: (json['unitPrice'] as num).toDouble(),
         modifiersTotal: (json['modifiersTotal'] as num?)?.toDouble() ?? 0,
