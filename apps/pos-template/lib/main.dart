@@ -3840,10 +3840,12 @@ class _OrderPageState extends State<OrderPage> {
                 error: error,
                 canVoid: widget.session.hasPermission('orders.void'),
                 modifierProductIds: modifierProductIds,
+                guestCount: order?.guestCount ?? 1,
                 onPlus: incrementGroup,
                 onMinus: decrementGroup,
                 onSend: sendToKitchen,
                 onModifiers: editGroupModifiers,
+                onMoveGuest: moveGroupToGuest,
                 onComment: editGroupComment,
                 onVoid: voidSentItem,
                 onPrintPrecheck: printPrecheck,
@@ -3851,7 +3853,7 @@ class _OrderPageState extends State<OrderPage> {
                 onFinalizePaid: retryPaidFinalize,
               );
 
-              return wide
+              final workspace = wide
                   ? Row(
                       children: [
                         Expanded(child: menu),
@@ -3864,6 +3866,24 @@ class _OrderPageState extends State<OrderPage> {
                         SizedBox(height: 350, child: cart),
                       ],
                     );
+
+              return Column(
+                children: [
+                  _GuestSelector(
+                    guestCount: order?.guestCount ?? 1,
+                    selectedGuestNumber: selectedGuestNumber,
+                    busy: busy || editingLocked,
+                    onSelected: (guest) {
+                      setState(() => selectedGuestNumber = guest);
+                    },
+                    onAdd: addGuest,
+                    onRemove: order == null || (order?.guestCount ?? 1) <= 1
+                        ? null
+                        : removeSelectedGuest,
+                  ),
+                  Expanded(child: workspace),
+                ],
+              );
             },
           );
         },
@@ -4676,10 +4696,12 @@ class _OrderPane extends StatelessWidget {
     required this.error,
     required this.canVoid,
     required this.modifierProductIds,
+    required this.guestCount,
     required this.onPlus,
     required this.onMinus,
     required this.onSend,
     required this.onModifiers,
+    required this.onMoveGuest,
     required this.onComment,
     required this.onVoid,
     required this.onPrintPrecheck,
@@ -4694,10 +4716,12 @@ class _OrderPane extends StatelessWidget {
   final String? error;
   final bool canVoid;
   final Set<String> modifierProductIds;
+  final int guestCount;
   final ValueChanged<CartGroup> onPlus;
   final ValueChanged<CartGroup> onMinus;
   final Future<void> Function() onSend;
   final ValueChanged<CartGroup> onModifiers;
+  final ValueChanged<CartGroup> onMoveGuest;
   final ValueChanged<CartGroup> onComment;
   final ValueChanged<CartGroup> onVoid;
   final VoidCallback onPrintPrecheck;
@@ -4772,6 +4796,33 @@ class _OrderPane extends StatelessWidget {
                                                 ),
                                               ),
                                             ),
+                                            Container(
+                                              margin: const EdgeInsets.only(
+                                                left: 6,
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 7,
+                                                vertical: 3,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .primaryContainer,
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                              ),
+                                              child: Text(
+                                                'Гость ${group.guestNumber}',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onPrimaryContainer,
+                                                ),
+                                              ),
+                                            ),
                                             _OrderItemStatusBadge(
                                               status: group.status,
                                             ),
@@ -4812,12 +4863,17 @@ class _OrderPane extends StatelessWidget {
                                       ],
                                     ),
                                   ),
-                                  if ((group.status == 'NEW') || canVoidGroup)
+                                  if (group.status == 'NEW' ||
+                                      (guestCount > 1 &&
+                                          group.status == 'SENT') ||
+                                      canVoidGroup)
                                     PopupMenuButton<String>(
                                       tooltip: 'Действия',
                                       onSelected: (value) {
                                         if (value == 'modifiers') {
                                           onModifiers(group);
+                                        } else if (value == 'guest') {
+                                          onMoveGuest(group);
                                         } else if (value == 'comment') {
                                           onComment(group);
                                         } else if (value == 'void') {
@@ -4832,6 +4888,14 @@ class _OrderPane extends StatelessWidget {
                                             value: 'modifiers',
                                             child: Text(
                                               'Изменить модификаторы',
+                                            ),
+                                          ),
+                                        if (guestCount > 1 &&
+                                            group.status != 'VOIDED')
+                                          const PopupMenuItem(
+                                            value: 'guest',
+                                            child: Text(
+                                              'Перенести к другому гостю',
                                             ),
                                           ),
                                         if (group.status == 'NEW')
