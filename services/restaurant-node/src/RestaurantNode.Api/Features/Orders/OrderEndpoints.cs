@@ -175,6 +175,9 @@ public static class OrderEndpoints
             if (order.Status is OrderStatus.Closed or OrderStatus.Cancelled or OrderStatus.Paid or OrderStatus.PartiallyPaid)
                 return Results.Conflict(new { message = $"Order cannot be edited in status {order.Status}." });
 
+            if (request.GuestNumber < 1 || request.GuestNumber > order.GuestCount)
+                return Results.BadRequest(new { message = "Selected guest does not exist in this order." });
+
             var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(x => x.Id == request.ProductId && x.RestaurantId == restaurantId && x.IsActive, ct);
             if (product is null) return Results.BadRequest(new { message = "Product is not available." });
 
@@ -290,6 +293,7 @@ public static class OrderEndpoints
                 Order = order,
                 ProductId = product.Id,
                 ProductNameSnapshot = product.Name,
+                GuestNumber = request.GuestNumber,
                 Quantity = request.Quantity,
                 UnitPrice = price.Amount,
                 Comment = comment,
@@ -336,6 +340,7 @@ public static class OrderEndpoints
                 lineId = line.Id,
                 productId = product.Id,
                 productName = product.Name,
+                guestNumber = request.GuestNumber,
                 request.Quantity,
                 unitPrice = price.Amount,
                 modifiersTotal = line.ModifiersTotal,
@@ -378,6 +383,21 @@ public static class OrderEndpoints
 
             if (!CanEditOrder(order.Status))
                 return Results.Conflict(new { message = $"Order cannot be edited in status {order.Status}." });
+
+            if (request.GuestCount < order.GuestCount)
+            {
+                var occupiedRemovedGuest = order.Items.Any(x =>
+                    x.Status != OrderItemStatus.Voided &&
+                    x.GuestNumber > request.GuestCount);
+
+                if (occupiedRemovedGuest)
+                {
+                    return Results.Conflict(new
+                    {
+                        message = "Move or remove items from the guests being removed first."
+                    });
+                }
+            }
 
             var previous = order.GuestCount;
             order.GuestCount = request.GuestCount;
@@ -1602,6 +1622,7 @@ public static class OrderEndpoints
             x.Id,
             x.ProductId,
             productName = x.ProductNameSnapshot,
+            x.GuestNumber,
             x.Quantity,
             x.UnitPrice,
             x.ModifiersTotal,
@@ -1662,7 +1683,8 @@ public sealed record AddOrderItemRequest(
     Guid ProductId,
     decimal Quantity = 1m,
     string? Comment = null,
-    ModifierSelectionRequest[]? Modifiers = null);
+    ModifierSelectionRequest[]? Modifiers = null,
+    int GuestNumber = 1);
 public sealed record UpdateGuestCountRequest(int GuestCount);
 public sealed record MoveOrderRequest(Guid TableId);
 public sealed record TransferOrderItemsRequest(Guid TargetTableId, Guid[]? ItemIds);
