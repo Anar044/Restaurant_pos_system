@@ -209,6 +209,7 @@ public sealed class OrderItem : Entity
     public Order? Order { get; set; }
     public Guid ProductId { get; set; }
     public string ProductNameSnapshot { get; set; } = string.Empty;
+    public int GuestNumber { get; set; } = 1;
     public decimal Quantity { get; set; } = 1m;
     public decimal UnitPrice { get; set; }
     public decimal ModifiersTotal { get; set; }
