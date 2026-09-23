@@ -1703,6 +1703,7 @@ class _OrderPageState extends State<OrderPage> {
   late Future<List<MenuCategory>> menuFuture;
   late OrderDto? order;
   String? selectedCategoryId;
+  int selectedGuestNumber = 1;
   bool mutating = false;
   bool printing = false;
   bool paying = false;
@@ -1758,6 +1759,7 @@ class _OrderPageState extends State<OrderPage> {
         current.id,
         freshProduct.id,
         modifiers: selections,
+        guestNumber: selectedGuestNumber,
       );
 
       if (mounted) setState(() => order = current);
@@ -2228,6 +2230,7 @@ class _OrderPageState extends State<OrderPage> {
         group.productId,
         comment: group.comment,
         modifiers: selections,
+        guestNumber: group.guestNumber,
       );
       if (mounted) setState(() => order = updated);
     } catch (e) {
@@ -2314,9 +2317,186 @@ class _OrderPageState extends State<OrderPage> {
     });
     try {
       final updated = await widget.api.updateGuestCount(current.id, value);
-      if (mounted) setState(() => order = updated);
+      if (mounted) {
+        setState(() {
+          order = updated;
+          if (selectedGuestNumber > updated.guestCount) {
+            selectedGuestNumber = updated.guestCount;
+          }
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => error = 'Гости: $e');
+    } finally {
+      if (mounted) setState(() => mutating = false);
+    }
+  }
+
+  Future<void> addGuest() async {
+    if (mutating || printing || paying) return;
+
+    setState(() {
+      mutating = true;
+      error = null;
+    });
+
+    try {
+      var current =
+          order ?? await widget.api.createOrder(tableId: widget.table.id);
+      current = await widget.api.addGuest(current.id);
+
+      if (!mounted) return;
+      setState(() {
+        order = current;
+        selectedGuestNumber = current.guestCount;
+      });
+    } catch (e) {
+      if (mounted) setState(() => error = 'Гости: $e');
+    } finally {
+      if (mounted) setState(() => mutating = false);
+    }
+  }
+
+  Future<void> removeSelectedGuest() async {
+    final current = order;
+    if (current == null ||
+        current.guestCount <= 1 ||
+        mutating ||
+        printing ||
+        paying) {
+      return;
+    }
+
+    final guestNumber = selectedGuestNumber;
+    final hasItems = current.items.any(
+      (line) =>
+          line.status != 'VOIDED' &&
+          line.guestNumber == guestNumber,
+    );
+
+    if (hasItems) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Гость $guestNumber не пустой. Сначала перенесите или удалите его позиции.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      mutating = true;
+      error = null;
+    });
+
+    try {
+      final updated =
+          await widget.api.removeGuest(current.id, guestNumber);
+      if (!mounted) return;
+      setState(() {
+        order = updated;
+        selectedGuestNumber =
+            guestNumber > updated.guestCount
+                ? updated.guestCount
+                : guestNumber;
+      });
+    } catch (e) {
+      if (mounted) setState(() => error = 'Удаление гостя: $e');
+    } finally {
+      if (mounted) setState(() => mutating = false);
+    }
+  }
+
+  Future<void> moveGroupToGuest(CartGroup group) async {
+    final current = order;
+    if (current == null ||
+        current.guestCount <= 1 ||
+        mutating ||
+        printing ||
+        paying) {
+      return;
+    }
+
+    OrderLineDto? target;
+    for (final line in group.lines.reversed) {
+      if (line.status != 'VOIDED') {
+        target = line;
+        break;
+      }
+    }
+    if (target == null) return;
+
+    final destination = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Перенести · ${group.productName}'),
+        content: SizedBox(
+          width: 430,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (group.lines.length > 1) ...[
+                Text(
+                  'В строке ${group.lines.length} одинаковых позиций. '
+                  'Будет перенесена одна позиция.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              for (var guest = 1; guest <= current.guestCount; guest++)
+                if (guest != target!.guestNumber)
+                  ListTile(
+                    leading: const CircleAvatar(
+                      child: Icon(Icons.person_outline),
+                    ),
+                    title: Text('Гость $guest'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () =>
+                        Navigator.of(dialogContext).pop(guest),
+                  ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Отмена'),
+          ),
+        ],
+      ),
+    );
+
+    if (destination == null || !mounted) return;
+
+    setState(() {
+      mutating = true;
+      error = null;
+    });
+
+    try {
+      final updated = await widget.api.moveItemToGuest(
+        current.id,
+        target.id,
+        destination,
+      );
+      if (!mounted) return;
+      setState(() {
+        order = updated;
+        selectedGuestNumber = destination;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${group.productName} перенесён к гостю $destination.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) setState(() => error = 'Перенос к гостю: $e');
     } finally {
       if (mounted) setState(() => mutating = false);
     }
