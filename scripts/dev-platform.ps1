@@ -68,6 +68,26 @@ function Test-Http([string]$url) {
     }
 }
 
+function Test-TcpPort([string]$hostName, [int]$port, [int]$timeoutMs = 1200) {
+    $client = $null
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $task = $client.ConnectAsync($hostName, $port)
+        if (-not $task.Wait($timeoutMs)) {
+            return $false
+        }
+        return $client.Connected
+    }
+    catch {
+        return $false
+    }
+    finally {
+        if ($null -ne $client) {
+            $client.Dispose()
+        }
+    }
+}
+
 function Wait-ProcessName([string]$name, [int]$seconds) {
     $deadline = (Get-Date).AddSeconds($seconds)
     while ((Get-Date) -lt $deadline) {
@@ -209,17 +229,40 @@ function Start-Postgres {
         Pop-Location
     }
 
-    $deadline = (Get-Date).AddSeconds(60)
+    $deadline = (Get-Date).AddSeconds(75)
     while ((Get-Date) -lt $deadline) {
-        & docker exec restaurant-platform-postgres pg_isready -U restaurant -d restaurant_local *> $null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "PostgreSQL is ready." -ForegroundColor Green
+        $containerRunning = $false
+        try {
+            $state = (& docker inspect -f "{{.State.Running}}" restaurant-platform-postgres 2>$null).Trim()
+            $containerRunning = $state -eq "true"
+        }
+        catch {
+        }
+
+        $pgReady = $false
+        if ($containerRunning) {
+            & docker exec restaurant-platform-postgres pg_isready -U restaurant -d restaurant_local *> $null
+            $pgReady = $LASTEXITCODE -eq 0
+        }
+
+        $hostPortReady = Test-TcpPort "127.0.0.1" 5432 1200
+
+        if ($containerRunning -and $pgReady -and $hostPortReady) {
+            Write-Host "PostgreSQL is ready on 127.0.0.1:5432." -ForegroundColor Green
             return
         }
+
         Start-Sleep -Seconds 1
     }
 
-    throw "PostgreSQL did not become ready within 60 seconds."
+    Write-Host ""
+    Write-Host "PostgreSQL startup diagnostics:" -ForegroundColor Yellow
+    & docker ps -a --filter "name=restaurant-platform-postgres" | Out-Host
+    Write-Host ""
+    Write-Host "Last PostgreSQL container log lines:" -ForegroundColor Yellow
+    & docker logs --tail 40 restaurant-platform-postgres 2>&1 | ForEach-Object { Write-Host $_ }
+
+    throw "PostgreSQL container or host port 5432 did not become ready within 75 seconds."
 }
 
 function Ensure-PosProject {
@@ -298,14 +341,19 @@ function Start-Platform {
     }
 
     Ensure-Docker
-    Start-Postgres
     Ensure-PosProject
+    Start-Postgres
 
     Stop-Port 5173
     Stop-Port 8791
     Stop-Port 8080
     Stop-SavedProcess "flutter-pos"
     Get-Process "restaurant_pos" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+    if (-not (Test-TcpPort "127.0.0.1" 5432 1500)) {
+        Write-Host "PostgreSQL host port disappeared before Restaurant Node startup. Rechecking..." -ForegroundColor Yellow
+        Start-Postgres
+    }
 
     Write-Host "Starting Restaurant Node..."
     $env:ConnectionStrings__RestaurantDb = $dbConnection
