@@ -8,9 +8,36 @@ if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
     throw "Flutter SDK was not found in PATH. Install Flutter first, then run this script again."
 }
 
+function Remove-DirectoryWithRetry([string]$path, [int]$attempts = 10) {
+    if (-not (Test-Path $path)) {
+        return
+    }
+
+    for ($attempt = 1; $attempt -le $attempts; $attempt++) {
+        try {
+            Remove-Item -Recurse -Force $path -ErrorAction Stop
+            return
+        }
+        catch {
+            if ($attempt -eq $attempts) {
+                throw "Could not remove '$path' after $attempts attempts. Close any running Restaurant POS window and try again. Last error: $($_.Exception.Message)"
+            }
+
+            Start-Sleep -Milliseconds 500
+        }
+    }
+}
+
 if (Test-Path $target) {
     Write-Host "apps/pos already exists. Removing it before regeneration..."
-    Remove-Item -Recurse -Force $target
+
+    # The running Windows POS keeps flutter_windows.dll loaded. Stop only our POS
+    # process; do not kill unrelated Flutter/Dart processes from other projects.
+    Get-Process "restaurant_pos" -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 800
+
+    Remove-DirectoryWithRetry $target
 }
 
 Write-Host "Creating project apps\pos..."
@@ -44,4 +71,4 @@ finally {
 }
 
 Write-Host "POS created at apps/pos"
-Write-Host "Windows example: flutter run -d windows --dart-define=API_BASE_URL=http://127.0.0.1:8080 --dart-define=POS_AGENT_BASE_URL=http://127.0.0.1:8791 --dart-define=POS_DEVICE_ID=01a0b072-5a20-7a10-add0-4f890c477588"
+Write-Host "Windows example: flutter run -d windows --dart-define=API_BASE_URL=http://127.0.0.1:8180 --dart-define=POS_AGENT_BASE_URL=http://127.0.0.1:8791 --dart-define=POS_DEVICE_ID=01a0b072-5a20-7a10-add0-4f890c477588"

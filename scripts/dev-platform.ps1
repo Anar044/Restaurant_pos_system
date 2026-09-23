@@ -350,14 +350,20 @@ function Start-Platform {
     }
 
     Ensure-Docker
+
+    # Stop the generated Flutter POS before checking/regenerating apps\pos.
+    # Otherwise Windows can keep flutter_windows.dll locked and regeneration fails.
+    Stop-SavedProcess "flutter-pos"
+    Get-Process "restaurant_pos" -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 1000
+
     Ensure-PosProject
     Start-Postgres
 
-    Stop-SavedProcess "flutter-pos"
     Stop-SavedProcess "backoffice"
     Stop-SavedProcess "pos-agent"
     Stop-SavedProcess "restaurant-node"
-    Get-Process "restaurant_pos" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
 
     Assert-PortAvailable 5173 "BackOffice"
