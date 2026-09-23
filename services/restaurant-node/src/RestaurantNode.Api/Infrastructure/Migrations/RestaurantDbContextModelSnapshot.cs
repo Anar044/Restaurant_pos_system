@@ -466,6 +466,9 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.Property<Guid>("CreatedByEmployeeId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("GuestNumber")
+                        .HasColumnType("integer");
+
                     b.Property<decimal>("LineTotal")
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)");
@@ -505,6 +508,8 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("OrderId");
+
+                    b.HasIndex("OrderId", "GuestNumber");
 
                     b.ToTable("order_items", (string)null);
                 });
