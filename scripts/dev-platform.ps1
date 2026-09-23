@@ -19,6 +19,8 @@ $posDir = Join-Path $repoRoot "apps\pos"
 $restaurantId = "11111111-1111-1111-1111-111111111111"
 $deviceId = "01a0b072-5a20-7a10-add0-4f890c477588"
 $agentKey = "restaurant-pos-agent-local-dev-key-2026"
+$restaurantNodePort = 8180
+$restaurantNodeBaseUrl = "http://127.0.0.1:$restaurantNodePort"
 $jwtKey = "restaurant-pos-development-jwt-key-change-me-2026-123456789"
 $dbConnection = "Host=localhost;Port=5432;Database=restaurant_local;Username=restaurant;Password=restaurant_dev_password"
 
@@ -126,13 +128,20 @@ function Stop-ProcessTree([int]$processId) {
     Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
 }
 
-function Stop-Port([int]$port) {
+function Assert-PortAvailable([int]$port, [string]$serviceName) {
     $pidOnPort = Get-ListeningPid $port
-    if ($null -ne $pidOnPort -and $pidOnPort -ne $PID) {
-        Write-Host "Stopping old process on port $port (PID $pidOnPort)..."
-        Stop-ProcessTree -processId $pidOnPort
-        Start-Sleep -Milliseconds 500
+    if ($null -eq $pidOnPort) {
+        return
     }
+
+    $processName = "unknown"
+    try {
+        $processName = (Get-Process -Id $pidOnPort -ErrorAction Stop).ProcessName
+    }
+    catch {
+    }
+
+    throw "$serviceName cannot start because port $port is already in use by PID $pidOnPort ($processName). The launcher will not stop unrelated processes."
 }
 
 function Get-PidPath([string]$name) {
@@ -319,7 +328,7 @@ function Show-Status {
     }
     Write-State "PostgreSQL" $postgresRunning "localhost:5432"
 
-    Write-State "Restaurant Node" (Test-Http "http://127.0.0.1:8080/health") "http://127.0.0.1:8080"
+    Write-State "Restaurant Node" (Test-Http "$restaurantNodeBaseUrl/health") $restaurantNodeBaseUrl
     Write-State "POS Agent" (Test-Http "http://127.0.0.1:8791/health") "http://127.0.0.1:8791"
     Write-State "BackOffice" (Test-Http "http://127.0.0.1:5173") "http://127.0.0.1:5173"
 
@@ -344,11 +353,16 @@ function Start-Platform {
     Ensure-PosProject
     Start-Postgres
 
-    Stop-Port 5173
-    Stop-Port 8791
-    Stop-Port 8080
     Stop-SavedProcess "flutter-pos"
+    Stop-SavedProcess "backoffice"
+    Stop-SavedProcess "pos-agent"
+    Stop-SavedProcess "restaurant-node"
     Get-Process "restaurant_pos" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
+
+    Assert-PortAvailable 5173 "BackOffice"
+    Assert-PortAvailable 8791 "POS Agent"
+    Assert-PortAvailable $restaurantNodePort "Restaurant Node"
 
     if (-not (Test-TcpPort "127.0.0.1" 5432 1500)) {
         Write-Host "PostgreSQL host port disappeared before Restaurant Node startup. Rechecking..." -ForegroundColor Yellow
@@ -361,10 +375,10 @@ function Start-Platform {
     $env:Seed__AdminPin = "1234"
     $env:Agent__SharedKey = $agentKey
     $env:ASPNETCORE_ENVIRONMENT = "Development"
-    $env:ASPNETCORE_URLS = "http://0.0.0.0:8080"
+    $env:ASPNETCORE_URLS = "http://0.0.0.0:$restaurantNodePort"
     Start-LoggedProcess -name "restaurant-node" -filePath "dotnet" -argumentList @("run", "--no-launch-profile") -workingDirectory $nodeDir | Out-Null
 
-    if (-not (Wait-Http "http://127.0.0.1:8080/health" 45)) {
+    if (-not (Wait-Http "$restaurantNodeBaseUrl/health" 45)) {
         Write-Host ""
         Write-Host "Restaurant Node startup log:" -ForegroundColor Yellow
         $nodeErr = Join-Path $logsDir "restaurant-node.err.log"
@@ -380,7 +394,7 @@ function Start-Platform {
     Write-Host "Restaurant Node is ready." -ForegroundColor Green
 
     Write-Host "Starting POS Agent..."
-    $env:RestaurantNode__BaseUrl = "http://127.0.0.1:8080"
+    $env:RestaurantNode__BaseUrl = $restaurantNodeBaseUrl
     $env:Restaurant__Id = $restaurantId
     $env:Device__Id = $deviceId
     $env:Agent__SharedKey = $agentKey
@@ -407,6 +421,8 @@ function Start-Platform {
     }
 
     Write-Host "Starting BackOffice..."
+    $env:VITE_API_BASE_URL = $restaurantNodeBaseUrl
+    $env:VITE_RESTAURANT_ID = $restaurantId
     Start-LoggedProcess -name "backoffice" -filePath "cmd.exe" -argumentList @("/d", "/c", "npm.cmd run dev -- --host 127.0.0.1") -workingDirectory $backofficeDir | Out-Null
 
     if (-not (Wait-Http "http://127.0.0.1:5173" 45)) {
@@ -415,7 +431,7 @@ function Start-Platform {
     Write-Host "BackOffice is ready." -ForegroundColor Green
 
     Write-Host "Starting Flutter POS..."
-    $flutterCommand = "flutter run -d windows --dart-define=API_BASE_URL=http://127.0.0.1:8080 --dart-define=POS_AGENT_BASE_URL=http://127.0.0.1:8791 --dart-define=POS_DEVICE_ID=$deviceId"
+    $flutterCommand = "flutter run -d windows --dart-define=API_BASE_URL=$restaurantNodeBaseUrl --dart-define=POS_AGENT_BASE_URL=http://127.0.0.1:8791 --dart-define=POS_DEVICE_ID=$deviceId"
     Start-LoggedProcess -name "flutter-pos" -filePath "cmd.exe" -argumentList @("/d", "/c", $flutterCommand) -workingDirectory $posDir | Out-Null
 
     Write-Host "Waiting for Flutter POS window (first build can take up to 90 seconds)..."
@@ -458,10 +474,6 @@ function Stop-Platform {
     Stop-SavedProcess "backoffice"
     Stop-SavedProcess "pos-agent"
     Stop-SavedProcess "restaurant-node"
-
-    Stop-Port 5173
-    Stop-Port 8791
-    Stop-Port 8080
 
     if (Test-Command "docker") {
         & docker info *> $null

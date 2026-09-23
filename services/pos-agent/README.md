@@ -26,7 +26,7 @@ Create a POS device in BackOffice first and copy its Device ID.
 ```powershell
 cd C:\Restaurant_pos_system\Restaurant_pos_system\services\pos-agent\src\PosAgent.Api
 
-$env:RestaurantNode__BaseUrl="http://127.0.0.1:8080"
+$env:RestaurantNode__BaseUrl="http://127.0.0.1:8180"
 $env:Restaurant__Id="11111111-1111-1111-1111-111111111111"
 $env:Device__Id="PASTE-POS-DEVICE-ID-HERE"
 $env:Agent__SharedKey="restaurant-pos-development-agent-key-change-me-2026"

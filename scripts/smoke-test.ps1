@@ -1,5 +1,5 @@
 param(
-    [string]$ApiBaseUrl = "http://127.0.0.1:8080",
+    [string]$ApiBaseUrl = "http://127.0.0.1:8180",
     [string]$RestaurantId = "11111111-1111-1111-1111-111111111111",
     [string]$Pin = "1234"
 )

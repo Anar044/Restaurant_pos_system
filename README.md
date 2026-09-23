@@ -56,12 +56,12 @@ dotnet restore
 dotnet run
 ```
 
-API listens on `http://0.0.0.0:8080` by default.
+API listens on `http://0.0.0.0:8180` by default.
 
 Health check:
 
 ```text
-GET http://127.0.0.1:8080/health
+GET http://127.0.0.1:8180/health
 ```
 
 ## 3. Generate the Flutter platform shell
@@ -79,10 +79,10 @@ Start on Windows:
 ```powershell
 cd apps\pos
 flutter pub get
-flutter run -d windows --dart-define=API_BASE_URL=http://127.0.0.1:8080
+flutter run -d windows --dart-define=API_BASE_URL=http://127.0.0.1:8180
 ```
 
-For an Android emulator use `http://10.0.2.2:8080`. For a physical Android/iOS device use the Restaurant Node computer's LAN IP, for example `http://192.168.1.20:8080`.
+For an Android emulator use `http://10.0.2.2:8180`. For a physical Android/iOS device use the Restaurant Node computer's LAN IP, for example `http://192.168.1.20:8180`.
 
 > iOS builds require macOS/Xcode, even though the shared Flutter source can be developed elsewhere.
 

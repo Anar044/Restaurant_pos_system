@@ -1,14 +1,10 @@
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using RestaurantNode.Api.Infrastructure;
 
 #nullable disable
 
 namespace RestaurantNode.Api.Infrastructure.Migrations;
 
-[DbContext(typeof(RestaurantDbContext))]
-[Migration("20260923103000_AddOrderItemGuests")]
-public sealed class AddOrderItemGuests : Migration
+public partial class AddOrderItemGuests : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
