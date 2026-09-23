@@ -507,8 +507,6 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrderId");
-
                     b.HasIndex("OrderId", "GuestNumber");
 
                     b.ToTable("order_items", (string)null);

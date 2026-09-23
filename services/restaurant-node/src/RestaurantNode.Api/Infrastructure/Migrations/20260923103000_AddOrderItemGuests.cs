@@ -8,6 +8,10 @@ public partial class AddOrderItemGuests : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
+        migrationBuilder.DropIndex(
+            name: "IX_order_items_OrderId",
+            table: "order_items");
+
         migrationBuilder.AddColumn<int>(
             name: "GuestNumber",
             table: "order_items",
@@ -30,5 +34,10 @@ public partial class AddOrderItemGuests : Migration
         migrationBuilder.DropColumn(
             name: "GuestNumber",
             table: "order_items");
+
+        migrationBuilder.CreateIndex(
+            name: "IX_order_items_OrderId",
+            table: "order_items",
+            column: "OrderId");
     }
 }
