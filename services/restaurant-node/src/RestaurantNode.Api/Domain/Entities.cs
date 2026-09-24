@@ -239,6 +239,7 @@ public sealed class Payment : Entity
     public Guid OrderId { get; set; }
     public Guid ShiftId { get; set; }
     public Guid EmployeeId { get; set; }
+    public int? GuestNumber { get; set; }
     public PaymentMethod Method { get; set; }
     public PaymentStatus Status { get; set; } = PaymentStatus.Pending;
     public decimal Amount { get; set; }
