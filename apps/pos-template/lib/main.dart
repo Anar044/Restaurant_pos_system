@@ -4067,16 +4067,37 @@ class _PaymentDialogState extends State<_PaymentDialog> {
     return values.take(6).toList();
   }
 
-  void _applyOrder(PaymentResultDto result) {
-    currentOrder = result.order;
-    widget.onOrderChanged(result.order);
+  void _applyOrder(
+    PaymentResultDto result, {
+    bool advanceGuest = true,
+    bool resetInputs = true,
+  }) {
+    final updated = result.order;
+    var nextGuest = selectedGuestNumber;
+
+    if (advanceGuest && nextGuest != null) {
+      final balance = _balanceFor(updated, nextGuest);
+      if (balance == null || balance.remaining <= 0.005) {
+        nextGuest = _firstUnpaidGuest(updated);
+      }
+    }
+
+    setState(() {
+      currentOrder = updated;
+      selectedGuestNumber = nextGuest;
+      error = null;
+    });
+    widget.onOrderChanged(updated);
+
+    if (resetInputs) _resetAmountInputs();
   }
 
   Future<void> submit() async {
     if (submitting) return;
 
-    final remaining = currentOrder.remaining;
-    if (remaining <= 0) return;
+    final remaining = _scopeRemaining;
+    final paidGuestNumber = selectedGuestNumber;
+    if (remaining <= 0.005) return;
 
     if (mode == 'MIXED') {
       if (_mixedCash <= 0.005 || _mixedCash >= remaining - 0.005) {
@@ -4102,6 +4123,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
     setState(() {
       submitting = true;
       error = null;
+      notice = null;
     });
 
     var cashPartSaved = false;
@@ -4115,6 +4137,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
           shiftId: widget.shiftId,
           method: 'CASH',
           amount: remaining,
+          guestNumber: paidGuestNumber,
           tenderedAmount: _cashReceived,
         );
         _applyOrder(result);
@@ -4124,6 +4147,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
           shiftId: widget.shiftId,
           method: 'CARD',
           amount: remaining,
+          guestNumber: paidGuestNumber,
         );
         _applyOrder(result);
       } else {
@@ -4133,19 +4157,27 @@ class _PaymentDialogState extends State<_PaymentDialog> {
           shiftId: widget.shiftId,
           method: 'CASH',
           amount: cashAmount,
+          guestNumber: paidGuestNumber,
           tenderedAmount: _cashReceived,
         );
         cashPartSaved = true;
-        _applyOrder(cashResult);
+        _applyOrder(
+          cashResult,
+          advanceGuest: false,
+          resetInputs: false,
+        );
 
-        if (cashResult.remaining <= 0.005) {
+        final cardAmount = _scopeRemaining;
+        if (cardAmount <= 0.005) {
           result = cashResult;
+          _applyOrder(result);
         } else {
           result = await widget.api.payOrder(
             orderId: currentOrder.id,
             shiftId: widget.shiftId,
             method: 'CARD',
-            amount: cashResult.remaining,
+            amount: cardAmount,
+            guestNumber: paidGuestNumber,
           );
           _applyOrder(result);
         }
@@ -4155,6 +4187,18 @@ class _PaymentDialogState extends State<_PaymentDialog> {
 
       if (result.order.status == 'PAID') {
         Navigator.of(context).pop(result);
+        return;
+      }
+
+      if (paidGuestNumber != null ||
+          currentOrder.paymentMode == 'BY_GUEST') {
+        setState(() {
+          submitting = false;
+          notice =
+              'Гость $paidGuestNumber оплачен. '
+              'Осталось по заказу '
+              '${currentOrder.remaining.toStringAsFixed(2)} AZN.';
+        });
         return;
       }
 
@@ -4169,13 +4213,12 @@ class _PaymentDialogState extends State<_PaymentDialog> {
 
       if (cashPartSaved) {
         mode = 'CARD';
-        cashReceivedController.text =
-            currentOrder.remaining.toStringAsFixed(2);
+        _resetAmountInputs();
         setState(() {
           submitting = false;
           error =
               'Наличная часть уже сохранена. Карта не завершилась: $e\n'
-              'Осталось ${currentOrder.remaining.toStringAsFixed(2)} AZN. '
+              'Осталось ${_scopeRemaining.toStringAsFixed(2)} AZN. '
               'Нажмите «Оплатить картой» для повтора.';
         });
       } else {
