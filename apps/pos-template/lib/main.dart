@@ -117,24 +117,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                   ),
-                  if (notice != null) ...[
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    notice!,
-                    style: TextStyle(
-                      color: scheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-              if (error != null) ...[
+if (error != null) ...[
                     const SizedBox(height: 8),
                     Text(
                       error!,
@@ -4712,6 +4695,23 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                         ),
                       ),
                     ],
+                  ),
+                ),
+              ],
+              if (notice != null) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    notice!,
+                    style: TextStyle(
+                      color: scheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
