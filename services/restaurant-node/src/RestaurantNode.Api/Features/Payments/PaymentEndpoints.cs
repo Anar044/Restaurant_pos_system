@@ -66,19 +66,72 @@ public static class PaymentEndpoints
             if (order.Items.Any(x => x.Status == OrderItemStatus.New))
                 return Results.Conflict(new { message = "Send all order items to the kitchen before payment." });
 
-            var completedTotal = order.Payments
-                .Where(x => x.Status is PaymentStatus.Completed or PaymentStatus.Refunded)
-                .Sum(x => x.Amount);
+            var completedTotal = GuestPaymentMath.GetCompletedTotal(order);
+            var paymentMode = GuestPaymentMath.GetPaymentMode(order);
 
-            var remaining = Money(Math.Max(0m, order.Total - completedTotal));
-            if (remaining <= 0)
-                return Results.Conflict(new { message = "Order is already fully paid." });
+            if (paymentMode == GuestPaymentMath.MixedLegacy)
+                return Results.Conflict(new
+                {
+                    message = "This order contains mixed legacy payment scopes and cannot accept another payment."
+                });
+
+            decimal scopeTotal;
+            decimal remaining;
+
+            if (request.GuestNumber.HasValue)
+            {
+                var guestNumber = request.GuestNumber.Value;
+                if (guestNumber < 1 || guestNumber > order.GuestCount)
+                    return Results.BadRequest(new
+                    {
+                        message = $"GuestNumber must be between 1 and {order.GuestCount}."
+                    });
+
+                if (paymentMode == GuestPaymentMath.WholeOrder)
+                    return Results.Conflict(new
+                    {
+                        message = "A whole-order payment has already started. Continue paying the whole order."
+                    });
+
+                var guest = GuestPaymentMath.GetGuestBalances(order)
+                    .First(x => x.GuestNumber == guestNumber);
+
+                if (guest.Total <= 0)
+                    return Results.Conflict(new
+                    {
+                        message = $"Guest {guestNumber} has no payable items."
+                    });
+
+                scopeTotal = guest.Total;
+                remaining = guest.Remaining;
+
+                if (remaining <= 0)
+                    return Results.Conflict(new
+                    {
+                        message = $"Guest {guestNumber} is already fully paid."
+                    });
+            }
+            else
+            {
+                if (paymentMode == GuestPaymentMath.ByGuest)
+                    return Results.Conflict(new
+                    {
+                        message = "Guest-by-guest payment has already started. Continue paying individual guests."
+                    });
+
+                scopeTotal = Money(order.Total);
+                remaining = Money(Math.Max(0m, order.Total - completedTotal));
+                if (remaining <= 0)
+                    return Results.Conflict(new { message = "Order is already fully paid." });
+            }
 
             var amount = Money(request.Amount);
             if (amount > remaining)
                 return Results.BadRequest(new
                 {
-                    message = "Payment amount cannot exceed the remaining order balance.",
+                    message = request.GuestNumber.HasValue
+                        ? "Payment amount cannot exceed the selected guest balance."
+                        : "Payment amount cannot exceed the remaining order balance.",
                     remaining
                 });
 
@@ -118,6 +171,7 @@ public static class PaymentEndpoints
                 OrderId = order.Id,
                 ShiftId = shift.Id,
                 EmployeeId = employeeId,
+                GuestNumber = request.GuestNumber,
                 Method = method,
                 Status = PaymentStatus.Completed,
                 Amount = amount,
@@ -151,6 +205,7 @@ public static class PaymentEndpoints
                     payment.Id,
                     orderId = order.Id,
                     shiftId = shift.Id,
+                    payment.GuestNumber,
                     method = EnumText(payment.Method),
                     payment.Amount,
                     payment.TenderedAmount,
@@ -170,6 +225,7 @@ public static class PaymentEndpoints
                     payment.Id,
                     orderId = order.Id,
                     shiftId = shift.Id,
+                    payment.GuestNumber,
                     method = EnumText(payment.Method),
                     payment.Amount,
                     payment.TenderedAmount,
@@ -185,7 +241,10 @@ public static class PaymentEndpoints
             {
                 payment = ToDto(payment, 0m),
                 order = OrderEndpoints.ToDto(order),
-                remaining = Money(Math.Max(0m, order.Total - order.PaidTotal))
+                remaining = Money(Math.Max(0m, order.Total - order.PaidTotal)),
+                scopeGuestNumber = request.GuestNumber,
+                scopeTotal,
+                scopeRemaining = Money(Math.Max(0m, remaining - amount))
             });
         }).RequireAuthorization("payments.write");
 
@@ -398,6 +457,7 @@ public static class PaymentEndpoints
         payment.OrderId,
         payment.ShiftId,
         payment.EmployeeId,
+        payment.GuestNumber,
         method = EnumText(payment.Method),
         status = EnumText(payment.Status),
         payment.Amount,
@@ -488,6 +548,7 @@ public sealed record CreatePaymentRequest(
     Guid ShiftId,
     string Method,
     decimal Amount,
+    int? GuestNumber = null,
     decimal? TenderedAmount = null,
     string? ProviderReference = null);
 
