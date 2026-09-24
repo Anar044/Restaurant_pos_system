@@ -405,6 +405,7 @@ export type FinancePayment = {
   shiftId: string;
   employeeId: string;
   employeeName: string;
+  guestNumber: number | null;
   method: string;
   status: string;
   amount: number;
