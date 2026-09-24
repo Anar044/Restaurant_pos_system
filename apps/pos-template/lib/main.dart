@@ -4033,6 +4033,14 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   String _methodLabel(String value) =>
       value == 'CASH' ? 'Наличные' : 'Карта';
 
+  String _paymentChipLabel(PaymentDto payment) {
+    final guest = payment.guestNumber == null
+        ? ''
+        : 'Гость ${payment.guestNumber} · ';
+    return '$guest${_methodLabel(payment.method)} '
+        '${payment.amount.toStringAsFixed(2)} AZN';
+  }
+
   void _resetAmountInputs() {
     final remaining = _scopeRemaining;
     final half = remaining / 2;
@@ -4493,11 +4501,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                               : Icons.credit_card,
                           size: 18,
                         ),
-                        label: Text(
-                          '${payment.guestNumber == null ? '' : 'Гость ${payment.guestNumber} · '}'
-                          '${_methodLabel(payment.method)} '
-                          '${payment.amount.toStringAsFixed(2)} AZN',
-                        ),
+                        label: Text(_paymentChipLabel(payment)),
                       ),
                   ],
                 ),
