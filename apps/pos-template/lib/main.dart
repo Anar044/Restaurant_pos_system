@@ -3915,19 +3915,22 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   late final TextEditingController mixedCashController;
   late final TextEditingController cashReceivedController;
 
+  int? selectedGuestNumber;
   String mode = 'CASH';
   String? error;
+  String? notice;
   bool submitting = false;
 
   @override
   void initState() {
     super.initState();
     currentOrder = widget.order;
-    final half = currentOrder.remaining / 2;
-    mixedCashController = TextEditingController(text: half.toStringAsFixed(2));
-    cashReceivedController = TextEditingController(
-      text: currentOrder.remaining.toStringAsFixed(2),
-    );
+    selectedGuestNumber = currentOrder.paymentMode == 'BY_GUEST'
+        ? _firstUnpaidGuest(currentOrder)
+        : null;
+    mixedCashController = TextEditingController();
+    cashReceivedController = TextEditingController();
+    _resetAmountInputs();
     mixedCashController.addListener(_refresh);
     cashReceivedController.addListener(_refresh);
   }
@@ -3944,24 +3947,60 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   }
 
   void _refresh() {
-    if (mounted) setState(() => error = null);
+    if (mounted) {
+      setState(() {
+        error = null;
+        notice = null;
+      });
+    }
   }
 
   double? _parse(TextEditingController controller) =>
       double.tryParse(controller.text.trim().replaceAll(',', '.'));
 
+  GuestPaymentBalanceDto? _balanceFor(OrderDto order, int guestNumber) {
+    for (final balance in order.guestBalances) {
+      if (balance.guestNumber == guestNumber) return balance;
+    }
+    return null;
+  }
+
+  int? _firstUnpaidGuest(OrderDto order) {
+    for (final balance in order.guestBalances) {
+      if (balance.total > 0.005 && balance.remaining > 0.005) {
+        return balance.guestNumber;
+      }
+    }
+    return null;
+  }
+
+  GuestPaymentBalanceDto? get _selectedGuest =>
+      selectedGuestNumber == null
+          ? null
+          : _balanceFor(currentOrder, selectedGuestNumber!);
+
+  double get _scopeTotal => _selectedGuest?.total ?? currentOrder.total;
+  double get _scopePaid => _selectedGuest?.paid ?? currentOrder.paidTotal;
+  double get _scopeRemaining =>
+      _selectedGuest?.remaining ?? currentOrder.remaining;
+
+  String get _scopeLabel =>
+      selectedGuestNumber == null
+          ? 'Весь заказ'
+          : 'Гость $selectedGuestNumber';
+
   double get _mixedCash => _parse(mixedCashController) ?? 0;
 
   double get _cashDue {
-    if (mode == 'CASH') return currentOrder.remaining;
+    if (mode == 'CASH') return _scopeRemaining;
     if (mode == 'MIXED') return _mixedCash;
     return 0;
   }
 
   double get _cardDue {
-    if (mode == 'CARD') return currentOrder.remaining;
+    if (mode == 'CARD') return _scopeRemaining;
     if (mode == 'MIXED') {
-      final value = currentOrder.remaining - _mixedCash;
+      final value = _scopeRemaining - _mixedCash;
       return value > 0 ? value : 0;
     }
     return 0;
@@ -3977,26 +4016,43 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   String _methodLabel(String value) =>
       value == 'CASH' ? 'Наличные' : 'Карта';
 
+  void _resetAmountInputs() {
+    final remaining = _scopeRemaining;
+    final half = remaining / 2;
+    mixedCashController.text = half.toStringAsFixed(2);
+    cashReceivedController.text = mode == 'MIXED'
+        ? half.toStringAsFixed(2)
+        : remaining.toStringAsFixed(2);
+  }
+
+  void _selectScope(int? guestNumber) {
+    if (submitting) return;
+    if (guestNumber != null && currentOrder.paymentMode == 'WHOLE_ORDER') {
+      return;
+    }
+    if (guestNumber == null && currentOrder.paymentMode == 'BY_GUEST') {
+      return;
+    }
+
+    setState(() {
+      selectedGuestNumber = guestNumber;
+      error = null;
+      notice = null;
+    });
+    _resetAmountInputs();
+  }
+
   void _selectMode(String value) {
     setState(() {
       mode = value;
       error = null;
-
-      if (mode == 'MIXED') {
-        final half = currentOrder.remaining / 2;
-        if (_mixedCash <= 0 || _mixedCash >= currentOrder.remaining) {
-          mixedCashController.text = half.toStringAsFixed(2);
-        }
-        cashReceivedController.text = _mixedCash.toStringAsFixed(2);
-      } else if (mode == 'CASH') {
-        cashReceivedController.text =
-            currentOrder.remaining.toStringAsFixed(2);
-      }
+      notice = null;
     });
+    _resetAmountInputs();
   }
 
   void _setHalf() {
-    final half = currentOrder.remaining / 2;
+    final half = _scopeRemaining / 2;
     mixedCashController.text = half.toStringAsFixed(2);
     cashReceivedController.text = half.toStringAsFixed(2);
   }
