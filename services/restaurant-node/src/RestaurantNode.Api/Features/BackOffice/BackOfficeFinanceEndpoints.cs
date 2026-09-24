@@ -147,6 +147,7 @@ public static class BackOfficeFinanceEndpoints
                         shiftId = row.Payment.ShiftId,
                         employeeId = row.Payment.EmployeeId,
                         employeeName = row.EmployeeName,
+                        guestNumber = row.Payment.GuestNumber,
                         method = row.Payment.Method.ToString().ToUpperInvariant(),
                         status = row.Payment.Status.ToString().ToUpperInvariant(),
                         row.Payment.Amount,
