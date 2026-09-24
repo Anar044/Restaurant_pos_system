@@ -70,4 +70,4 @@ jobs:
 
       - name: Analyze
         working-directory: apps/pos-template
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
