@@ -359,6 +359,7 @@ class PosApiClient {
     required String shiftId,
     required String method,
     required double amount,
+    int? guestNumber,
     double? tenderedAmount,
     String? providerReference,
   }) async {
@@ -370,6 +371,7 @@ class PosApiClient {
         'shiftId': shiftId,
         'method': method,
         'amount': amount,
+        if (guestNumber != null) 'guestNumber': guestNumber,
         if (tenderedAmount != null) 'tenderedAmount': tenderedAmount,
         if (providerReference != null && providerReference.trim().isNotEmpty)
           'providerReference': providerReference.trim(),
@@ -908,6 +910,7 @@ class PaymentDto {
     required this.amount,
     required this.currencyCode,
     required this.createdAt,
+    this.guestNumber,
     this.tenderedAmount,
     this.changeAmount = 0,
     this.refundedAmount = 0,
@@ -921,6 +924,7 @@ class PaymentDto {
   final String method;
   final String status;
   final double amount;
+  final int? guestNumber;
   final double? tenderedAmount;
   final double changeAmount;
   final double refundedAmount;
@@ -936,6 +940,7 @@ class PaymentDto {
         method: json['method'] as String,
         status: json['status'] as String,
         amount: (json['amount'] as num).toDouble(),
+        guestNumber: (json['guestNumber'] as num?)?.toInt(),
         tenderedAmount: (json['tenderedAmount'] as num?)?.toDouble(),
         changeAmount: (json['changeAmount'] as num?)?.toDouble() ?? 0,
         refundedAmount: (json['refundedAmount'] as num?)?.toDouble() ?? 0,
@@ -1013,6 +1018,30 @@ class OrderHistoryItemDto {
       );
 }
 
+class GuestPaymentBalanceDto {
+  const GuestPaymentBalanceDto({
+    required this.guestNumber,
+    required this.total,
+    required this.paid,
+    required this.remaining,
+  });
+
+  final int guestNumber;
+  final double total;
+  final double paid;
+  final double remaining;
+
+  bool get isPaid => total > 0 && remaining <= 0.005;
+
+  factory GuestPaymentBalanceDto.fromJson(Map<String, dynamic> json) =>
+      GuestPaymentBalanceDto(
+        guestNumber: (json['guestNumber'] as num).toInt(),
+        total: (json['total'] as num?)?.toDouble() ?? 0,
+        paid: (json['paid'] as num?)?.toDouble() ?? 0,
+        remaining: (json['remaining'] as num?)?.toDouble() ?? 0,
+      );
+}
+
 class OrderDto {
   const OrderDto({
     required this.id,
@@ -1024,6 +1053,8 @@ class OrderDto {
     required this.items,
     required this.payments,
     required this.guestCount,
+    required this.paymentMode,
+    required this.guestBalances,
     this.tableId,
     this.closedAt,
   });
@@ -1033,6 +1064,8 @@ class OrderDto {
   final String status;
   final String? tableId;
   final int guestCount;
+  final String paymentMode;
+  final List<GuestPaymentBalanceDto> guestBalances;
   final double total;
   final double paidTotal;
   final int version;
@@ -1058,6 +1091,15 @@ class OrderDto {
         status: json['status'] as String,
         tableId: json['tableId'] as String?,
         guestCount: (json['guestCount'] as num).toInt(),
+        paymentMode: json['paymentMode'] as String? ?? 'NONE',
+        guestBalances:
+            ((json['guestBalances'] as List<dynamic>?) ?? const [])
+                .map(
+                  (e) => GuestPaymentBalanceDto.fromJson(
+                    e as Map<String, dynamic>,
+                  ),
+                )
+                .toList(),
         total: (json['total'] as num).toDouble(),
         paidTotal: (json['paidTotal'] as num?)?.toDouble() ?? 0,
         version: (json['version'] as num).toInt(),
