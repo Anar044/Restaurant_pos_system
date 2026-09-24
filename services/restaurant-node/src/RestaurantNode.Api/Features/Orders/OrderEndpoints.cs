@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using RestaurantNode.Api.Domain;
 using RestaurantNode.Api.Infrastructure;
+using RestaurantNode.Api.Features.Payments;
 
 namespace RestaurantNode.Api.Features.Orders;
 
@@ -1863,6 +1864,14 @@ public static class OrderEndpoints
         status = EnumText(order.Status),
         order.TableId,
         order.GuestCount,
+        paymentMode = GuestPaymentMath.GetPaymentMode(order),
+        guestBalances = GuestPaymentMath.GetGuestBalances(order).Select(balance => new
+        {
+            balance.GuestNumber,
+            balance.Total,
+            balance.Paid,
+            balance.Remaining
+        }),
         order.Subtotal,
         order.DiscountTotal,
         order.SurchargeTotal,
@@ -1881,6 +1890,7 @@ public static class OrderEndpoints
             x.Id,
             x.ShiftId,
             x.EmployeeId,
+            x.GuestNumber,
             method = EnumText(x.Method),
             status = EnumText(x.Status),
             x.Amount,
