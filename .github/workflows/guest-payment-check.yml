@@ -1,0 +1,73 @@
+name: Guest payment check
+
+on:
+  push:
+    branches:
+      - feature/guest-payment-split-20260924
+
+permissions:
+  contents: write
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dotnet tools
+        run: dotnet tool restore
+
+      - name: Restore backend
+        run: dotnet restore services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj
+
+      - name: Generate guest payment migration
+        shell: bash
+        run: |
+          if ! grep -R -q 'class AddGuestScopedPayments' services/restaurant-node/src/RestaurantNode.Api/Infrastructure/Migrations/*.cs; then
+            dotnet ef migrations add AddGuestScopedPayments \
+              --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+              --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+              --output-dir Infrastructure/Migrations
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add services/restaurant-node/src/RestaurantNode.Api/Infrastructure/Migrations
+            git commit -m "Generate guest scoped payment migration"
+            git push
+          fi
+
+      - name: Build backend
+        run: dotnet build services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj --no-restore
+
+      - name: Verify EF model
+        run: |
+          dotnet ef migrations has-pending-model-changes \
+            --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+            --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj
+
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Get dependencies
+        working-directory: apps/pos-template
+        run: flutter pub get
+
+      - name: Check formatting
+        working-directory: apps/pos-template
+        run: dart format --output=none --set-exit-if-changed lib
+
+      - name: Analyze
+        working-directory: apps/pos-template
+        run: flutter analyze
