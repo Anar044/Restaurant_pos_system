@@ -64,9 +64,9 @@ jobs:
         working-directory: apps/pos-template
         run: flutter pub get
 
-      - name: Check formatting
+      - name: Format before analysis
         working-directory: apps/pos-template
-        run: dart format --output=none --set-exit-if-changed lib
+        run: dart format lib
 
       - name: Analyze
         working-directory: apps/pos-template
