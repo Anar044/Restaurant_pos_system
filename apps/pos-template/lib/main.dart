@@ -117,7 +117,24 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                   ),
-                  if (error != null) ...[
+                  if (notice != null) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    notice!,
+                    style: TextStyle(
+                      color: scheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+              if (error != null) ...[
                     const SizedBox(height: 8),
                     Text(
                       error!,
@@ -4275,6 +4292,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   @override
   Widget build(BuildContext context) {
     final remaining = currentOrder.remaining;
+    final scopeRemaining = _scopeRemaining;
     final seen = <String>{};
     final completedPayments = currentOrder.payments
         .where(
@@ -4286,14 +4304,16 @@ class _PaymentDialogState extends State<_PaymentDialog> {
         .toList();
 
     final scheme = Theme.of(context).colorScheme;
+    final wholeOrderLocked = currentOrder.paymentMode == 'BY_GUEST';
+    final guestsLocked = currentOrder.paymentMode == 'WHOLE_ORDER';
 
     String buttonText;
     if (mode == 'CASH') {
       buttonText =
-          'Оплатить ${remaining.toStringAsFixed(2)} AZN наличными';
+          'Оплатить ${scopeRemaining.toStringAsFixed(2)} AZN наличными';
     } else if (mode == 'CARD') {
       buttonText =
-          'Оплатить ${remaining.toStringAsFixed(2)} AZN картой';
+          'Оплатить ${scopeRemaining.toStringAsFixed(2)} AZN картой';
     } else {
       buttonText =
           'Оплатить: ${_cashDue.toStringAsFixed(2)} наличными + '
@@ -4318,7 +4338,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
         ],
       ),
       content: SizedBox(
-        width: 760,
+        width: 820,
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4356,6 +4376,109 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                   ],
                 ),
               ),
+              const SizedBox(height: 18),
+              const Text(
+                'КОГО ОПЛАЧИВАЕМ?',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .7,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    avatar: const Icon(Icons.receipt_long_outlined, size: 18),
+                    label: Text(
+                      'Весь заказ · ${currentOrder.remaining.toStringAsFixed(2)} AZN',
+                    ),
+                    selected: selectedGuestNumber == null,
+                    onSelected: submitting || wholeOrderLocked
+                        ? null
+                        : (_) => _selectScope(null),
+                  ),
+                  for (final balance in currentOrder.guestBalances)
+                    if (balance.total > 0.005)
+                      ChoiceChip(
+                        avatar: Icon(
+                          balance.isPaid
+                              ? Icons.check_circle_outline
+                              : Icons.person_outline,
+                          size: 18,
+                        ),
+                        label: Text(
+                          balance.isPaid
+                              ? 'Гость ${balance.guestNumber} · ОПЛАЧЕН'
+                              : 'Гость ${balance.guestNumber} · '
+                                  '${balance.remaining.toStringAsFixed(2)} AZN',
+                        ),
+                        selected:
+                            selectedGuestNumber == balance.guestNumber,
+                        onSelected:
+                            submitting || guestsLocked || balance.isPaid
+                                ? null
+                                : (_) => _selectScope(balance.guestNumber),
+                      ),
+                ],
+              ),
+              if (wholeOrderLocked) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Оплата уже разделена по гостям. Завершите оплату '
+                  'оставшихся гостей.',
+                  style: TextStyle(
+                    color: scheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ] else if (guestsLocked) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Уже начата общая оплата заказа. Переключение на '
+                  'оплату по гостям отключено.',
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  border: Border.all(color: scheme.outlineVariant),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _PaymentSummaryValue(
+                        label: _scopeLabel,
+                        value: _scopeTotal,
+                      ),
+                    ),
+                    Expanded(
+                      child: _PaymentSummaryValue(
+                        label: 'Оплачено',
+                        value: _scopePaid,
+                      ),
+                    ),
+                    Expanded(
+                      child: _PaymentSummaryValue(
+                        label: 'К ОПЛАТЕ',
+                        value: scopeRemaining,
+                        emphasized: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               if (completedPayments.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Wrap(
@@ -4371,6 +4494,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                           size: 18,
                         ),
                         label: Text(
+                          '${payment.guestNumber == null ? '' : 'Гость ${payment.guestNumber} · '}'
                           '${_methodLabel(payment.method)} '
                           '${payment.amount.toStringAsFixed(2)} AZN',
                         ),
@@ -4395,7 +4519,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                       value: 'CASH',
                       icon: Icons.payments_outlined,
                       title: 'НАЛИЧНЫЕ',
-                      subtitle: 'Вся оставшаяся сумма',
+                      subtitle: 'Вся выбранная сумма',
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -4404,7 +4528,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                       value: 'CARD',
                       icon: Icons.credit_card,
                       title: 'КАРТА',
-                      subtitle: 'Вся оставшаяся сумма',
+                      subtitle: 'Вся выбранная сумма',
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -4617,7 +4741,8 @@ class _PaymentDialogState extends State<_PaymentDialog> {
         SizedBox(
           height: 54,
           child: FilledButton.icon(
-            onPressed: submitting ? null : submit,
+            onPressed:
+                submitting || scopeRemaining <= 0.005 ? null : submit,
             icon: submitting
                 ? const SizedBox(
                     width: 18,
