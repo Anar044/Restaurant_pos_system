@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:signalr_netcore/signalr_client.dart';
 
@@ -16,18 +17,81 @@ class RestaurantRealtimeEvent {
   final DateTime? utc;
 }
 
+class OrderEditLockResult {
+  const OrderEditLockResult({
+    required this.acquired,
+    this.tableId,
+    this.orderId,
+    this.deviceId,
+    this.deviceName,
+    this.employeeName,
+    this.expiresAt,
+    this.error,
+  });
+
+  final bool acquired;
+  final String? tableId;
+  final String? orderId;
+  final String? deviceId;
+  final String? deviceName;
+  final String? employeeName;
+  final DateTime? expiresAt;
+  final String? error;
+
+  factory OrderEditLockResult.fromObject(Object? value) {
+    if (value is! Map) {
+      return const OrderEditLockResult(
+        acquired: false,
+        error: 'Сервер вернул некорректный ответ блокировки.',
+      );
+    }
+
+    final map = <String, dynamic>{
+      for (final entry in value.entries) entry.key.toString(): entry.value,
+    };
+
+    return OrderEditLockResult(
+      acquired: map['acquired'] as bool? ?? false,
+      tableId: map['tableId']?.toString(),
+      orderId: map['orderId']?.toString(),
+      deviceId: map['deviceId']?.toString(),
+      deviceName: map['deviceName']?.toString(),
+      employeeName: map['employeeName']?.toString(),
+      expiresAt: map['expiresAt'] == null
+          ? null
+          : DateTime.tryParse(map['expiresAt'].toString()),
+    );
+  }
+
+  factory OrderEditLockResult.unavailable(Object error) =>
+      OrderEditLockResult(
+        acquired: false,
+        error: 'Не удалось получить блокировку стола: $error',
+      );
+}
+
 class RestaurantRealtimeClient {
-  RestaurantRealtimeClient(String baseUrl)
-      : _hubUrl =
+  RestaurantRealtimeClient(
+    String baseUrl, {
+    required this.deviceId,
+    String? instanceId,
+  })  : instanceId = instanceId ?? _createInstanceId(),
+        _hubUrl =
             '${baseUrl.replaceFirst(RegExp(r'/$'), '')}/hubs/restaurant';
 
   final String _hubUrl;
+  final String deviceId;
+  final String instanceId;
+
   final StreamController<RestaurantRealtimeEvent> _events =
       StreamController<RestaurantRealtimeEvent>.broadcast();
 
   HubConnection? _connection;
   Timer? _retryTimer;
+  Timer? _leaseTimer;
   String? _token;
+  String? _editingTableId;
+  String? _editingOrderId;
   bool _starting = false;
   bool _disposed = false;
 
@@ -37,6 +101,71 @@ class RestaurantRealtimeClient {
     if (_disposed) return;
     _token = token;
     await _connect();
+  }
+
+  Future<OrderEditLockResult> beginEditingTable(
+    String tableId,
+    String? orderId,
+  ) async {
+    if (_disposed) {
+      return const OrderEditLockResult(
+        acquired: false,
+        error: 'Realtime-клиент уже остановлен.',
+      );
+    }
+
+    await _connect();
+
+    final connection = _connection;
+    if (connection?.state != HubConnectionState.Connected) {
+      return const OrderEditLockResult(
+        acquired: false,
+        error: 'Нет realtime-соединения с Restaurant Node.',
+      );
+    }
+
+    try {
+      final value = await connection!.invoke(
+        'BeginEditingTable',
+        args: <Object>[
+          tableId,
+          orderId ?? '',
+          deviceId,
+          instanceId,
+        ],
+      );
+
+      final result = OrderEditLockResult.fromObject(value);
+      if (result.acquired) {
+        _editingTableId = tableId;
+        _editingOrderId = orderId;
+        _startLeaseRenewal();
+      }
+      return result;
+    } catch (e) {
+      return OrderEditLockResult.unavailable(e);
+    }
+  }
+
+  Future<void> endEditingTable(String tableId) async {
+    if (_editingTableId != tableId) return;
+
+    _leaseTimer?.cancel();
+    _leaseTimer = null;
+    _editingTableId = null;
+    _editingOrderId = null;
+
+    final connection = _connection;
+    if (connection?.state != HubConnectionState.Connected) return;
+
+    try {
+      await connection!.invoke(
+        'EndEditingTable',
+        args: <Object>[tableId, instanceId],
+      );
+    } catch (_) {
+      // The server also releases locks automatically when the connection drops.
+    }
   }
 
   Future<void> _connect() async {
@@ -66,14 +195,16 @@ class RestaurantRealtimeClient {
 
     connection.on('RestaurantChanged', _onRestaurantChanged);
     connection.onreconnected(({String? connectionId}) {
-      if (!_disposed) {
-        _events.add(
-          const RestaurantRealtimeEvent(
-            resource: 'connection',
-            operation: 'RECONNECTED',
-          ),
-        );
-      }
+      if (_disposed) return;
+
+      _events.add(
+        const RestaurantRealtimeEvent(
+          resource: 'connection',
+          operation: 'RECONNECTED',
+        ),
+      );
+
+      unawaited(_renewEditingTable());
     });
     connection.onclose(({Exception? error}) {
       if (_connection == connection && !_disposed) {
@@ -119,6 +250,51 @@ class RestaurantRealtimeClient {
     );
   }
 
+  void _startLeaseRenewal() {
+    _leaseTimer?.cancel();
+    _leaseTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      unawaited(_renewEditingTable());
+    });
+  }
+
+  Future<void> _renewEditingTable() async {
+    final tableId = _editingTableId;
+    if (_disposed || tableId == null) return;
+
+    final connection = _connection;
+    if (connection?.state != HubConnectionState.Connected) return;
+
+    try {
+      final value = await connection!.invoke(
+        'BeginEditingTable',
+        args: <Object>[
+          tableId,
+          _editingOrderId ?? '',
+          deviceId,
+          instanceId,
+        ],
+      );
+
+      final result = OrderEditLockResult.fromObject(value);
+      if (!result.acquired) {
+        _leaseTimer?.cancel();
+        _leaseTimer = null;
+        _editingTableId = null;
+        _editingOrderId = null;
+
+        _events.add(
+          const RestaurantRealtimeEvent(
+            resource: 'edit-lock',
+            operation: 'LOST',
+          ),
+        );
+      }
+    } catch (_) {
+      // Keep the local editing state while SignalR reconnects.
+      // The server lease will expire if this client never reconnects.
+    }
+  }
+
   void _scheduleReconnect() {
     if (_disposed || _token == null) return;
     _retryTimer?.cancel();
@@ -130,6 +306,8 @@ class RestaurantRealtimeClient {
   Future<void> stop() async {
     _retryTimer?.cancel();
     _retryTimer = null;
+    _leaseTimer?.cancel();
+    _leaseTimer = null;
 
     final connection = _connection;
     _connection = null;
@@ -140,8 +318,23 @@ class RestaurantRealtimeClient {
 
   Future<void> dispose() async {
     if (_disposed) return;
+
+    final tableId = _editingTableId;
+    if (tableId != null) {
+      await endEditingTable(tableId);
+    }
+
     _disposed = true;
     await stop();
     await _events.close();
+  }
+
+  static String _createInstanceId() {
+    final random = Random.secure();
+    final suffix = List<int>.generate(4, (_) => random.nextInt(256))
+        .map((value) => value.toRadixString(16).padLeft(2, '0'))
+        .join();
+
+    return '${DateTime.now().microsecondsSinceEpoch}-$suffix';
   }
 }
