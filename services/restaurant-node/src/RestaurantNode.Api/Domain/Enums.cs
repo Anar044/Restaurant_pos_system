@@ -4,6 +4,8 @@ public enum DeviceType { Pos, WaiterTablet, KitchenDisplay, Kiosk, CustomerDispl
 public enum PrinterConnectionType { Network, WindowsQueue }
 public enum OrderStatus { Draft, Open, PartiallySent, Sent, PartiallyPaid, Paid, Closed, Cancelled }
 public enum OrderItemStatus { New, Sent, Voided }
+public enum OrderAdjustmentType { Discount, ServiceCharge }
+public enum OrderAdjustmentMode { Percent, Fixed }
 public enum ShiftStatus { Open, Closed }
 public enum PaymentMethod { Cash, Card, Other }
 public enum PaymentStatus { Pending, Completed, Cancelled, Refunded }
