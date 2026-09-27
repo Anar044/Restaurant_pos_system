@@ -1,0 +1,73 @@
+name: Adjustment comments build check
+
+on:
+  push:
+    branches:
+      - feature/adjustment-application-comment-v1
+
+permissions:
+  contents: write
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore tools
+        run: dotnet tool restore
+      - name: Restore backend
+        run: dotnet restore services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj
+      - name: Generate migration
+        shell: bash
+        run: |
+          if ! grep -R -q 'class AddAdjustmentPresetRequireComment' services/restaurant-node/src/RestaurantNode.Api/Infrastructure/Migrations/*.cs; then
+            dotnet ef migrations add AddAdjustmentPresetRequireComment \
+              --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+              --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+              --output-dir Infrastructure/Migrations
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add services/restaurant-node/src/RestaurantNode.Api/Infrastructure/Migrations
+            git commit -m "Generate adjustment preset comment migration"
+            git push
+          fi
+      - name: Build backend
+        run: dotnet build services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj --no-restore
+      - name: Verify EF model
+        run: |
+          dotnet ef migrations has-pending-model-changes \
+            --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+            --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj
+
+  backoffice:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/backoffice/package-lock.json
+      - working-directory: apps/backoffice
+        run: npm ci
+      - working-directory: apps/backoffice
+        run: npm run build
+
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - working-directory: apps/pos-template
+        run: flutter pub get
+      - working-directory: apps/pos-template
+        run: dart format lib
+      - working-directory: apps/pos-template
+        run: flutter analyze --no-fatal-infos
