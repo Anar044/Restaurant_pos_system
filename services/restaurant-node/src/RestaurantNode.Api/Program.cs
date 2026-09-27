@@ -10,6 +10,7 @@ using RestaurantNode.Api.Features.Halls;
 using RestaurantNode.Api.Features.Menu;
 using RestaurantNode.Api.Features.Orders;
 using RestaurantNode.Api.Features.Payments;
+using RestaurantNode.Api.Features.Realtime;
 using RestaurantNode.Api.Features.Shifts;
 using RestaurantNode.Api.Infrastructure;
 using RestaurantNode.Api.Security;
@@ -22,6 +23,8 @@ var connectionString = builder.Configuration.GetConnectionString("RestaurantDb")
 builder.Services.AddDbContext<RestaurantDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddScoped<PinHasher>();
 builder.Services.AddScoped<JwtTokenService>();
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<RestaurantRealtimePublisher>();
 
 var jwtKey = builder.Configuration["Jwt:Key"]
     ?? throw new InvalidOperationException("Jwt:Key is required.");
@@ -42,6 +45,21 @@ builder.Services
             ValidAudience = builder.Configuration["Jwt:Audience"] ?? "restaurant-pos",
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
             ClockSkew = TimeSpan.FromSeconds(15)
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                if (!string.IsNullOrWhiteSpace(accessToken) &&
+                    context.HttpContext.Request.Path.StartsWithSegments("/hubs/restaurant"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
         };
     });
 
@@ -76,6 +94,7 @@ if (app.Environment.IsDevelopment()) app.UseCors("dev-pos");
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<RestaurantRealtimeMiddleware>();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "restaurant-node", utc = DateTimeOffset.UtcNow }));
 
@@ -96,6 +115,7 @@ app.MapMenuEndpoints();
 app.MapOrderEndpoints();
 app.MapShiftEndpoints();
 app.MapPaymentEndpoints();
+app.MapHub<RestaurantHub>("/hubs/restaurant").RequireAuthorization();
 
 using (var scope = app.Services.CreateScope())
 {

@@ -16,6 +16,7 @@ public static class PaymentEndpoints
 
         group.MapPost("/", async (
             CreatePaymentRequest request,
+            HttpRequest httpRequest,
             ClaimsPrincipal user,
             RestaurantDbContext db,
             CancellationToken ct) =>
@@ -56,6 +57,10 @@ public static class PaymentEndpoints
 
             if (order is null)
                 return Results.NotFound(new { message = "Order not found." });
+
+            var versionConflict = OrderConcurrency.Validate(httpRequest, order);
+            if (versionConflict is not null)
+                return versionConflict;
 
             if (order.Status is OrderStatus.Closed or OrderStatus.Cancelled)
                 return Results.Conflict(new { message = $"Order cannot be paid in status {order.Status}." });

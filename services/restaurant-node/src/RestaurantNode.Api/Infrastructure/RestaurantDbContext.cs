@@ -90,6 +90,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Order>().Property(x => x.SurchargeTotal).HasPrecision(18, 4);
         modelBuilder.Entity<Order>().Property(x => x.Total).HasPrecision(18, 4);
         modelBuilder.Entity<Order>().Property(x => x.PaidTotal).HasPrecision(18, 4);
+        modelBuilder.Entity<Order>().Property(x => x.Version).IsConcurrencyToken();
         modelBuilder.Entity<OrderItem>().Property(x => x.Quantity).HasPrecision(18, 3);
         modelBuilder.Entity<OrderItem>().Property(x => x.UnitPrice).HasPrecision(18, 4);
         modelBuilder.Entity<OrderItem>().Property(x => x.ModifiersTotal).HasPrecision(18, 4);
