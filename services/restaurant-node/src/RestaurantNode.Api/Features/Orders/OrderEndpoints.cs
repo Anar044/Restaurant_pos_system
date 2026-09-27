@@ -414,7 +414,25 @@ public static class OrderEndpoints
             }
 
             var previous = order.GuestCount;
+
+            if (request.GuestCount < order.GuestCount)
+            {
+                var removedAdjustments = order.Adjustments
+                    .Where(x =>
+                        x.Type == OrderAdjustmentType.Discount &&
+                        x.GuestNumber.HasValue &&
+                        x.GuestNumber.Value > request.GuestCount)
+                    .ToArray();
+
+                foreach (var adjustment in removedAdjustments)
+                {
+                    order.Adjustments.Remove(adjustment);
+                    db.OrderAdjustments.Remove(adjustment);
+                }
+            }
+
             order.GuestCount = request.GuestCount;
+            Recalculate(order);
             order.Version++;
             order.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -518,7 +536,28 @@ public static class OrderEndpoints
             foreach (var line in order.Items.Where(x => x.GuestNumber > guestNumber))
                 line.GuestNumber--;
 
+            var removedGuestAdjustments = order.Adjustments
+                .Where(x =>
+                    x.Type == OrderAdjustmentType.Discount &&
+                    x.GuestNumber == guestNumber)
+                .ToArray();
+
+            foreach (var adjustment in removedGuestAdjustments)
+            {
+                order.Adjustments.Remove(adjustment);
+                db.OrderAdjustments.Remove(adjustment);
+            }
+
+            foreach (var adjustment in order.Adjustments.Where(x =>
+                         x.Type == OrderAdjustmentType.Discount &&
+                         x.GuestNumber.HasValue &&
+                         x.GuestNumber.Value > guestNumber))
+            {
+                adjustment.GuestNumber--;
+            }
+
             order.GuestCount--;
+            Recalculate(order);
             order.Version++;
             order.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -576,6 +615,7 @@ public static class OrderEndpoints
 
             var previousGuestNumber = line.GuestNumber;
             line.GuestNumber = request.GuestNumber;
+            Recalculate(order);
             order.Version++;
             order.UpdatedAt = DateTimeOffset.UtcNow;
 
