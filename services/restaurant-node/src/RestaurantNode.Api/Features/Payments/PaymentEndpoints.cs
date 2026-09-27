@@ -20,6 +20,7 @@ public static class PaymentEndpoints
             HttpRequest httpRequest,
             ClaimsPrincipal user,
             RestaurantDbContext db,
+            OrderEditLockRegistry editLocks,
             CancellationToken ct) =>
         {
             if (!TryClaims(user, out var restaurantId, out var employeeId))
@@ -62,6 +63,17 @@ public static class PaymentEndpoints
             var versionConflict = OrderConcurrency.Validate(httpRequest, order);
             if (versionConflict is not null)
                 return versionConflict;
+
+            if (order.TableId is Guid tableId)
+            {
+                var lockConflict = editLocks.ValidateMutation(
+                    httpRequest,
+                    restaurantId,
+                    tableId);
+
+                if (lockConflict is not null)
+                    return lockConflict;
+            }
 
             if (order.Status is OrderStatus.Closed or OrderStatus.Cancelled)
                 return Results.Conflict(new { message = $"Order cannot be paid in status {order.Status}." });
