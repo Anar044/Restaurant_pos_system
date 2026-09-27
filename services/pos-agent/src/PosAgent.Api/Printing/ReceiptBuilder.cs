@@ -37,6 +37,16 @@ public static class ReceiptBuilder
         }
 
         sb.AppendLine(new string('-', 42));
+        var subtotal = receipt.Subtotal ??
+            receipt.Total + receipt.DiscountTotal - receipt.SurchargeTotal;
+        if (receipt.DiscountTotal > 0m || receipt.SurchargeTotal > 0m)
+        {
+            sb.AppendLine($"Подытог / Subtotal: {Money(subtotal)} {currency}");
+            if (receipt.DiscountTotal > 0m)
+                sb.AppendLine($"Скидка / Discount: -{Money(receipt.DiscountTotal)} {currency}");
+            if (receipt.SurchargeTotal > 0m)
+                sb.AppendLine($"Сервис / Service: +{Money(receipt.SurchargeTotal)} {currency}");
+        }
         sb.AppendLine($"ИТОГО / TOTAL: {Money(receipt.Total)} {currency}");
 
         if (paid)
@@ -106,6 +116,16 @@ public static class ReceiptBuilder
         }
 
         AppendAscii(bytes, "--------------------------------\n");
+        var subtotal = receipt.Subtotal ??
+            receipt.Total + receipt.DiscountTotal - receipt.SurchargeTotal;
+        if (receipt.DiscountTotal > 0m || receipt.SurchargeTotal > 0m)
+        {
+            AppendAscii(bytes, $"Subtotal: {Money(subtotal)} {currency}\n");
+            if (receipt.DiscountTotal > 0m)
+                AppendAscii(bytes, $"Discount: -{Money(receipt.DiscountTotal)} {currency}\n");
+            if (receipt.SurchargeTotal > 0m)
+                AppendAscii(bytes, $"Service: +{Money(receipt.SurchargeTotal)} {currency}\n");
+        }
         bytes.AddRange([0x1B, 0x45, 0x01]);
         AppendAscii(bytes, $"TOTAL: {Money(receipt.Total)} {currency}\n");
         bytes.AddRange([0x1B, 0x45, 0x00]);
@@ -146,6 +166,10 @@ public static class ReceiptBuilder
             throw new ArgumentException("Guest count is invalid.");
         if (receipt.Total < 0)
             throw new ArgumentException("Receipt total cannot be negative.");
+        if ((receipt.Subtotal ?? 0m) < 0 ||
+            receipt.DiscountTotal < 0 ||
+            receipt.SurchargeTotal < 0)
+            throw new ArgumentException("Receipt adjustment totals cannot be negative.");
         if (receipt.Items is null || receipt.Items.Count == 0)
             throw new ArgumentException("Receipt must contain at least one item.");
         if (receipt.Items.Count > 500)
