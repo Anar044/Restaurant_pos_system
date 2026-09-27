@@ -30,7 +30,7 @@ public sealed class RestaurantHub(
 
     public async Task<OrderEditLockResponse> BeginEditingTable(
         Guid tableId,
-        Guid? orderId,
+        string? orderId,
         Guid deviceId,
         string instanceId)
     {
@@ -41,6 +41,15 @@ public sealed class RestaurantHub(
             instanceId.Length > 120)
         {
             throw new HubException("Invalid table edit lock request.");
+        }
+
+        Guid? parsedOrderId = null;
+        if (!string.IsNullOrWhiteSpace(orderId))
+        {
+            if (!Guid.TryParse(orderId, out var parsed))
+                throw new HubException("Invalid order id.");
+
+            parsedOrderId = parsed;
         }
 
         var tableExists = await db.DiningTables
@@ -54,12 +63,12 @@ public sealed class RestaurantHub(
         if (!tableExists)
             throw new HubException("Table was not found.");
 
-        if (orderId.HasValue)
+        if (parsedOrderId.HasValue)
         {
             var orderMatches = await db.Orders
                 .AsNoTracking()
                 .AnyAsync(x =>
-                    x.Id == orderId.Value &&
+                    x.Id == parsedOrderId.Value &&
                     x.RestaurantId == restaurantId &&
                     x.TableId == tableId,
                     Context.ConnectionAborted);
@@ -83,7 +92,7 @@ public sealed class RestaurantHub(
         var result = editLocks.Acquire(
             restaurantId,
             tableId,
-            orderId,
+            parsedOrderId,
             deviceId,
             deviceName,
             employeeId,
