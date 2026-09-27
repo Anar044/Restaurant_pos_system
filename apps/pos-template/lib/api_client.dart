@@ -32,10 +32,16 @@ class AuthSession {
 }
 
 class PosApiClient {
-  PosApiClient(this.baseUrl, {http.Client? httpClient})
-      : _http = httpClient ?? http.Client();
+  PosApiClient(
+    this.baseUrl, {
+    required this.deviceId,
+    required this.instanceId,
+    http.Client? httpClient,
+  }) : _http = httpClient ?? http.Client();
 
   final String baseUrl;
+  final String deviceId;
+  final String instanceId;
   final http.Client _http;
   final Map<String, int> _orderVersions = <String, int>{};
   AuthSession? session;
@@ -44,6 +50,8 @@ class PosApiClient {
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
+        'X-POS-DEVICE-ID': deviceId,
+        'X-POS-INSTANCE-ID': instanceId,
         if (session != null) 'Authorization': 'Bearer ${session!.token}',
       };
 
