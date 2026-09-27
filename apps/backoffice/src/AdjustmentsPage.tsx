@@ -331,13 +331,22 @@ function AdjustmentEditor({
           </small>
           <div className="adjustment-role-grid">
             {data.roles.map((role) => (
-              <label className="adjustment-role-option" key={role.id}>
+              <label
+                className={`adjustment-role-option ${!role.canApplyAdjustments ? 'disabled' : ''}`}
+                key={role.id}
+              >
                 <input
                   type="checkbox"
                   checked={roleIds.includes(role.id)}
+                  disabled={!role.canApplyAdjustments}
                   onChange={() => toggleRole(role.id)}
                 />
-                <span>{role.name}</span>
+                <span>
+                  {role.name}
+                  {!role.canApplyAdjustments && (
+                    <small>Нет права «Применять скидки и надбавки»</small>
+                  )}
+                </span>
               </label>
             ))}
           </div>
