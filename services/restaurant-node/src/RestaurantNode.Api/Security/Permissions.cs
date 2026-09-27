@@ -6,6 +6,7 @@ public static class Permissions
     public const string OrdersRead = "orders.read";
     public const string OrdersWrite = "orders.write";
     public const string OrdersVoid = "orders.void";
+    public const string OrdersAdjustmentsApply = "orders.adjustments.apply";
     public const string ShiftsManage = "shifts.manage";
     public const string PaymentsWrite = "payments.write";
     public const string PaymentsRefund = "payments.refund";
@@ -17,6 +18,7 @@ public static class Permissions
     public const string KitchenManage = "kitchen.manage";
     public const string EmployeesManage = "employees.manage";
     public const string DevicesManage = "devices.manage";
+    public const string PricingManage = "pricing.manage";
 
     public static readonly string[] All =
     [
@@ -24,6 +26,7 @@ public static class Permissions
         OrdersRead,
         OrdersWrite,
         OrdersVoid,
+        OrdersAdjustmentsApply,
         ShiftsManage,
         PaymentsWrite,
         PaymentsRefund,
@@ -33,6 +36,7 @@ public static class Permissions
         MenuManage,
         KitchenManage,
         EmployeesManage,
-        DevicesManage
+        DevicesManage,
+        PricingManage
     ];
 }
