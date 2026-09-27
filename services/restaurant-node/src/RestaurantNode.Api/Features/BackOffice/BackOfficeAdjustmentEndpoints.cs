@@ -78,6 +78,7 @@ public static class BackOfficeAdjustmentEndpoints
                 Mode = validation.Mode!.Value,
                 Scope = validation.Scope!.Value,
                 Value = Money(request.Value),
+                RequireComment = request.RequireComment,
                 IsActive = request.IsActive,
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow
@@ -141,6 +142,7 @@ public static class BackOfficeAdjustmentEndpoints
             preset.Mode = validation.Mode!.Value;
             preset.Scope = validation.Scope!.Value;
             preset.Value = Money(request.Value);
+            preset.RequireComment = request.RequireComment;
             preset.IsActive = request.IsActive;
             preset.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -325,6 +327,7 @@ public static class BackOfficeAdjustmentEndpoints
         mode = EnumText(preset.Mode),
         scope = EnumText(preset.Scope),
         preset.Value,
+        preset.RequireComment,
         preset.IsActive,
         roleIds = preset.AllowedRoles
             .Select(x => x.RoleId)
@@ -360,6 +363,7 @@ public static class BackOfficeAdjustmentEndpoints
                 mode = EnumText(preset.Mode),
                 scope = EnumText(preset.Scope),
                 preset.Value,
+                preset.RequireComment,
                 preset.IsActive,
                 roleIds
             })
@@ -461,5 +465,6 @@ public sealed record UpsertAdjustmentPresetRequest(
     string Mode,
     string Scope,
     decimal Value,
+    bool RequireComment,
     bool IsActive,
     Guid[]? RoleIds);
