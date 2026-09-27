@@ -1,0 +1,131 @@
+name: Discounts and service check
+
+on:
+  push:
+    branches:
+      - feature/discounts-service-charge-v1
+
+permissions:
+  contents: write
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: restaurant_local
+          POSTGRES_USER: restaurant
+          POSTGRES_PASSWORD: restaurant_dev_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U restaurant -d restaurant_local"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dotnet tools
+        run: dotnet tool restore
+
+      - name: Restore backend
+        run: dotnet restore services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj
+
+      - name: Generate order adjustments migration
+        shell: bash
+        run: |
+          if ! grep -R -q 'class AddOrderAdjustments' services/restaurant-node/src/RestaurantNode.Api/Infrastructure/Migrations/*.cs; then
+            dotnet ef migrations add AddOrderAdjustments \
+              --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+              --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+              --output-dir Infrastructure/Migrations
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add services/restaurant-node/src/RestaurantNode.Api/Infrastructure/Migrations
+            git commit -m "Generate order adjustments migration"
+            git push
+          fi
+
+      - name: Build Restaurant Node
+        run: dotnet build services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj --no-restore
+
+      - name: Verify EF model clean
+        run: |
+          dotnet ef migrations has-pending-model-changes \
+            --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+            --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj
+
+      - name: Build POS Agent
+        run: dotnet build services/pos-agent/src/PosAgent.Api/PosAgent.Api.csproj
+
+      - name: Runtime smoke test
+        shell: bash
+        env:
+          ConnectionStrings__RestaurantDb: Host=127.0.0.1;Port=5432;Database=restaurant_local;Username=restaurant;Password=restaurant_dev_password
+          Jwt__Key: restaurant-pos-development-jwt-key-change-me-2026-123456789
+          Seed__AdminPin: "1234"
+          Agent__SharedKey: restaurant-pos-agent-local-dev-key-2026
+          ASPNETCORE_ENVIRONMENT: Development
+          ASPNETCORE_URLS: http://127.0.0.1:8180
+        run: |
+          set -o pipefail
+          cd services/restaurant-node/src/RestaurantNode.Api
+          dotnet run --no-build --no-launch-profile > /tmp/restaurant-node.log 2>&1 &
+          NODE_PID=$!
+
+          ok=0
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8180/health; then
+              ok=1
+              break
+            fi
+
+            if ! kill -0 "$NODE_PID" 2>/dev/null; then
+              break
+            fi
+
+            sleep 1
+          done
+
+          echo
+          echo "===== Restaurant Node log ====="
+          cat /tmp/restaurant-node.log || true
+
+          if [ "$ok" -ne 1 ]; then
+            exit 1
+          fi
+
+          kill "$NODE_PID" || true
+
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Get dependencies
+        working-directory: apps/pos-template
+        run: flutter pub get
+
+      - name: Format
+        working-directory: apps/pos-template
+        run: dart format lib
+
+      - name: Analyze
+        working-directory: apps/pos-template
+        run: flutter analyze --no-fatal-infos
