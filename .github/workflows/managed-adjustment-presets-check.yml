@@ -141,10 +141,12 @@ jobs:
             -H 'Content-Type: application/json' \
             -d "{\"presetId\":\"$PRESET_ID\"}")
 
-          printf '%s' "$ORDER_JSON" | python3 - <<'PY'
-          import json,sys
+          printf '%s' "$ORDER_JSON" > /tmp/preset-order.json
+          python3 - <<'PY'
+          import json
           from decimal import Decimal
-          d=json.load(sys.stdin)
+          with open("/tmp/preset-order.json", encoding="utf-8") as f:
+              d=json.load(f)
           subtotal=Decimal(str(d["subtotal"]))
           discount=Decimal(str(d["discountTotal"]))
           assert discount == (subtotal * Decimal("0.10")).quantize(Decimal("0.0001")), d
