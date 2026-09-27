@@ -375,6 +375,18 @@ function Start-Platform {
         Start-Postgres
     }
 
+    Write-Host "Building Restaurant Node..."
+    Push-Location $nodeDir
+    try {
+        & dotnet build --nologo
+        if ($LASTEXITCODE -ne 0) {
+            throw "Restaurant Node build failed."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
     Write-Host "Starting Restaurant Node..."
     $env:ConnectionStrings__RestaurantDb = $dbConnection
     $env:Jwt__Key = $jwtKey
@@ -382,9 +394,9 @@ function Start-Platform {
     $env:Agent__SharedKey = $agentKey
     $env:ASPNETCORE_ENVIRONMENT = "Development"
     $env:ASPNETCORE_URLS = "http://0.0.0.0:$restaurantNodePort"
-    Start-LoggedProcess -name "restaurant-node" -filePath "dotnet" -argumentList @("run", "--no-launch-profile") -workingDirectory $nodeDir | Out-Null
+    Start-LoggedProcess -name "restaurant-node" -filePath "dotnet" -argumentList @("run", "--no-build", "--no-launch-profile") -workingDirectory $nodeDir | Out-Null
 
-    if (-not (Wait-Http "$restaurantNodeBaseUrl/health" 45)) {
+    if (-not (Wait-Http "$restaurantNodeBaseUrl/health" 60)) {
         Write-Host ""
         Write-Host "Restaurant Node startup log:" -ForegroundColor Yellow
         $nodeErr = Join-Path $logsDir "restaurant-node.err.log"
