@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using RestaurantNode.Api.Domain;
+using RestaurantNode.Api.Features.Realtime;
 using RestaurantNode.Api.Infrastructure;
 using RestaurantNode.Api.Features.Payments;
 
@@ -137,7 +138,13 @@ public static class OrderEndpoints
             return order is null ? Results.NotFound(new { message = "Order not found." }) : Results.Ok(ToDto(order));
         }).RequireAuthorization("orders.read");
 
-        group.MapPost("/", async (CreateOrderRequest request, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
+        group.MapPost("/", async (
+            CreateOrderRequest request,
+            HttpRequest httpRequest,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            OrderEditLockRegistry editLocks,
+            CancellationToken ct) =>
         {
             if (!TryClaims(user, out var restaurantId, out var employeeId)) return Results.Unauthorized();
             if (request.GuestCount is < 1 or > 100) return Results.BadRequest(new { message = "GuestCount must be between 1 and 100." });
@@ -146,6 +153,12 @@ public static class OrderEndpoints
             {
                 var tableExists = await db.DiningTables.AnyAsync(x => x.Id == tableId && x.RestaurantId == restaurantId && x.IsActive, ct);
                 if (!tableExists) return Results.BadRequest(new { message = "Table does not exist in this restaurant." });
+
+                var lockConflict = editLocks.ValidateMutation(
+                    httpRequest,
+                    restaurantId,
+                    tableId);
+                if (lockConflict is not null) return lockConflict;
             }
 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -1245,8 +1258,10 @@ public static class OrderEndpoints
         group.MapPost("/{id:guid}/transfer-items", async (
             Guid id,
             TransferOrderItemsRequest request,
+            HttpRequest httpRequest,
             ClaimsPrincipal user,
             RestaurantDbContext db,
+            OrderEditLockRegistry editLocks,
             CancellationToken ct) =>
         {
             if (!TryClaims(user, out var restaurantId, out var employeeId))
@@ -1278,6 +1293,13 @@ public static class OrderEndpoints
 
             if (source.TableId.Value == request.TargetTableId)
                 return Results.BadRequest(new { message = "Target table must be different from the current table." });
+
+            var targetLockConflict = editLocks.ValidateMutation(
+                httpRequest,
+                restaurantId,
+                request.TargetTableId);
+            if (targetLockConflict is not null)
+                return targetLockConflict;
 
             var sourceTableInfo = await (
                 from table in db.DiningTables.AsNoTracking()
