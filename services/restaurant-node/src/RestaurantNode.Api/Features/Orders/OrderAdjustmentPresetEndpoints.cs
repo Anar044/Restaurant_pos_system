@@ -57,7 +57,8 @@ public static class OrderAdjustmentPresetEndpoints
                     type = ToEnumText(x.Type.ToString()),
                     mode = ToEnumText(x.Mode.ToString()),
                     scope = ToEnumText(x.Scope.ToString()),
-                    x.Value
+                    x.Value,
+                    x.RequireComment
                 })
             });
         }).RequireAuthorization(
