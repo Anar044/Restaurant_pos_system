@@ -26,6 +26,8 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<OrderItemModifier> OrderItemModifiers => Set<OrderItemModifier>();
     public DbSet<OrderAdjustment> OrderAdjustments => Set<OrderAdjustment>();
+    public DbSet<OrderAdjustmentPreset> OrderAdjustmentPresets => Set<OrderAdjustmentPreset>();
+    public DbSet<OrderAdjustmentPresetRole> OrderAdjustmentPresetRoles => Set<OrderAdjustmentPresetRole>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<PaymentRefund> PaymentRefunds => Set<PaymentRefund>();
     public DbSet<CashTransaction> CashTransactions => Set<CashTransaction>();
@@ -59,6 +61,8 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<OrderItem>().ToTable("order_items");
         modelBuilder.Entity<OrderItemModifier>().ToTable("order_item_modifiers");
         modelBuilder.Entity<OrderAdjustment>().ToTable("order_adjustments");
+        modelBuilder.Entity<OrderAdjustmentPreset>().ToTable("order_adjustment_presets");
+        modelBuilder.Entity<OrderAdjustmentPresetRole>().ToTable("order_adjustment_preset_roles");
         modelBuilder.Entity<Payment>().ToTable("payments");
         modelBuilder.Entity<PaymentRefund>().ToTable("payment_refunds");
         modelBuilder.Entity<CashTransaction>().ToTable("cash_transactions");
@@ -78,6 +82,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<OrderItem>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<OrderAdjustment>().Property(x => x.Type).HasConversion<string>();
         modelBuilder.Entity<OrderAdjustment>().Property(x => x.Mode).HasConversion<string>();
+        modelBuilder.Entity<OrderAdjustmentPreset>().Property(x => x.Type).HasConversion<string>();
+        modelBuilder.Entity<OrderAdjustmentPreset>().Property(x => x.Mode).HasConversion<string>();
+        modelBuilder.Entity<OrderAdjustmentPreset>().Property(x => x.Scope).HasConversion<string>();
         modelBuilder.Entity<Shift>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<Payment>().Property(x => x.Method).HasConversion<string>();
         modelBuilder.Entity<Payment>().Property(x => x.Status).HasConversion<string>();
@@ -104,6 +111,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<OrderItemModifier>().Property(x => x.Total).HasPrecision(18, 4);
         modelBuilder.Entity<OrderAdjustment>().Property(x => x.Value).HasPrecision(18, 4);
         modelBuilder.Entity<OrderAdjustment>().Property(x => x.CalculatedAmount).HasPrecision(18, 4);
+        modelBuilder.Entity<OrderAdjustmentPreset>().Property(x => x.Value).HasPrecision(18, 4);
         modelBuilder.Entity<Payment>().Property(x => x.Amount).HasPrecision(18, 4);
         modelBuilder.Entity<Payment>().Property(x => x.TenderedAmount).HasPrecision(18, 4);
         modelBuilder.Entity<Payment>().Property(x => x.ChangeAmount).HasPrecision(18, 4);
@@ -129,6 +137,19 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Order>().HasIndex(x => new { x.RestaurantId, x.Status, x.CreatedAt });
         modelBuilder.Entity<OrderItem>().HasIndex(x => new { x.OrderId, x.GuestNumber });
         modelBuilder.Entity<OrderAdjustment>().HasIndex(x => new { x.OrderId, x.Type, x.GuestNumber });
+        modelBuilder.Entity<OrderAdjustmentPreset>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<OrderAdjustmentPresetRole>().HasKey(x => new { x.PresetId, x.RoleId });
+        modelBuilder.Entity<OrderAdjustmentPresetRole>().HasIndex(x => x.RoleId);
+        modelBuilder.Entity<OrderAdjustmentPreset>()
+            .HasMany(x => x.AllowedRoles)
+            .WithOne(x => x.Preset)
+            .HasForeignKey(x => x.PresetId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<OrderAdjustmentPresetRole>()
+            .HasOne(x => x.Role)
+            .WithMany()
+            .HasForeignKey(x => x.RoleId)
+            .OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<OrderAdjustment>()
             .HasOne(x => x.Order)
             .WithMany(x => x.Adjustments)
