@@ -7,7 +7,7 @@ A clean-room restaurant POS platform started from scratch. It does **not** depen
 - POS client: Flutter (Windows, Android, iOS)
 - Restaurant Node: ASP.NET Core / .NET 10
 - Local restaurant database: PostgreSQL
-- Realtime: SignalR (next milestone)
+- Realtime: SignalR between POS clients
 - Cloud sync: transactional outbox (schema included; worker comes next)
 
 ## What is already in this starter
@@ -21,7 +21,9 @@ A clean-room restaurant POS platform started from scratch. It does **not** depen
 - Immutable audit events
 - Transactional outbox events
 - PostgreSQL Docker Compose for development
-- Flutter POS starter source with PIN login, menu loading and basic order creation
+- Flutter POS with tables, guests, kitchen flow, payments and guest-split payments
+- SignalR realtime synchronization between POS terminals
+- Optimistic order-version conflict protection for concurrent edits
 
 ## Development seed
 
@@ -105,12 +107,10 @@ Authenticated:
 
 ## Next milestone
 
-1. Halls/tables UI and table-backed orders
-2. Order item modifiers
-3. Send-to-kitchen command + kitchen tickets
-4. Print queue worker
-5. Register shifts and payments
-6. SignalR realtime between all POS clients
-7. Cloud sync worker
+1. Discounts and service charges
+2. Manager approval flows for sensitive operations
+3. Better kitchen/receipt grouping and reprint controls
+4. Cloud sync worker for transactional outbox events
+5. Backup / restore and production diagnostics
 
 See `docs/architecture-v1.md` and `docs/database-v1.md`.
