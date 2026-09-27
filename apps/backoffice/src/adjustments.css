@@ -1,0 +1,100 @@
+.adjustments-heading { align-items: flex-start; }
+.adjustment-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.adjustment-security-note {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid #b2ddff;
+  border-radius: 12px;
+  background: #eff8ff;
+  color: #175cd3;
+}
+.adjustment-security-note span { font-size: 13px; line-height: 1.45; }
+.adjustment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+.adjustment-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #eaecf0;
+  border-radius: 16px;
+  background: white;
+}
+.adjustment-card.inactive { opacity: .65; }
+.adjustment-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.adjustment-card h2 { margin: 6px 0 0; font-size: 18px; }
+.adjustment-kind {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+.adjustment-kind.discount { color: #175cd3; }
+.adjustment-kind.service { color: #b54708; }
+.adjustment-value { font-size: 30px; font-weight: 850; letter-spacing: -.03em; }
+.adjustment-meta { display: grid; gap: 6px; color: #667085; font-size: 13px; }
+.adjustment-meta strong { color: #344054; }
+.adjustment-modal { width: min(700px, calc(100vw - 36px)); }
+.adjustment-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+.adjustment-role-section {
+  margin: 4px 0 16px;
+  padding: 14px;
+  border: 1px solid #eaecf0;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+.adjustment-role-section > strong { display: block; }
+.adjustment-role-section > small {
+  display: block;
+  margin-top: 4px;
+  color: #667085;
+}
+.adjustment-role-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.adjustment-role-option {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #eaecf0;
+  border-radius: 9px;
+  background: white;
+}
+.adjustment-role-option input { width: auto; }
+.adjustment-role-option span { font-size: 13px; font-weight: 700; }
+.adjustment-warning {
+  margin-top: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: #fffaeb;
+  color: #b54708;
+  font-size: 12px;
+  font-weight: 700;
+}
+@media (max-width: 760px) {
+  .adjustment-stats,
+  .adjustment-form-grid,
+  .adjustment-role-grid { grid-template-columns: 1fr; }
+}
