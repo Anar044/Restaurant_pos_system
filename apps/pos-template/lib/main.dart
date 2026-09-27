@@ -4157,10 +4157,9 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
   void initState() {
     super.initState();
     currentOrder = widget.order;
-    selectedGuestNumber = widget.initialGuestNumber.clamp(
-      1,
-      widget.order.guestCount,
-    );
+    selectedGuestNumber = widget.initialGuestNumber
+        .clamp(1, widget.order.guestCount)
+        .toInt();
   }
 
   OrderAdjustmentDto? _discountFor(int? guestNumber) {
@@ -4659,7 +4658,6 @@ class _AdjustmentEditorDialogState
             icon: const Icon(Icons.delete_outline),
             label: const Text('Удалить'),
           ),
-        const Spacer(),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Отмена'),
