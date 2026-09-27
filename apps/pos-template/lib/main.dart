@@ -4076,6 +4076,8 @@ class _OrderPageState extends State<OrderPage> {
                 paying: paying,
                 error: error,
                 canVoid: widget.session.hasPermission('orders.void'),
+                canAdjust:
+                    widget.session.hasPermission('orders.adjustments.apply'),
                 modifierProductIds: modifierProductIds,
                 guestCount: order?.guestCount ?? 1,
                 selectedGuestNumber: selectedGuestNumber,
@@ -4150,6 +4152,7 @@ class _OrderAdjustmentsDialog extends StatefulWidget {
 class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
   late OrderDto currentOrder;
   late int selectedGuestNumber;
+  late Future<List<AdjustmentPresetDto>> presetsFuture;
   bool busy = false;
   String? error;
 
@@ -4160,6 +4163,7 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
     selectedGuestNumber = widget.initialGuestNumber
         .clamp(1, widget.order.guestCount)
         .toInt();
+    presetsFuture = widget.api.getAdjustmentPresets();
   }
 
   OrderAdjustmentDto? _discountFor(int? guestNumber) {
@@ -4180,54 +4184,37 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
   }
 
   String _adjustmentSummary(OrderAdjustmentDto? adjustment) {
-    if (adjustment == null) return 'Не задано';
+    if (adjustment == null) return 'Не выбрано';
 
+    final presetName = adjustment.presetNameSnapshot?.trim();
+    final name = presetName == null || presetName.isEmpty
+        ? adjustment.reason ?? 'Правило'
+        : presetName;
     final value = adjustment.mode == 'PERCENT'
         ? '${adjustment.value.toStringAsFixed(2)}%'
         : '${adjustment.value.toStringAsFixed(2)} AZN';
-
     final sign = adjustment.isDiscount ? '-' : '+';
-    final amount =
-        '$value · $sign${adjustment.calculatedAmount.toStringAsFixed(2)} AZN';
-    final reason = adjustment.reason?.trim();
-    if (reason == null || reason.isEmpty) return amount;
-    return '$amount\n${adjustment.isDiscount ? 'Причина' : 'Описание'}: $reason';
+
+    return '$name · $value · '
+        '$sign${adjustment.calculatedAmount.toStringAsFixed(2)} AZN';
   }
 
-  Future<void> _editDiscount(int? guestNumber) async {
-    final existing = _discountFor(guestNumber);
-    final result = await showDialog<_AdjustmentEditResult>(
-      context: context,
-      builder: (_) => _AdjustmentEditorDialog(
-        title: guestNumber == null
-            ? 'Скидка на весь заказ'
-            : 'Скидка · Гость $guestNumber',
-        isDiscount: true,
-        existing: existing,
-      ),
-    );
-
-    if (result == null || !mounted) return;
-
+  Future<void> _applyDiscount(
+    AdjustmentPresetDto preset,
+    int? guestNumber,
+  ) async {
+    if (busy) return;
     setState(() {
       busy = true;
       error = null;
     });
 
     try {
-      final updated = result.remove
-          ? await widget.api.removeDiscount(
-              orderId: currentOrder.id,
-              guestNumber: guestNumber,
-            )
-          : await widget.api.applyDiscount(
-              orderId: currentOrder.id,
-              guestNumber: guestNumber,
-              mode: result.mode,
-              value: result.value,
-              reason: result.reason,
-            );
-
+      final updated = await widget.api.applyDiscount(
+        orderId: currentOrder.id,
+        presetId: preset.id,
+        guestNumber: guestNumber,
+      );
       if (!mounted) return;
       setState(() => currentOrder = updated);
     } catch (e) {
@@ -4237,33 +4224,18 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
     }
   }
 
-  Future<void> _editServiceCharge() async {
-    final result = await showDialog<_AdjustmentEditResult>(
-      context: context,
-      builder: (_) => _AdjustmentEditorDialog(
-        title: 'Сервисный сбор',
-        isDiscount: false,
-        existing: _serviceCharge,
-      ),
-    );
-
-    if (result == null || !mounted) return;
-
+  Future<void> _removeDiscount(int? guestNumber) async {
+    if (busy) return;
     setState(() {
       busy = true;
       error = null;
     });
 
     try {
-      final updated = result.remove
-          ? await widget.api.removeServiceCharge(currentOrder.id)
-          : await widget.api.applyServiceCharge(
-              orderId: currentOrder.id,
-              mode: result.mode,
-              value: result.value,
-              reason: result.reason,
-            );
-
+      final updated = await widget.api.removeDiscount(
+        orderId: currentOrder.id,
+        guestNumber: guestNumber,
+      );
       if (!mounted) return;
       setState(() => currentOrder = updated);
     } catch (e) {
@@ -4273,38 +4245,143 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
     }
   }
 
-  Widget _adjustmentCard({
-    required IconData icon,
+  Future<void> _applyServiceCharge(
+    AdjustmentPresetDto preset,
+  ) async {
+    if (busy) return;
+    setState(() {
+      busy = true;
+      error = null;
+    });
+
+    try {
+      final updated = await widget.api.applyServiceCharge(
+        orderId: currentOrder.id,
+        presetId: preset.id,
+      );
+      if (!mounted) return;
+      setState(() => currentOrder = updated);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _removeServiceCharge() async {
+    if (busy) return;
+    setState(() {
+      busy = true;
+      error = null;
+    });
+
+    try {
+      final updated =
+          await widget.api.removeServiceCharge(currentOrder.id);
+      if (!mounted) return;
+      setState(() => currentOrder = updated);
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Widget _presetSection({
     required String title,
-    required String subtitle,
-    required VoidCallback onPressed,
+    required String current,
+    required List<AdjustmentPresetDto> presets,
+    required ValueChanged<AdjustmentPresetDto> onSelected,
+    required VoidCallback? onRemove,
   }) {
+    final scheme = Theme.of(context).colorScheme;
     return Card.outlined(
-      child: ListTile(
-        leading: Icon(icon),
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w800),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        current,
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (onRemove != null)
+                  IconButton(
+                    tooltip: 'Убрать',
+                    onPressed: busy ? null : onRemove,
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (presets.isEmpty)
+              Text(
+                'Нет доступных правил для вашей роли.',
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 12,
+                ),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final preset in presets)
+                    ActionChip(
+                      avatar: Icon(
+                        preset.isDiscount
+                            ? Icons.percent
+                            : Icons.room_service_outlined,
+                        size: 17,
+                      ),
+                      label: Text(
+                        '${preset.name} · ${preset.valueLabel}',
+                      ),
+                      onPressed:
+                          busy ? null : () => onSelected(preset),
+                    ),
+                ],
+              ),
+          ],
         ),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: busy ? null : onPressed,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final orderDiscount = _discountFor(null);
     final guestDiscount = _discountFor(selectedGuestNumber);
     final serviceCharge = _serviceCharge;
-    final scheme = Theme.of(context).colorScheme;
 
     return AlertDialog(
       insetPadding: const EdgeInsets.all(24),
       title: Row(
         children: [
-          const Expanded(child: Text('Скидки и сервис')),
+          const Expanded(child: Text('Скидки и надбавки')),
           if (busy)
             const SizedBox(
               width: 20,
@@ -4314,120 +4391,176 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
         ],
       ),
       content: SizedBox(
-        width: 680,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(14),
+        width: 760,
+        child: FutureBuilder<List<AdjustmentPresetDto>>(
+          future: presetsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const SizedBox(
+                height: 260,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            if (snapshot.hasError) {
+              return SizedBox(
+                height: 220,
+                child: _ErrorPane(
+                  message: snapshot.error.toString(),
+                  onRetry: () {
+                    setState(() {
+                      presetsFuture =
+                          widget.api.getAdjustmentPresets();
+                    });
+                  },
                 ),
-                child: Column(
-                  children: [
-                    _AdjustmentTotalRow(
-                      label: 'Подытог',
-                      value: currentOrder.subtotal,
+              );
+            }
+
+            final presets =
+                snapshot.data ?? const <AdjustmentPresetDto>[];
+            final orderDiscountPresets = presets
+                .where((x) => x.isDiscount && x.allowsOrder)
+                .toList();
+            final guestDiscountPresets = presets
+                .where((x) => x.isDiscount && x.allowsGuest)
+                .toList();
+            final servicePresets = presets
+                .where((x) => x.isServiceCharge && x.allowsOrder)
+                .toList();
+
+            return SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                    if (currentOrder.discountTotal > 0)
-                      _AdjustmentTotalRow(
-                        label: 'Скидка',
-                        value: -currentOrder.discountTotal,
+                    child: Column(
+                      children: [
+                        _AdjustmentTotalRow(
+                          label: 'Подытог',
+                          value: currentOrder.subtotal,
+                        ),
+                        if (currentOrder.discountTotal > 0)
+                          _AdjustmentTotalRow(
+                            label: 'Скидка',
+                            value: -currentOrder.discountTotal,
+                          ),
+                        if (currentOrder.surchargeTotal > 0)
+                          _AdjustmentTotalRow(
+                            label: 'Сервис / надбавка',
+                            value: currentOrder.surchargeTotal,
+                          ),
+                        const Divider(),
+                        _AdjustmentTotalRow(
+                          label: 'Итого',
+                          value: currentOrder.total,
+                          emphasized: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  _presetSection(
+                    title: 'Скидка на весь заказ',
+                    current: _adjustmentSummary(orderDiscount),
+                    presets: orderDiscountPresets,
+                    onSelected: (preset) =>
+                        _applyDiscount(preset, null),
+                    onRemove: orderDiscount == null
+                        ? null
+                        : () => _removeDiscount(null),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'СКИДКА ГОСТЮ',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .6,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 7,
+                    runSpacing: 7,
+                    children: [
+                      for (var guest = 1;
+                          guest <= currentOrder.guestCount;
+                          guest++)
+                        ChoiceChip(
+                          label: Text('Гость $guest'),
+                          selected: selectedGuestNumber == guest,
+                          onSelected: busy
+                              ? null
+                              : (_) {
+                                  setState(() {
+                                    selectedGuestNumber = guest;
+                                    error = null;
+                                  });
+                                },
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _presetSection(
+                    title: 'Гость $selectedGuestNumber',
+                    current: _adjustmentSummary(guestDiscount),
+                    presets: guestDiscountPresets,
+                    onSelected: (preset) => _applyDiscount(
+                      preset,
+                      selectedGuestNumber,
+                    ),
+                    onRemove: guestDiscount == null
+                        ? null
+                        : () => _removeDiscount(
+                              selectedGuestNumber,
+                            ),
+                  ),
+                  const SizedBox(height: 10),
+                  _presetSection(
+                    title: 'Сервис / надбавка',
+                    current: _adjustmentSummary(serviceCharge),
+                    presets: servicePresets,
+                    onSelected: _applyServiceCharge,
+                    onRemove: serviceCharge == null
+                        ? null
+                        : _removeServiceCharge,
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: scheme.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    if (currentOrder.surchargeTotal > 0)
-                      _AdjustmentTotalRow(
-                        label: 'Сервис',
-                        value: currentOrder.surchargeTotal,
+                      child: Text(
+                        error!,
+                        style: TextStyle(
+                          color: scheme.onErrorContainer,
+                        ),
                       ),
-                    const Divider(),
-                    _AdjustmentTotalRow(
-                      label: 'Итого',
-                      value: currentOrder.total,
-                      emphasized: true,
                     ),
                   ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              _adjustmentCard(
-                icon: Icons.percent,
-                title: 'Скидка на весь заказ',
-                subtitle: _adjustmentSummary(orderDiscount),
-                onPressed: () => _editDiscount(null),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'СКИДКА ГОСТЮ',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: .6,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 7,
-                runSpacing: 7,
-                children: [
-                  for (var guest = 1;
-                      guest <= currentOrder.guestCount;
-                      guest++)
-                    ChoiceChip(
-                      label: Text('Гость $guest'),
-                      selected: selectedGuestNumber == guest,
-                      onSelected: busy
-                          ? null
-                          : (_) {
-                              setState(() {
-                                selectedGuestNumber = guest;
-                                error = null;
-                              });
-                            },
+                  const SizedBox(height: 10),
+                  Text(
+                    'Процент и сумма задаются только в BackOffice. '
+                    'На этой кассе доступны только правила, '
+                    'разрешённые вашей роли.',
+                    style: TextStyle(
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 12,
                     ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 8),
-              _adjustmentCard(
-                icon: Icons.person_outline,
-                title: 'Скидка · Гость $selectedGuestNumber',
-                subtitle: _adjustmentSummary(guestDiscount),
-                onPressed: () => _editDiscount(selectedGuestNumber),
-              ),
-              const SizedBox(height: 8),
-              _adjustmentCard(
-                icon: Icons.room_service_outlined,
-                title: 'Сервисный сбор',
-                subtitle: _adjustmentSummary(serviceCharge),
-                onPressed: _editServiceCharge,
-              ),
-              if (error != null) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: scheme.errorContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    error!,
-                    style: TextStyle(color: scheme.onErrorContainer),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 8),
-              Text(
-                'Скидка гостю применяется к позициям этого гостя. '
-                'Скидка на заказ применяется после гостевых скидок. '
-                'Сервис рассчитывается после скидок.',
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
       actions: [
@@ -4467,7 +4600,8 @@ class _AdjustmentTotalRow extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontWeight: emphasized ? FontWeight.w900 : FontWeight.w500,
+              fontWeight:
+                  emphasized ? FontWeight.w900 : FontWeight.w500,
             ),
           ),
           const Spacer(),
@@ -4475,202 +4609,12 @@ class _AdjustmentTotalRow extends StatelessWidget {
             text,
             style: TextStyle(
               fontSize: emphasized ? 20 : 14,
-              fontWeight: emphasized ? FontWeight.w900 : FontWeight.w700,
+              fontWeight:
+                  emphasized ? FontWeight.w900 : FontWeight.w700,
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _AdjustmentEditResult {
-  const _AdjustmentEditResult({
-    required this.remove,
-    required this.mode,
-    required this.value,
-    required this.reason,
-  });
-
-  final bool remove;
-  final String mode;
-  final double value;
-  final String reason;
-}
-
-class _AdjustmentEditorDialog extends StatefulWidget {
-  const _AdjustmentEditorDialog({
-    required this.title,
-    required this.isDiscount,
-    this.existing,
-  });
-
-  final String title;
-  final bool isDiscount;
-  final OrderAdjustmentDto? existing;
-
-  @override
-  State<_AdjustmentEditorDialog> createState() =>
-      _AdjustmentEditorDialogState();
-}
-
-class _AdjustmentEditorDialogState
-    extends State<_AdjustmentEditorDialog> {
-  late String mode;
-  late final TextEditingController valueController;
-  late final TextEditingController reasonController;
-  String? error;
-
-  @override
-  void initState() {
-    super.initState();
-    mode = widget.existing?.mode ?? 'PERCENT';
-    valueController = TextEditingController(
-      text: widget.existing == null
-          ? ''
-          : widget.existing!.value.toStringAsFixed(2),
-    );
-    reasonController = TextEditingController(
-      text: widget.existing?.reason ?? '',
-    );
-  }
-
-  @override
-  void dispose() {
-    valueController.dispose();
-    reasonController.dispose();
-    super.dispose();
-  }
-
-  void _save() {
-    final value = double.tryParse(
-      valueController.text.trim().replaceAll(',', '.'),
-    );
-    final reason = reasonController.text.trim();
-
-    if (value == null || value <= 0) {
-      setState(() => error = 'Введите сумму или процент больше нуля.');
-      return;
-    }
-
-    if (mode == 'PERCENT' && value > 100) {
-      setState(() => error = 'Процент не может быть больше 100%.');
-      return;
-    }
-
-    if (widget.isDiscount && reason.isEmpty) {
-      setState(() => error = 'Для скидки обязательно укажите причину.');
-      return;
-    }
-
-    Navigator.of(context).pop(
-      _AdjustmentEditResult(
-        remove: false,
-        mode: mode,
-        value: value,
-        reason: reason,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: SizedBox(
-        width: 430,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            DropdownButtonFormField<String>(
-              value: mode,
-              decoration: const InputDecoration(
-                labelText: 'Тип',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: 'PERCENT',
-                  child: Text('Процент (%)'),
-                ),
-                DropdownMenuItem(
-                  value: 'FIXED',
-                  child: Text('Фиксированная сумма (AZN)'),
-                ),
-              ],
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() {
-                  mode = value;
-                  error = null;
-                });
-              },
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: valueController,
-              autofocus: true,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: mode == 'PERCENT' ? 'Процент' : 'Сумма',
-                suffixText: mode == 'PERCENT' ? '%' : 'AZN',
-                border: const OutlineInputBorder(),
-              ),
-              onChanged: (_) => setState(() => error = null),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: reasonController,
-              maxLength: 200,
-              decoration: InputDecoration(
-                labelText: widget.isDiscount
-                    ? 'Причина скидки *'
-                    : 'Описание сервиса',
-                hintText: widget.isDiscount
-                    ? 'Например: постоянный клиент'
-                    : 'Например: сервис 10%',
-                border: const OutlineInputBorder(),
-              ),
-              onChanged: (_) => setState(() => error = null),
-            ),
-            if (error != null)
-              Text(
-                error!,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-          ],
-        ),
-      ),
-      actions: [
-        if (widget.existing != null)
-          TextButton.icon(
-            onPressed: () {
-              Navigator.of(context).pop(
-                const _AdjustmentEditResult(
-                  remove: true,
-                  mode: 'PERCENT',
-                  value: 0,
-                  reason: '',
-                ),
-              );
-            },
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('Удалить'),
-          ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Отмена'),
-        ),
-        FilledButton(
-          onPressed: _save,
-          child: const Text('Применить'),
-        ),
-      ],
     );
   }
 }
@@ -5773,6 +5717,7 @@ class _OrderPane extends StatelessWidget {
     required this.paying,
     required this.error,
     required this.canVoid,
+    required this.canAdjust,
     required this.modifierProductIds,
     required this.guestCount,
     required this.selectedGuestNumber,
@@ -5795,6 +5740,7 @@ class _OrderPane extends StatelessWidget {
   final bool paying;
   final String? error;
   final bool canVoid;
+  final bool canAdjust;
   final Set<String> modifierProductIds;
   final int guestCount;
   final int selectedGuestNumber;
@@ -6102,7 +6048,8 @@ class _OrderPane extends StatelessWidget {
             ],
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: busy ||
+              onPressed: !canAdjust ||
+                      busy ||
                       editingLocked ||
                       order == null ||
                       order!.items
