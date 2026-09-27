@@ -4198,7 +4198,12 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
     final amount = '$name · $value · '
         '$sign${adjustment.calculatedAmount.toStringAsFixed(2)} AZN';
     final comment = adjustment.reason?.trim();
-    if (comment == null || comment.isEmpty) return amount;
+    final presetSnapshot = adjustment.presetNameSnapshot?.trim();
+    if (comment == null ||
+        comment.isEmpty ||
+        comment == presetSnapshot) {
+      return amount;
+    }
     return '$amount\nКомментарий: $comment';
   }
 
