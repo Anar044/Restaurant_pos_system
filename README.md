@@ -25,8 +25,9 @@ A clean-room restaurant POS platform started from scratch. It does **not** depen
 - SignalR realtime synchronization between POS terminals
 - Optimistic order-version conflict protection for concurrent edits
 - Active table edit locks: only one POS session can edit a table at a time
-- Order and guest discounts (percent or fixed) with mandatory reasons and audit trail
-- Service charges with percent/fixed modes and correct guest-payment allocation
+- BackOffice-managed discount and surcharge presets; POS users cannot type arbitrary rates or amounts
+- Two-layer adjustment access: role permission plus per-preset allowed roles
+- Order/guest discounts and service charges with audit trail and correct guest-payment allocation
 - Receipt/precheck printing with subtotal, discount, service and final total
 
 ## Development seed
@@ -111,7 +112,7 @@ Authenticated:
 
 ## Next milestone
 
-1. Manager approval flows and discount limits
+1. Manager approval flows for sensitive operations
 2. Better kitchen/receipt grouping and reprint controls
 3. Cloud sync worker for transactional outbox events
 4. Backup / restore and production diagnostics
