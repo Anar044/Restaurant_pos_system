@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'api_client.dart';
 import 'config.dart';
 import 'local_print_client.dart';
+import 'realtime_client.dart';
 
 void main() {
   runApp(const RestaurantPosApp());
@@ -18,7 +21,20 @@ class RestaurantPosApp extends StatefulWidget {
 class _RestaurantPosAppState extends State<RestaurantPosApp> {
   late final PosApiClient api = PosApiClient(AppConfig.apiBaseUrl);
   late final PosAgentClient printer = PosAgentClient(AppConfig.posAgentBaseUrl);
+  late final RestaurantRealtimeClient realtime =
+      RestaurantRealtimeClient(AppConfig.apiBaseUrl);
   AuthSession? session;
+
+  void loggedIn(AuthSession value) {
+    setState(() => session = value);
+    unawaited(realtime.start(value.token));
+  }
+
+  @override
+  void dispose() {
+    unawaited(realtime.dispose());
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,11 +52,12 @@ class _RestaurantPosAppState extends State<RestaurantPosApp> {
       home: session == null
           ? LoginPage(
               api: api,
-              onLoggedIn: (value) => setState(() => session = value),
+              onLoggedIn: loggedIn,
             )
           : ShiftGate(
               api: api,
               printer: printer,
+              realtime: realtime,
               session: session!,
             ),
     );
@@ -174,11 +191,13 @@ class ShiftGate extends StatefulWidget {
     super.key,
     required this.api,
     required this.printer,
+    required this.realtime,
     required this.session,
   });
 
   final PosApiClient api;
   final PosAgentClient printer;
+  final RestaurantRealtimeClient realtime;
   final AuthSession session;
 
   @override
@@ -257,6 +276,7 @@ class _ShiftGateState extends State<ShiftGate> {
     return HallSelectionPage(
       api: widget.api,
       printer: widget.printer,
+      realtime: widget.realtime,
       session: widget.session,
       shift: shift!,
       onShiftClosed: shiftClosed,
@@ -385,6 +405,7 @@ class HallSelectionPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.printer,
+    required this.realtime,
     required this.session,
     required this.shift,
     required this.onShiftClosed,
@@ -392,6 +413,7 @@ class HallSelectionPage extends StatefulWidget {
 
   final PosApiClient api;
   final PosAgentClient printer;
+  final RestaurantRealtimeClient realtime;
   final AuthSession session;
   final ShiftDto shift;
   final VoidCallback onShiftClosed;
@@ -402,6 +424,8 @@ class HallSelectionPage extends StatefulWidget {
 
 class _HallSelectionPageState extends State<HallSelectionPage> {
   late Future<List<HallDto>> hallsFuture;
+  StreamSubscription<RestaurantRealtimeEvent>? realtimeSubscription;
+  Timer? realtimeRefreshTimer;
   String? selectedHallId;
   String? loadingTableId;
 
@@ -409,9 +433,31 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
   void initState() {
     super.initState();
     hallsFuture = widget.api.getHalls();
+    realtimeSubscription = widget.realtime.events.listen((event) {
+      if (event.resource == 'orders' ||
+          event.resource == 'payments' ||
+          event.resource == 'connection') {
+        _scheduleRealtimeRefresh();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    realtimeRefreshTimer?.cancel();
+    realtimeSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleRealtimeRefresh() {
+    realtimeRefreshTimer?.cancel();
+    realtimeRefreshTimer = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) refresh();
+    });
   }
 
   void refresh() {
+    if (!mounted) return;
     setState(() {
       hallsFuture = widget.api.getHalls();
     });
@@ -431,6 +477,7 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
           builder: (_) => OrderPage(
             api: widget.api,
             printer: widget.printer,
+            realtime: widget.realtime,
             session: widget.session,
             shift: widget.shift,
             hallName: hall.name,
@@ -1680,6 +1727,7 @@ class OrderPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.printer,
+    required this.realtime,
     required this.session,
     required this.shift,
     required this.hallName,
@@ -1689,6 +1737,7 @@ class OrderPage extends StatefulWidget {
 
   final PosApiClient api;
   final PosAgentClient printer;
+  final RestaurantRealtimeClient realtime;
   final AuthSession session;
   final ShiftDto shift;
   final String hallName;
@@ -1702,6 +1751,9 @@ class OrderPage extends StatefulWidget {
 class _OrderPageState extends State<OrderPage> {
   late Future<List<MenuCategory>> menuFuture;
   late OrderDto? order;
+  StreamSubscription<RestaurantRealtimeEvent>? realtimeSubscription;
+  Timer? realtimeRefreshTimer;
+  bool realtimeRefreshing = false;
   String? selectedCategoryId;
   int selectedGuestNumber = 1;
   bool mutating = false;
@@ -1714,6 +1766,59 @@ class _OrderPageState extends State<OrderPage> {
     super.initState();
     order = widget.initialOrder;
     menuFuture = widget.api.getMenu();
+    realtimeSubscription = widget.realtime.events.listen(_onRealtimeEvent);
+  }
+
+  @override
+  void dispose() {
+    realtimeRefreshTimer?.cancel();
+    realtimeSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _onRealtimeEvent(RestaurantRealtimeEvent event) {
+    if (event.resource != 'orders' &&
+        event.resource != 'payments' &&
+        event.resource != 'connection') {
+      return;
+    }
+
+    final current = order;
+    if (current == null) return;
+    if (event.orderId != null && event.orderId != current.id) return;
+
+    realtimeRefreshTimer?.cancel();
+    realtimeRefreshTimer = Timer(
+      const Duration(milliseconds: 180),
+      _refreshOrderFromRealtime,
+    );
+  }
+
+  Future<void> _refreshOrderFromRealtime() async {
+    if (!mounted || realtimeRefreshing) return;
+
+    final current = order;
+    if (current == null) return;
+
+    realtimeRefreshing = true;
+    try {
+      final fresh = await widget.api.getOrder(current.id);
+      if (!mounted) return;
+
+      final existing = order;
+      if (existing == null || fresh.version >= existing.version) {
+        setState(() {
+          order = fresh;
+          if (selectedGuestNumber > fresh.guestCount) {
+            selectedGuestNumber = fresh.guestCount;
+          }
+        });
+      }
+    } catch (_) {
+      // Realtime refresh is best-effort. User actions still surface API errors.
+    } finally {
+      realtimeRefreshing = false;
+    }
   }
 
   Future<MenuProduct> _loadFreshProduct(String productId) async {
