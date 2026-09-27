@@ -6,6 +6,7 @@ public enum OrderStatus { Draft, Open, PartiallySent, Sent, PartiallyPaid, Paid,
 public enum OrderItemStatus { New, Sent, Voided }
 public enum OrderAdjustmentType { Discount, ServiceCharge }
 public enum OrderAdjustmentMode { Percent, Fixed }
+public enum OrderAdjustmentScope { Order, Guest, Both }
 public enum ShiftStatus { Open, Closed }
 public enum PaymentMethod { Cash, Card, Other }
 public enum PaymentStatus { Pending, Completed, Cancelled, Refunded }
