@@ -134,6 +134,10 @@ export function AdjustmentsPage({
                     Область: <strong>{scopeLabel(preset.scope)}</strong>
                   </span>
                   <span>
+                    Комментарий на POS:{' '}
+                    <strong>{preset.requireComment ? 'обязателен' : 'не требуется'}</strong>
+                  </span>
+                  <span>
                     Роли:{' '}
                     <strong>
                       {roles.length > 0
@@ -198,6 +202,7 @@ function AdjustmentEditor({
   const [mode, setMode] = useState<'PERCENT' | 'FIXED'>(existing?.mode ?? 'PERCENT');
   const [scope, setScope] = useState<'ORDER' | 'GUEST' | 'BOTH'>(existing?.scope ?? 'ORDER');
   const [value, setValue] = useState(existing?.value.toString() ?? '');
+  const [requireComment, setRequireComment] = useState(existing?.requireComment ?? false);
   const [isActive, setIsActive] = useState(existing?.isActive ?? true);
   const [roleIds, setRoleIds] = useState<string[]>(existing?.roleIds ?? []);
   const [saving, setSaving] = useState(false);
@@ -234,6 +239,7 @@ function AdjustmentEditor({
       mode,
       scope: type === 'SERVICE_CHARGE' ? 'ORDER' : scope,
       value: numericValue,
+      requireComment,
       isActive,
       roleIds,
     };
@@ -356,6 +362,20 @@ function AdjustmentEditor({
             </div>
           )}
         </div>
+
+        <label className="toggle-row">
+          <span>
+            <strong>Требовать комментарий на POS</strong>
+            <small>
+              Если включено, кассир не сможет применить это правило без причины/комментария.
+            </small>
+          </span>
+          <input
+            type="checkbox"
+            checked={requireComment}
+            onChange={(e) => setRequireComment(e.target.checked)}
+          />
+        </label>
 
         <label className="toggle-row">
           <span>
