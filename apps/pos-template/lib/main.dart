@@ -19,10 +19,16 @@ class RestaurantPosApp extends StatefulWidget {
 }
 
 class _RestaurantPosAppState extends State<RestaurantPosApp> {
-  late final PosApiClient api = PosApiClient(AppConfig.apiBaseUrl);
+  late final RestaurantRealtimeClient realtime = RestaurantRealtimeClient(
+    AppConfig.apiBaseUrl,
+    deviceId: AppConfig.posDeviceId,
+  );
+  late final PosApiClient api = PosApiClient(
+    AppConfig.apiBaseUrl,
+    deviceId: AppConfig.posDeviceId,
+    instanceId: realtime.instanceId,
+  );
   late final PosAgentClient printer = PosAgentClient(AppConfig.posAgentBaseUrl);
-  late final RestaurantRealtimeClient realtime =
-      RestaurantRealtimeClient(AppConfig.apiBaseUrl);
   AuthSession? session;
 
   void loggedIn(AuthSession value) {
@@ -466,12 +472,28 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
   Future<void> openTable(HallDto hall, DiningTableDto table) async {
     if (loadingTableId != null) return;
     setState(() => loadingTableId = table.id);
+
+    var lockAcquired = false;
     try {
       OrderDto? existingOrder;
       if (table.openOrder != null) {
         existingOrder = await widget.api.getOrder(table.openOrder!.id);
       }
+
+      final editLock = await widget.realtime.beginEditingTable(
+        table.id,
+        existingOrder?.id,
+      );
+
       if (!mounted) return;
+
+      if (!editLock.acquired) {
+        await _showTableLockedDialog(table, editLock);
+        return;
+      }
+
+      lockAcquired = true;
+
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => OrderPage(
@@ -486,6 +508,7 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
           ),
         ),
       );
+
       if (mounted) refresh();
     } catch (e) {
       if (!mounted) return;
@@ -493,8 +516,48 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
         SnackBar(content: Text(e.toString())),
       );
     } finally {
+      if (lockAcquired) {
+        await widget.realtime.endEditingTable(table.id);
+      }
       if (mounted) setState(() => loadingTableId = null);
     }
+  }
+
+  Future<void> _showTableLockedDialog(
+    DiningTableDto table,
+    OrderEditLockResult editLock,
+  ) async {
+    final isSameConfiguredPos =
+        editLock.deviceId == AppConfig.posDeviceId;
+
+    final deviceLabel = editLock.deviceName == null
+        ? 'другом POS'
+        : isSameConfiguredPos
+            ? '${editLock.deviceName} (другое окно)'
+            : editLock.deviceName!;
+
+    final employee = editLock.employeeName?.trim();
+    final employeeLine =
+        employee == null || employee.isEmpty ? '' : '\nСотрудник: $employee';
+
+    final message = editLock.error ??
+        'Стол ${table.name} сейчас редактируется.\n\n'
+            'POS: $deviceLabel$employeeLine';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.lock_outline),
+        title: Text('Стол ${table.name} занят редактированием'),
+        content: Text(message),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Понятно'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> showOrderHistory() async {
@@ -1777,6 +1840,11 @@ class _OrderPageState extends State<OrderPage> {
   }
 
   void _onRealtimeEvent(RestaurantRealtimeEvent event) {
+    if (event.resource == 'edit-lock' && event.operation == 'LOST') {
+      unawaited(_handleEditLockLost());
+      return;
+    }
+
     if (event.resource != 'orders' &&
         event.resource != 'payments' &&
         event.resource != 'connection') {
@@ -1792,6 +1860,34 @@ class _OrderPageState extends State<OrderPage> {
       const Duration(milliseconds: 180),
       _refreshOrderFromRealtime,
     );
+  }
+
+  Future<void> _handleEditLockLost() async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.sync_problem_outlined),
+        title: const Text('Редактирование остановлено'),
+        content: const Text(
+          'Блокировка этого стола была потеряна. '
+          'Заказ будет закрыт на этом POS, чтобы не допустить '
+          'одновременного изменения с другого терминала.',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Вернуться к столам'),
+          ),
+        ],
+      ),
+    );
+
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _refreshOrderFromRealtime() async {
