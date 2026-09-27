@@ -14,6 +14,7 @@ export type AuthSession = {
   roleName: string;
   organizationId: string;
   restaurantId: string;
+  permissions: string[];
 };
 
 export type BackOfficeContext = {
@@ -439,6 +440,39 @@ export type BackOfficeFinance = {
   refunds: FinanceRefund[];
 };
 
+export type AdjustmentPresetRole = {
+  id: string;
+  name: string;
+};
+
+export type BackOfficeAdjustmentPreset = {
+  id: string;
+  name: string;
+  type: 'DISCOUNT' | 'SERVICE_CHARGE';
+  mode: 'PERCENT' | 'FIXED';
+  scope: 'ORDER' | 'GUEST' | 'BOTH';
+  value: number;
+  isActive: boolean;
+  roleIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BackOfficeAdjustments = {
+  roles: AdjustmentPresetRole[];
+  presets: BackOfficeAdjustmentPreset[];
+};
+
+export type UpsertAdjustmentPresetInput = {
+  name: string;
+  type: 'DISCOUNT' | 'SERVICE_CHARGE';
+  mode: 'PERCENT' | 'FIXED';
+  scope: 'ORDER' | 'GUEST' | 'BOTH';
+  value: number;
+  isActive: boolean;
+  roleIds: string[];
+};
+
 export type RefundPaymentResult = {
   refund: {
     id: string;
@@ -830,6 +864,45 @@ export async function assignPosReceiptPrinter(
     method: 'PUT',
     body: JSON.stringify({ printerId }),
   }, token);
+}
+
+export async function getBackOfficeAdjustments(
+  token: string,
+): Promise<BackOfficeAdjustments> {
+  return request<BackOfficeAdjustments>(
+    '/api/v1/backoffice/adjustments',
+    {},
+    token,
+  );
+}
+
+export async function createAdjustmentPreset(
+  token: string,
+  input: UpsertAdjustmentPresetInput,
+): Promise<BackOfficeAdjustmentPreset> {
+  return request<BackOfficeAdjustmentPreset>(
+    '/api/v1/backoffice/adjustments',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  );
+}
+
+export async function updateAdjustmentPreset(
+  token: string,
+  presetId: string,
+  input: UpsertAdjustmentPresetInput,
+): Promise<BackOfficeAdjustmentPreset> {
+  return request<BackOfficeAdjustmentPreset>(
+    `/api/v1/backoffice/adjustments/${presetId}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    },
+    token,
+  );
 }
 
 export async function getBackOfficeFinance(
