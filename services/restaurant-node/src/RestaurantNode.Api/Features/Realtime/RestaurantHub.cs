@@ -141,6 +141,8 @@ public sealed class RestaurantHub(
         out Guid employeeId,
         out string employeeName)
     {
+        restaurantId = Guid.Empty;
+        employeeId = Guid.Empty;
         employeeName = Context.User?.Identity?.Name ?? "Employee";
 
         return TryRestaurantId(out restaurantId) &&
