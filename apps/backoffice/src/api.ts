@@ -443,6 +443,7 @@ export type BackOfficeFinance = {
 export type AdjustmentPresetRole = {
   id: string;
   name: string;
+  canApplyAdjustments: boolean;
 };
 
 export type BackOfficeAdjustmentPreset = {
