@@ -46,9 +46,11 @@ jobs:
           cd services/restaurant-node/src/RestaurantNode.Api
           dotnet run --no-build --no-launch-profile > /tmp/node.log 2>&1 &
           NODE_PID=$!
-          cd ../../../../..
+          cd ../../../..
+          READY=0
           for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8180/health >/dev/null; then
+              READY=1
               break
             fi
             if ! kill -0 "$NODE_PID" 2>/dev/null; then
@@ -57,5 +59,9 @@ jobs:
             fi
             sleep 1
           done
+          if [ "$READY" -ne 1 ]; then
+            cat /tmp/node.log
+            exit 1
+          fi
           python3 scripts/ci-adjustment-comment-smoke.py
           kill "$NODE_PID" || true
