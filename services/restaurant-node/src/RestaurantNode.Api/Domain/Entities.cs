@@ -174,8 +174,6 @@ public sealed class OrderAdjustmentPreset : Entity
     public required string Name { get; set; }
     public OrderAdjustmentType Type { get; set; }
     public OrderAdjustmentMode Mode { get; set; }
-    public Guid? PresetId { get; set; }
-    public string? PresetNameSnapshot { get; set; }
     public OrderAdjustmentScope Scope { get; set; } = OrderAdjustmentScope.Order;
     public decimal Value { get; set; }
     public bool IsActive { get; set; } = true;
@@ -264,6 +262,8 @@ public sealed class OrderAdjustment : Entity
     public Order? Order { get; set; }
     public OrderAdjustmentType Type { get; set; }
     public OrderAdjustmentMode Mode { get; set; }
+    public Guid? PresetId { get; set; }
+    public string? PresetNameSnapshot { get; set; }
     public int? GuestNumber { get; set; }
     public decimal Value { get; set; }
     public decimal CalculatedAmount { get; set; }
