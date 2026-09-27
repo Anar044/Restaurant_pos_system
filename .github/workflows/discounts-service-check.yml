@@ -107,6 +107,77 @@ jobs:
             exit 1
           fi
 
+          AUTH_JSON=$(curl -fsS -X POST http://127.0.0.1:8180/api/v1/auth/pin \
+            -H 'Content-Type: application/json' \
+            -d '{"restaurantId":"11111111-1111-1111-1111-111111111111","pin":"1234"}')
+          TOKEN=$(printf '%s' "$AUTH_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+
+          MENU_JSON=$(curl -fsS http://127.0.0.1:8180/api/v1/menu \
+            -H "Authorization: Bearer $TOKEN")
+          PRODUCT_ID=$(printf '%s' "$MENU_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(p["id"] for c in d["categories"] for p in c["products"]))')
+
+          ORDER_JSON=$(curl -fsS -X POST http://127.0.0.1:8180/api/v1/orders \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"guestCount":2}')
+          ORDER_ID=$(printf '%s' "$ORDER_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+          curl -fsS -X POST "http://127.0.0.1:8180/api/v1/orders/$ORDER_ID/items" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "{\"productId\":\"$PRODUCT_ID\",\"quantity\":2,\"guestNumber\":1}" >/tmp/order.json
+
+          curl -fsS -X POST "http://127.0.0.1:8180/api/v1/orders/$ORDER_ID/items" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "{\"productId\":\"$PRODUCT_ID\",\"quantity\":1,\"guestNumber\":2}" >/tmp/order.json
+
+          curl -fsS -X PUT "http://127.0.0.1:8180/api/v1/orders/$ORDER_ID/discount" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"mode":"PERCENT","value":10,"reason":"CI guest discount","guestNumber":1}' >/tmp/order.json
+
+          curl -fsS -X PUT "http://127.0.0.1:8180/api/v1/orders/$ORDER_ID/discount" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"mode":"FIXED","value":1,"reason":"CI order discount"}' >/tmp/order.json
+
+          curl -fsS -X PUT "http://127.0.0.1:8180/api/v1/orders/$ORDER_ID/service-charge" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{"mode":"PERCENT","value":10,"reason":"CI service"}' >/tmp/order.json
+
+          python3 - <<'PY'
+          import json
+          from decimal import Decimal
+
+          with open("/tmp/order.json", encoding="utf-8") as f:
+              order = json.load(f)
+
+          subtotal = Decimal(str(order["subtotal"]))
+          discount = Decimal(str(order["discountTotal"]))
+          surcharge = Decimal(str(order["surchargeTotal"]))
+          total = Decimal(str(order["total"]))
+          adjustment_count = len(order.get("adjustments", []))
+          guest_total = sum(
+              Decimal(str(row["total"]))
+              for row in order.get("guestBalances", [])
+          )
+
+          assert subtotal > 0, order
+          assert discount > 0, order
+          assert surcharge > 0, order
+          assert adjustment_count == 3, order
+          assert abs(total - (subtotal - discount + surcharge)) <= Decimal("0.0001"), order
+          assert abs(total - guest_total) <= Decimal("0.0001"), order
+          print("Pricing integration smoke passed:", {
+              "subtotal": str(subtotal),
+              "discount": str(discount),
+              "surcharge": str(surcharge),
+              "total": str(total),
+          })
+          PY
+
           kill "$NODE_PID" || true
 
   flutter:
