@@ -689,6 +689,9 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
       cashierName: item.cashierName,
       guestCount: paidOrder.guestCount,
       currencyCode: AppConfig.currencyCode,
+      subtotal: paidOrder.subtotal,
+      discountTotal: paidOrder.discountTotal,
+      surchargeTotal: paidOrder.surchargeTotal,
       total: paidOrder.total,
       paymentMethod: paymentSummary,
       payments: paymentParts,
@@ -3680,6 +3683,32 @@ class _OrderPageState extends State<OrderPage> {
     }
   }
 
+  Future<void> openAdjustments() async {
+    final current = order;
+    if (current == null ||
+        current.items.where((item) => item.status != 'VOIDED').isEmpty ||
+        current.status == 'PARTIALLY_PAID' ||
+        current.isPaid ||
+        mutating ||
+        printing ||
+        paying) {
+      return;
+    }
+
+    final updated = await showDialog<OrderDto>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _OrderAdjustmentsDialog(
+        api: widget.api,
+        order: current,
+        initialGuestNumber: selectedGuestNumber,
+      ),
+    );
+
+    if (!mounted || updated == null) return;
+    setState(() => order = updated);
+  }
+
   Future<void> printPrecheck() async {
     final current = order;
     if (current == null || current.items.isEmpty || mutating || printing) return;
@@ -3699,6 +3728,9 @@ class _OrderPageState extends State<OrderPage> {
         cashierName: widget.session.employeeName,
         guestCount: current.guestCount,
         currencyCode: AppConfig.currencyCode,
+        subtotal: current.subtotal,
+        discountTotal: current.discountTotal,
+        surchargeTotal: current.surchargeTotal,
         total: current.total,
         items: groups
             .map(
@@ -3877,6 +3909,9 @@ class _OrderPageState extends State<OrderPage> {
         cashierName: widget.session.employeeName,
         guestCount: paidOrder.guestCount,
         currencyCode: AppConfig.currencyCode,
+        subtotal: paidOrder.subtotal,
+        discountTotal: paidOrder.discountTotal,
+        surchargeTotal: paidOrder.surchargeTotal,
         total: paidOrder.total,
         paymentMethod: _paymentSummary(paidOrder),
         payments: _receiptPaymentParts(paidOrder),
@@ -4043,6 +4078,7 @@ class _OrderPageState extends State<OrderPage> {
                 canVoid: widget.session.hasPermission('orders.void'),
                 modifierProductIds: modifierProductIds,
                 guestCount: order?.guestCount ?? 1,
+                selectedGuestNumber: selectedGuestNumber,
                 onPlus: incrementGroup,
                 onMinus: decrementGroup,
                 onSend: sendToKitchen,
@@ -4050,6 +4086,7 @@ class _OrderPageState extends State<OrderPage> {
                 onMoveGuest: moveGroupToGuest,
                 onComment: editGroupComment,
                 onVoid: voidSentItem,
+                onAdjustments: openAdjustments,
                 onPrintPrecheck: printPrecheck,
                 onPay: openPayment,
                 onFinalizePaid: retryPaidFinalize,
@@ -5194,6 +5231,7 @@ class _OrderPane extends StatelessWidget {
     required this.canVoid,
     required this.modifierProductIds,
     required this.guestCount,
+    required this.selectedGuestNumber,
     required this.onPlus,
     required this.onMinus,
     required this.onSend,
@@ -5201,6 +5239,7 @@ class _OrderPane extends StatelessWidget {
     required this.onMoveGuest,
     required this.onComment,
     required this.onVoid,
+    required this.onAdjustments,
     required this.onPrintPrecheck,
     required this.onPay,
     required this.onFinalizePaid,
@@ -5214,6 +5253,7 @@ class _OrderPane extends StatelessWidget {
   final bool canVoid;
   final Set<String> modifierProductIds;
   final int guestCount;
+  final int selectedGuestNumber;
   final ValueChanged<CartGroup> onPlus;
   final ValueChanged<CartGroup> onMinus;
   final Future<void> Function() onSend;
@@ -5221,6 +5261,7 @@ class _OrderPane extends StatelessWidget {
   final ValueChanged<CartGroup> onMoveGuest;
   final ValueChanged<CartGroup> onComment;
   final ValueChanged<CartGroup> onVoid;
+  final VoidCallback onAdjustments;
   final VoidCallback onPrintPrecheck;
   final VoidCallback onPay;
   final VoidCallback onFinalizePaid;
@@ -5444,6 +5485,46 @@ class _OrderPane extends StatelessWidget {
                     ),
             ),
             const Divider(height: 24),
+            if ((order?.discountTotal ?? 0) > 0 ||
+                (order?.surchargeTotal ?? 0) > 0) ...[
+              Row(
+                children: [
+                  const Text('Подытог'),
+                  const Spacer(),
+                  Text('${(order?.subtotal ?? 0).toStringAsFixed(2)} AZN'),
+                ],
+              ),
+              if ((order?.discountTotal ?? 0) > 0) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Text('Скидка'),
+                    const Spacer(),
+                    Text(
+                      '-${order!.discountTotal.toStringAsFixed(2)} AZN',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if ((order?.surchargeTotal ?? 0) > 0) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Text('Сервис'),
+                    const Spacer(),
+                    Text(
+                      '+${order!.surchargeTotal.toStringAsFixed(2)} AZN',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 6),
+            ],
             Row(
               children: [
                 const Text('Итого'),
@@ -5476,6 +5557,24 @@ class _OrderPane extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: busy ||
+                      editingLocked ||
+                      order == null ||
+                      order!.items
+                          .where((item) => item.status != 'VOIDED')
+                          .isEmpty
+                  ? null
+                  : onAdjustments,
+              icon: const Icon(Icons.percent),
+              label: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Text(
+                  'Скидки / сервис · Гость $selectedGuestNumber',
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: busy ||
                       order == null ||
