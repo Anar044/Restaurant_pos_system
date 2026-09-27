@@ -176,6 +176,7 @@ public sealed class OrderAdjustmentPreset : Entity
     public OrderAdjustmentMode Mode { get; set; }
     public OrderAdjustmentScope Scope { get; set; } = OrderAdjustmentScope.Order;
     public decimal Value { get; set; }
+    public bool RequireComment { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
