@@ -15,7 +15,7 @@ Cloud (later)
 Restaurant LAN
   Restaurant Node (.NET 10)
         | local PostgreSQL
-        | HTTP now / SignalR next
+        | HTTP commands + SignalR realtime
         +---- Windows POS (Flutter)
         +---- Android POS (Flutter)
         +---- iOS POS (Flutter)
@@ -45,4 +45,4 @@ For V1, Restaurant Node itself is a required local dependency. Device-independen
 PIN -> JWT -> Menu -> Create order -> Add item -> Persist -> Audit -> Outbox
 ```
 
-This starter implements that slice.
+This starter implements that slice and now also includes SignalR realtime change notifications between POS clients plus optimistic order-version conflict protection.
