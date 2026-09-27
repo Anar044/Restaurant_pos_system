@@ -2016,6 +2016,18 @@ public static class OrderEndpoints
             if (adjustment is null)
                 return Results.Ok(ToDto(order));
 
+            if (!await CanRemoveAdjustmentAsync(
+                    db,
+                    user,
+                    restaurantId,
+                    employeeId,
+                    adjustment,
+                    OrderAdjustmentType.Discount,
+                    ct))
+            {
+                return Results.Forbid();
+            }
+
             var removed = new
             {
                 adjustment.Id,
@@ -2183,6 +2195,21 @@ public static class OrderEndpoints
             if (adjustments.Length == 0)
                 return Results.Ok(ToDto(order));
 
+            foreach (var adjustment in adjustments)
+            {
+                if (!await CanRemoveAdjustmentAsync(
+                        db,
+                        user,
+                        restaurantId,
+                        employeeId,
+                        adjustment,
+                        OrderAdjustmentType.ServiceCharge,
+                        ct))
+                {
+                    return Results.Forbid();
+                }
+            }
+
             var removed = adjustments.Select(x => new
             {
                 x.Id,
@@ -2248,6 +2275,49 @@ public static class OrderEndpoints
         }).RequireAuthorization("orders.write");
 
         return app;
+    }
+
+    private static async Task<bool> CanRemoveAdjustmentAsync(
+        RestaurantDbContext db,
+        ClaimsPrincipal user,
+        Guid restaurantId,
+        Guid employeeId,
+        OrderAdjustment adjustment,
+        OrderAdjustmentType expectedType,
+        CancellationToken ct)
+    {
+        if (user.HasClaim(
+                "permission",
+                Permissions.PricingManage))
+        {
+            return true;
+        }
+
+        if (!adjustment.PresetId.HasValue)
+            return false;
+
+        var roleId = await db.Employees
+            .AsNoTracking()
+            .Where(x =>
+                x.Id == employeeId &&
+                x.RestaurantId == restaurantId &&
+                x.IsActive)
+            .Select(x => (Guid?)x.RoleId)
+            .FirstOrDefaultAsync(ct);
+
+        if (!roleId.HasValue)
+            return false;
+
+        return await db.OrderAdjustmentPresets
+            .AsNoTracking()
+            .AnyAsync(
+                x =>
+                    x.Id == adjustment.PresetId.Value &&
+                    x.RestaurantId == restaurantId &&
+                    x.Type == expectedType &&
+                    x.AllowedRoles.Any(
+                        role => role.RoleId == roleId.Value),
+                ct);
     }
 
     private static async Task<OrderAdjustmentPreset?> GetAuthorizedPresetAsync(
