@@ -4195,8 +4195,86 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
         : '${adjustment.value.toStringAsFixed(2)} AZN';
     final sign = adjustment.isDiscount ? '-' : '+';
 
-    return '$name · $value · '
+    final amount = '$name · $value · '
         '$sign${adjustment.calculatedAmount.toStringAsFixed(2)} AZN';
+    final comment = adjustment.reason?.trim();
+    if (comment == null || comment.isEmpty) return amount;
+    return '$amount\nКомментарий: $comment';
+  }
+
+  Future<String?> _requestAdjustmentComment(
+    AdjustmentPresetDto preset,
+  ) async {
+    if (!preset.requireComment) return '';
+
+    final controller = TextEditingController();
+    String? validationError;
+
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          icon: const Icon(Icons.comment_outlined),
+          title: const Text('Причина применения'),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '${preset.name} · ${preset.valueLabel}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  maxLength: 300,
+                  minLines: 2,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                    labelText: 'Комментарий *',
+                    hintText: 'Например: по согласованию с управляющим',
+                    border: const OutlineInputBorder(),
+                    errorText: validationError,
+                  ),
+                  onChanged: (_) {
+                    if (validationError != null) {
+                      setDialogState(() => validationError = null);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final value = controller.text.trim();
+                if (value.isEmpty) {
+                  setDialogState(
+                    () => validationError =
+                        'Комментарий обязателен для этого правила.',
+                  );
+                  return;
+                }
+                Navigator.of(dialogContext).pop(value);
+              },
+              child: const Text('Применить'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    controller.dispose();
+    return result;
   }
 
   Future<void> _applyDiscount(
@@ -4204,6 +4282,10 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
     int? guestNumber,
   ) async {
     if (busy) return;
+
+    final comment = await _requestAdjustmentComment(preset);
+    if (!mounted || comment == null) return;
+
     setState(() {
       busy = true;
       error = null;
@@ -4214,6 +4296,7 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
         orderId: currentOrder.id,
         presetId: preset.id,
         guestNumber: guestNumber,
+        comment: comment,
       );
       if (!mounted) return;
       setState(() => currentOrder = updated);
@@ -4249,6 +4332,10 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
     AdjustmentPresetDto preset,
   ) async {
     if (busy) return;
+
+    final comment = await _requestAdjustmentComment(preset);
+    if (!mounted || comment == null) return;
+
     setState(() {
       busy = true;
       error = null;
@@ -4258,6 +4345,7 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
       final updated = await widget.api.applyServiceCharge(
         orderId: currentOrder.id,
         presetId: preset.id,
+        comment: comment,
       );
       if (!mounted) return;
       setState(() => currentOrder = updated);
@@ -4357,7 +4445,8 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
                         size: 17,
                       ),
                       label: Text(
-                        '${preset.name} · ${preset.valueLabel}',
+                        '${preset.name} · ${preset.valueLabel}'
+                        '${preset.requireComment ? ' · комментарий' : ''}',
                       ),
                       onPressed:
                           busy ? null : () => onSelected(preset),
