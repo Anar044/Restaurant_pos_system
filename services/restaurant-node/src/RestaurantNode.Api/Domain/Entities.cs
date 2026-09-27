@@ -168,6 +168,30 @@ public sealed class ModifierGroupModifier
     public int SortOrder { get; set; }
 }
 
+public sealed class OrderAdjustmentPreset : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public required string Name { get; set; }
+    public OrderAdjustmentType Type { get; set; }
+    public OrderAdjustmentMode Mode { get; set; }
+    public Guid? PresetId { get; set; }
+    public string? PresetNameSnapshot { get; set; }
+    public OrderAdjustmentScope Scope { get; set; } = OrderAdjustmentScope.Order;
+    public decimal Value { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public List<OrderAdjustmentPresetRole> AllowedRoles { get; set; } = [];
+}
+
+public sealed class OrderAdjustmentPresetRole
+{
+    public Guid PresetId { get; set; }
+    public OrderAdjustmentPreset? Preset { get; set; }
+    public Guid RoleId { get; set; }
+    public Role? Role { get; set; }
+}
+
 public sealed class Shift : Entity
 {
     public Guid RestaurantId { get; set; }
