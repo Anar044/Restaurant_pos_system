@@ -453,6 +453,7 @@ export type BackOfficeAdjustmentPreset = {
   mode: 'PERCENT' | 'FIXED';
   scope: 'ORDER' | 'GUEST' | 'BOTH';
   value: number;
+  requireComment: boolean;
   isActive: boolean;
   roleIds: string[];
   createdAt: string;
@@ -470,6 +471,7 @@ export type UpsertAdjustmentPresetInput = {
   mode: 'PERCENT' | 'FIXED';
   scope: 'ORDER' | 'GUEST' | 'BOTH';
   value: number;
+  requireComment: boolean;
   isActive: boolean;
   roleIds: string[];
 };
