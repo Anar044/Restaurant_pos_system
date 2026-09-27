@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using RestaurantNode.Api.Domain;
 using RestaurantNode.Api.Features.Realtime;
 using RestaurantNode.Api.Infrastructure;
+using RestaurantNode.Api.Security;
 using RestaurantNode.Api.Features.Payments;
 
 namespace RestaurantNode.Api.Features.Orders;
@@ -1860,21 +1861,35 @@ public static class OrderEndpoints
             if (!TryClaims(user, out var restaurantId, out var employeeId))
                 return Results.Unauthorized();
 
-            if (!TryAdjustmentMode(request.Mode, out var mode))
-                return Results.BadRequest(new { message = "Mode must be PERCENT or FIXED." });
+            var preset = await GetAuthorizedPresetAsync(
+                db,
+                restaurantId,
+                employeeId,
+                request.PresetId,
+                OrderAdjustmentType.Discount,
+                ct);
 
-            if (request.Value <= 0m)
-                return Results.BadRequest(new { message = "Discount value must be greater than zero." });
+            if (preset is null)
+                return Results.Forbid();
 
-            if (mode == OrderAdjustmentMode.Percent && request.Value > 100m)
-                return Results.BadRequest(new { message = "Percent discount cannot exceed 100%." });
+            var guestScoped = request.GuestNumber.HasValue;
+            if (guestScoped &&
+                preset.Scope is not (OrderAdjustmentScope.Guest or OrderAdjustmentScope.Both))
+            {
+                return Results.BadRequest(new
+                {
+                    message = "Эта скидка не разрешена для отдельного гостя."
+                });
+            }
 
-            if (request.Value > 1_000_000m)
-                return Results.BadRequest(new { message = "Discount value is too large." });
-
-            var reason = NormalizeText(request.Reason, 200);
-            if (reason is null)
-                return Results.BadRequest(new { message = "Discount reason is required." });
+            if (!guestScoped &&
+                preset.Scope is not (OrderAdjustmentScope.Order or OrderAdjustmentScope.Both))
+            {
+                return Results.BadRequest(new
+                {
+                    message = "Эта скидка не разрешена для всего заказа."
+                });
+            }
 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
 
@@ -1921,9 +1936,11 @@ public static class OrderEndpoints
                 db.OrderAdjustments.Add(adjustment);
             }
 
-            adjustment.Mode = mode;
-            adjustment.Value = Money(request.Value);
-            adjustment.Reason = reason;
+            adjustment.Mode = preset.Mode;
+            adjustment.Value = Money(preset.Value);
+            adjustment.PresetId = preset.Id;
+            adjustment.PresetNameSnapshot = preset.Name;
+            adjustment.Reason = preset.Name;
             adjustment.AppliedByEmployeeId = employeeId;
             adjustment.UpdatedAt = now;
 
@@ -1966,7 +1983,7 @@ public static class OrderEndpoints
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok(ToDto(order));
-        }).RequireAuthorization("orders.write");
+        }).RequireAuthorization(Permissions.OrdersWrite, Permissions.OrdersAdjustmentsApply);
 
         group.MapDelete("/{id:guid}/discount", async (
             Guid id,
@@ -2033,7 +2050,7 @@ public static class OrderEndpoints
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok(ToDto(order));
-        }).RequireAuthorization("orders.write");
+        }).RequireAuthorization(Permissions.OrdersWrite, Permissions.OrdersAdjustmentsApply);
 
         group.MapPut("/{id:guid}/service-charge", async (
             Guid id,
@@ -2045,17 +2062,24 @@ public static class OrderEndpoints
             if (!TryClaims(user, out var restaurantId, out var employeeId))
                 return Results.Unauthorized();
 
-            if (!TryAdjustmentMode(request.Mode, out var mode))
-                return Results.BadRequest(new { message = "Mode must be PERCENT or FIXED." });
+            var preset = await GetAuthorizedPresetAsync(
+                db,
+                restaurantId,
+                employeeId,
+                request.PresetId,
+                OrderAdjustmentType.ServiceCharge,
+                ct);
 
-            if (request.Value <= 0m)
-                return Results.BadRequest(new { message = "Service charge value must be greater than zero." });
+            if (preset is null)
+                return Results.Forbid();
 
-            if (mode == OrderAdjustmentMode.Percent && request.Value > 100m)
-                return Results.BadRequest(new { message = "Service charge percent cannot exceed 100%." });
-
-            if (request.Value > 1_000_000m)
-                return Results.BadRequest(new { message = "Service charge value is too large." });
+            if (preset.Scope != OrderAdjustmentScope.Order)
+            {
+                return Results.BadRequest(new
+                {
+                    message = "Сервисный сбор должен применяться ко всему заказу."
+                });
+            }
 
             await using var tx = await db.Database.BeginTransactionAsync(ct);
 
@@ -2089,10 +2113,12 @@ public static class OrderEndpoints
                 db.OrderAdjustments.Add(adjustment);
             }
 
-            adjustment.Mode = mode;
-            adjustment.Value = Money(request.Value);
+            adjustment.Mode = preset.Mode;
+            adjustment.Value = Money(preset.Value);
             adjustment.GuestNumber = null;
-            adjustment.Reason = NormalizeText(request.Reason, 200) ?? "Сервисный сбор";
+            adjustment.PresetId = preset.Id;
+            adjustment.PresetNameSnapshot = preset.Name;
+            adjustment.Reason = preset.Name;
             adjustment.AppliedByEmployeeId = employeeId;
             adjustment.UpdatedAt = now;
 
@@ -2126,7 +2152,7 @@ public static class OrderEndpoints
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok(ToDto(order));
-        }).RequireAuthorization("orders.write");
+        }).RequireAuthorization(Permissions.OrdersWrite, Permissions.OrdersAdjustmentsApply);
 
         group.MapDelete("/{id:guid}/service-charge", async (
             Guid id,
@@ -2193,7 +2219,7 @@ public static class OrderEndpoints
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok(ToDto(order));
-        }).RequireAuthorization("orders.write");
+        }).RequireAuthorization(Permissions.OrdersWrite, Permissions.OrdersAdjustmentsApply);
 
         group.MapDelete("/{id:guid}/items/{itemId:guid}", async (Guid id, Guid itemId, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
@@ -2224,6 +2250,42 @@ public static class OrderEndpoints
         return app;
     }
 
+    private static async Task<OrderAdjustmentPreset?> GetAuthorizedPresetAsync(
+        RestaurantDbContext db,
+        Guid restaurantId,
+        Guid employeeId,
+        Guid presetId,
+        OrderAdjustmentType expectedType,
+        CancellationToken ct)
+    {
+        if (presetId == Guid.Empty)
+            return null;
+
+        var roleId = await db.Employees
+            .AsNoTracking()
+            .Where(x =>
+                x.Id == employeeId &&
+                x.RestaurantId == restaurantId &&
+                x.IsActive)
+            .Select(x => (Guid?)x.RoleId)
+            .FirstOrDefaultAsync(ct);
+
+        if (!roleId.HasValue)
+            return null;
+
+        return await db.OrderAdjustmentPresets
+            .AsNoTracking()
+            .Include(x => x.AllowedRoles)
+            .FirstOrDefaultAsync(
+                x =>
+                    x.Id == presetId &&
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive &&
+                    x.Type == expectedType &&
+                    x.AllowedRoles.Any(role => role.RoleId == roleId.Value),
+                ct);
+    }
+
     private static void Recalculate(Order order) =>
         OrderPricingCalculator.Recalculate(order);
 
@@ -2248,28 +2310,6 @@ public static class OrderEndpoints
             (false, true) => OrderStatus.Sent,
             _ => OrderStatus.Open
         };
-    }
-
-    private static bool TryAdjustmentMode(
-        string? raw,
-        out OrderAdjustmentMode mode)
-    {
-        mode = default;
-        var normalized = raw?.Trim().Replace("-", "_").ToUpperInvariant();
-        return normalized switch
-        {
-            "PERCENT" => SetMode(OrderAdjustmentMode.Percent, out mode),
-            "FIXED" => SetMode(OrderAdjustmentMode.Fixed, out mode),
-            _ => false
-        };
-    }
-
-    private static bool SetMode(
-        OrderAdjustmentMode value,
-        out OrderAdjustmentMode mode)
-    {
-        mode = value;
-        return true;
     }
 
     private static decimal Money(decimal value) =>
@@ -2319,6 +2359,8 @@ public static class OrderEndpoints
                 x.Id,
                 type = EnumText(x.Type),
                 mode = EnumText(x.Mode),
+                x.PresetId,
+                x.PresetNameSnapshot,
                 x.GuestNumber,
                 x.Value,
                 x.CalculatedAmount,
@@ -2422,11 +2464,7 @@ public sealed record UpdateOrderItemCommentRequest(string? Comment);
 public sealed record UpdateOrderItemModifiersRequest(ModifierSelectionRequest[]? Modifiers);
 public sealed record VoidOrderItemRequest(string? Reason);
 public sealed record ApplyOrderDiscountRequest(
-    string Mode,
-    decimal Value,
-    string? Reason,
+    Guid PresetId,
     int? GuestNumber = null);
 public sealed record ApplyServiceChargeRequest(
-    string Mode,
-    decimal Value,
-    string? Reason = null);
+    Guid PresetId);
