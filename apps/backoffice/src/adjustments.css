@@ -98,3 +98,14 @@
   .adjustment-form-grid,
   .adjustment-role-grid { grid-template-columns: 1fr; }
 }
+
+.adjustment-role-option.disabled {
+  opacity: .58;
+  background: #f2f4f7;
+}
+.adjustment-role-option span { display: grid; gap: 2px; }
+.adjustment-role-option small {
+  color: #667085;
+  font-size: 10px;
+  font-weight: 500;
+}
