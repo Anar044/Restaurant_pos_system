@@ -46,15 +46,6 @@ public static class OrderAdjustmentPresetEndpoints
                         role => role.RoleId == roleId.Value))
                 .OrderBy(x => x.Type)
                 .ThenBy(x => x.Name)
-                .Select(x => new
-                {
-                    x.Id,
-                    x.Name,
-                    type = x.Type.ToString(),
-                    mode = x.Mode.ToString(),
-                    scope = x.Scope.ToString(),
-                    x.Value
-                })
                 .ToListAsync(ct);
 
             return Results.Ok(new
@@ -63,9 +54,9 @@ public static class OrderAdjustmentPresetEndpoints
                 {
                     x.Id,
                     x.Name,
-                    type = ToEnumText(x.type),
-                    mode = ToEnumText(x.mode),
-                    scope = ToEnumText(x.scope),
+                    type = ToEnumText(x.Type.ToString()),
+                    mode = ToEnumText(x.Mode.ToString()),
+                    scope = ToEnumText(x.Scope.ToString()),
                     x.Value
                 })
             });
