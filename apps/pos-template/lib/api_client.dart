@@ -393,20 +393,31 @@ class PosApiClient {
     return OrderDto.fromJson(_decode(response));
   }
 
+  Future<List<AdjustmentPresetDto>> getAdjustmentPresets() async {
+    final response = await _http.get(
+      _uri('/api/v1/order-adjustment-presets'),
+      headers: _headers,
+    );
+    final data = _decode(response);
+    return ((data['presets'] as List<dynamic>?) ?? const [])
+        .map(
+          (value) => AdjustmentPresetDto.fromJson(
+            value as Map<String, dynamic>,
+          ),
+        )
+        .toList();
+  }
+
   Future<OrderDto> applyDiscount({
     required String orderId,
-    required String mode,
-    required double value,
-    required String reason,
+    required String presetId,
     int? guestNumber,
   }) async {
     final response = await _http.put(
       _uri('/api/v1/orders/$orderId/discount'),
       headers: _orderHeaders(orderId),
       body: jsonEncode({
-        'mode': mode,
-        'value': value,
-        'reason': reason.trim(),
+        'presetId': presetId,
         if (guestNumber != null) 'guestNumber': guestNumber,
       }),
     );
@@ -427,19 +438,12 @@ class PosApiClient {
 
   Future<OrderDto> applyServiceCharge({
     required String orderId,
-    required String mode,
-    required double value,
-    String? reason,
+    required String presetId,
   }) async {
     final response = await _http.put(
       _uri('/api/v1/orders/$orderId/service-charge'),
       headers: _orderHeaders(orderId),
-      body: jsonEncode({
-        'mode': mode,
-        'value': value,
-        if (reason != null && reason.trim().isNotEmpty)
-          'reason': reason.trim(),
-      }),
+      body: jsonEncode({'presetId': presetId}),
     );
     return OrderDto.fromJson(_decode(response));
   }
@@ -1142,6 +1146,43 @@ class GuestPaymentBalanceDto {
       );
 }
 
+class AdjustmentPresetDto {
+  const AdjustmentPresetDto({
+    required this.id,
+    required this.name,
+    required this.type,
+    required this.mode,
+    required this.scope,
+    required this.value,
+  });
+
+  final String id;
+  final String name;
+  final String type;
+  final String mode;
+  final String scope;
+  final double value;
+
+  bool get isDiscount => type == 'DISCOUNT';
+  bool get isServiceCharge => type == 'SERVICE_CHARGE';
+  bool get allowsOrder => scope == 'ORDER' || scope == 'BOTH';
+  bool get allowsGuest => scope == 'GUEST' || scope == 'BOTH';
+
+  String get valueLabel => mode == 'PERCENT'
+      ? '${value.toStringAsFixed(2)}%'
+      : '${value.toStringAsFixed(2)} AZN';
+
+  factory AdjustmentPresetDto.fromJson(Map<String, dynamic> json) =>
+      AdjustmentPresetDto(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        type: json['type'] as String,
+        mode: json['mode'] as String,
+        scope: json['scope'] as String,
+        value: (json['value'] as num?)?.toDouble() ?? 0,
+      );
+}
+
 class OrderAdjustmentDto {
   const OrderAdjustmentDto({
     required this.id,
@@ -1154,12 +1195,16 @@ class OrderAdjustmentDto {
     required this.updatedAt,
     this.guestNumber,
     this.reason,
+    this.presetId,
+    this.presetNameSnapshot,
   });
 
   final String id;
   final String type;
   final String mode;
   final int? guestNumber;
+  final String? presetId;
+  final String? presetNameSnapshot;
   final double value;
   final double calculatedAmount;
   final String? reason;
@@ -1176,6 +1221,8 @@ class OrderAdjustmentDto {
         type: json['type'] as String,
         mode: json['mode'] as String,
         guestNumber: (json['guestNumber'] as num?)?.toInt(),
+        presetId: json['presetId'] as String?,
+        presetNameSnapshot: json['presetNameSnapshot'] as String?,
         value: (json['value'] as num?)?.toDouble() ?? 0,
         calculatedAmount:
             (json['calculatedAmount'] as num?)?.toDouble() ?? 0,
