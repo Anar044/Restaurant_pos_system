@@ -27,6 +27,7 @@ A clean-room restaurant POS platform started from scratch. It does **not** depen
 - Active table edit locks: only one POS session can edit a table at a time
 - BackOffice-managed discount and surcharge presets; POS users cannot type arbitrary rates or amounts
 - Two-layer adjustment access: role permission plus per-preset allowed roles
+- Per-preset POS comment policy: BackOffice can require a cashier comment before applying a discount or surcharge
 - Order/guest discounts and service charges with audit trail and correct guest-payment allocation
 - Receipt/precheck printing with subtotal, discount, service and final total
 
