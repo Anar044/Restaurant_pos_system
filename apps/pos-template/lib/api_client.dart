@@ -393,6 +393,65 @@ class PosApiClient {
     return OrderDto.fromJson(_decode(response));
   }
 
+  Future<OrderDto> applyDiscount({
+    required String orderId,
+    required String mode,
+    required double value,
+    required String reason,
+    int? guestNumber,
+  }) async {
+    final response = await _http.put(
+      _uri('/api/v1/orders/$orderId/discount'),
+      headers: _orderHeaders(orderId),
+      body: jsonEncode({
+        'mode': mode,
+        'value': value,
+        'reason': reason.trim(),
+        if (guestNumber != null) 'guestNumber': guestNumber,
+      }),
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> removeDiscount({
+    required String orderId,
+    int? guestNumber,
+  }) async {
+    final suffix = guestNumber == null ? '' : '?guestNumber=$guestNumber';
+    final response = await _http.delete(
+      _uri('/api/v1/orders/$orderId/discount$suffix'),
+      headers: _orderHeaders(orderId),
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> applyServiceCharge({
+    required String orderId,
+    required String mode,
+    required double value,
+    String? reason,
+  }) async {
+    final response = await _http.put(
+      _uri('/api/v1/orders/$orderId/service-charge'),
+      headers: _orderHeaders(orderId),
+      body: jsonEncode({
+        'mode': mode,
+        'value': value,
+        if (reason != null && reason.trim().isNotEmpty)
+          'reason': reason.trim(),
+      }),
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
+  Future<OrderDto> removeServiceCharge(String orderId) async {
+    final response = await _http.delete(
+      _uri('/api/v1/orders/$orderId/service-charge'),
+      headers: _orderHeaders(orderId),
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
   Future<PaymentResultDto> payOrder({
     required String orderId,
     required String shiftId,
@@ -1083,11 +1142,59 @@ class GuestPaymentBalanceDto {
       );
 }
 
+class OrderAdjustmentDto {
+  const OrderAdjustmentDto({
+    required this.id,
+    required this.type,
+    required this.mode,
+    required this.value,
+    required this.calculatedAmount,
+    required this.appliedByEmployeeId,
+    required this.createdAt,
+    required this.updatedAt,
+    this.guestNumber,
+    this.reason,
+  });
+
+  final String id;
+  final String type;
+  final String mode;
+  final int? guestNumber;
+  final double value;
+  final double calculatedAmount;
+  final String? reason;
+  final String appliedByEmployeeId;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  bool get isDiscount => type == 'DISCOUNT';
+  bool get isServiceCharge => type == 'SERVICE_CHARGE';
+
+  factory OrderAdjustmentDto.fromJson(Map<String, dynamic> json) =>
+      OrderAdjustmentDto(
+        id: json['id'] as String,
+        type: json['type'] as String,
+        mode: json['mode'] as String,
+        guestNumber: (json['guestNumber'] as num?)?.toInt(),
+        value: (json['value'] as num?)?.toDouble() ?? 0,
+        calculatedAmount:
+            (json['calculatedAmount'] as num?)?.toDouble() ?? 0,
+        reason: json['reason'] as String?,
+        appliedByEmployeeId:
+            json['appliedByEmployeeId'] as String? ?? '',
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        updatedAt: DateTime.parse(json['updatedAt'] as String),
+      );
+}
+
 class OrderDto {
   const OrderDto({
     required this.id,
     required this.displayNumber,
     required this.status,
+    required this.subtotal,
+    required this.discountTotal,
+    required this.surchargeTotal,
     required this.total,
     required this.paidTotal,
     required this.version,
@@ -1096,6 +1203,7 @@ class OrderDto {
     required this.guestCount,
     required this.paymentMode,
     required this.guestBalances,
+    required this.adjustments,
     this.tableId,
     this.closedAt,
   });
@@ -1107,6 +1215,10 @@ class OrderDto {
   final int guestCount;
   final String paymentMode;
   final List<GuestPaymentBalanceDto> guestBalances;
+  final List<OrderAdjustmentDto> adjustments;
+  final double subtotal;
+  final double discountTotal;
+  final double surchargeTotal;
   final double total;
   final double paidTotal;
   final int version;
@@ -1141,12 +1253,25 @@ class OrderDto {
                   ),
                 )
                 .toList(),
+        subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0,
+        discountTotal:
+            (json['discountTotal'] as num?)?.toDouble() ?? 0,
+        surchargeTotal:
+            (json['surchargeTotal'] as num?)?.toDouble() ?? 0,
         total: (json['total'] as num).toDouble(),
         paidTotal: (json['paidTotal'] as num?)?.toDouble() ?? 0,
         version: (json['version'] as num).toInt(),
         closedAt: json['closedAt'] == null
             ? null
             : DateTime.tryParse(json['closedAt'] as String),
+        adjustments:
+            ((json['adjustments'] as List<dynamic>?) ?? const [])
+                .map(
+                  (e) => OrderAdjustmentDto.fromJson(
+                    e as Map<String, dynamic>,
+                  ),
+                )
+                .toList(),
         payments: ((json['payments'] as List<dynamic>?) ?? const [])
             .map((e) => PaymentDto.fromJson(e as Map<String, dynamic>))
             .toList(),
