@@ -1,0 +1,77 @@
+name: Realtime sync check
+
+on:
+  push:
+    branches:
+      - feature/realtime-sync-v1
+
+permissions:
+  contents: write
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dotnet tools
+        run: dotnet tool restore
+
+      - name: Restore backend
+        run: dotnet restore services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj
+
+      - name: Generate concurrency migration
+        shell: bash
+        run: |
+          if dotnet ef migrations has-pending-model-changes \
+            --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+            --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj; then
+            echo "EF model already clean."
+          else
+            dotnet ef migrations add EnableOrderVersionConcurrency \
+              --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+              --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+              --output-dir Infrastructure/Migrations
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add services/restaurant-node/src/RestaurantNode.Api/Infrastructure/Migrations
+            git commit -m "Generate order concurrency migration"
+            git push
+          fi
+
+      - name: Build backend
+        run: dotnet build services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj --no-restore
+
+      - name: Verify EF model clean
+        run: |
+          dotnet ef migrations has-pending-model-changes \
+            --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+            --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj
+
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Get dependencies
+        working-directory: apps/pos-template
+        run: flutter pub get
+
+      - name: Format
+        working-directory: apps/pos-template
+        run: dart format lib
+
+      - name: Analyze
+        working-directory: apps/pos-template
+        run: flutter analyze --no-fatal-infos
