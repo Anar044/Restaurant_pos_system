@@ -412,6 +412,7 @@ class PosApiClient {
     required String orderId,
     required String presetId,
     int? guestNumber,
+    String? comment,
   }) async {
     final response = await _http.put(
       _uri('/api/v1/orders/$orderId/discount'),
@@ -419,6 +420,8 @@ class PosApiClient {
       body: jsonEncode({
         'presetId': presetId,
         if (guestNumber != null) 'guestNumber': guestNumber,
+        if (comment != null && comment.trim().isNotEmpty)
+          'comment': comment.trim(),
       }),
     );
     return OrderDto.fromJson(_decode(response));
@@ -439,11 +442,16 @@ class PosApiClient {
   Future<OrderDto> applyServiceCharge({
     required String orderId,
     required String presetId,
+    String? comment,
   }) async {
     final response = await _http.put(
       _uri('/api/v1/orders/$orderId/service-charge'),
       headers: _orderHeaders(orderId),
-      body: jsonEncode({'presetId': presetId}),
+      body: jsonEncode({
+        'presetId': presetId,
+        if (comment != null && comment.trim().isNotEmpty)
+          'comment': comment.trim(),
+      }),
     );
     return OrderDto.fromJson(_decode(response));
   }
@@ -1154,6 +1162,7 @@ class AdjustmentPresetDto {
     required this.mode,
     required this.scope,
     required this.value,
+    required this.requireComment,
   });
 
   final String id;
@@ -1162,6 +1171,7 @@ class AdjustmentPresetDto {
   final String mode;
   final String scope;
   final double value;
+  final bool requireComment;
 
   bool get isDiscount => type == 'DISCOUNT';
   bool get isServiceCharge => type == 'SERVICE_CHARGE';
@@ -1180,6 +1190,7 @@ class AdjustmentPresetDto {
         mode: json['mode'] as String,
         scope: json['scope'] as String,
         value: (json['value'] as num?)?.toDouble() ?? 0,
+        requireComment: json['requireComment'] as bool? ?? false,
       );
 }
 
