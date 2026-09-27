@@ -25,6 +25,7 @@ const permissionMeta: Record<string, { label: string; description: string; group
   'orders.read': { label: 'Просмотр заказов', description: 'Видеть заказы ресторана', group: 'Касса и заказы' },
   'orders.write': { label: 'Работа с заказами', description: 'Создавать и изменять заказы', group: 'Касса и заказы' },
   'orders.void': { label: 'Отмена позиций', description: 'Отменять позиции и заказы', group: 'Касса и заказы' },
+  'orders.adjustments.apply': { label: 'Применять скидки и надбавки', description: 'Выбирать на POS только разрешённые для роли правила', group: 'Касса и заказы' },
   'shifts.manage': { label: 'Управление сменой', description: 'Открывать и закрывать кассовые смены', group: 'Касса и заказы' },
   'payments.write': { label: 'Оплата', description: 'Принимать и проводить оплаты', group: 'Касса и заказы' },
   'payments.refund': { label: 'Возврат оплат', description: 'Проводить полный и частичный возврат на кассе, в том числе по старым сменам', group: 'Касса и заказы' },
@@ -35,6 +36,7 @@ const permissionMeta: Record<string, { label: string; description: string; group
   'kitchen.manage': { label: 'Управление кухней', description: 'Кухонные станции и маршрутизация', group: 'BackOffice' },
   'employees.manage': { label: 'Сотрудники и роли', description: 'Создавать сотрудников, PIN и права', group: 'BackOffice' },
   'devices.manage': { label: 'Оборудование', description: 'Управлять устройствами и оборудованием', group: 'BackOffice' },
+  'pricing.manage': { label: 'Скидки и надбавки', description: 'Создавать правила, задавать процент/сумму и доступные роли', group: 'BackOffice' },
 };
 
 export function EmployeesPage({
