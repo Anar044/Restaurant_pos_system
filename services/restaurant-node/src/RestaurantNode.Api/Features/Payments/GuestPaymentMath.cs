@@ -1,4 +1,5 @@
 using RestaurantNode.Api.Domain;
+using RestaurantNode.Api.Features.Orders;
 
 namespace RestaurantNode.Api.Features.Payments;
 
@@ -34,41 +35,8 @@ internal static class GuestPaymentMath
 
     public static IReadOnlyList<GuestPaymentBalance> GetGuestBalances(Order order)
     {
+        var pricing = OrderPricingCalculator.Calculate(order);
         var guestCount = Math.Max(1, order.GuestCount);
-        var subtotals = Enumerable.Range(1, guestCount)
-            .ToDictionary(guest => guest, _ => 0m);
-
-        foreach (var item in order.Items.Where(x => x.Status != OrderItemStatus.Voided))
-        {
-            if (item.GuestNumber >= 1 && item.GuestNumber <= guestCount)
-                subtotals[item.GuestNumber] += item.LineTotal;
-        }
-
-        var rawSubtotal = subtotals.Values.Sum();
-        var totals = Enumerable.Range(1, guestCount)
-            .ToDictionary(guest => guest, _ => 0m);
-
-        if (rawSubtotal > 0m && order.Total > 0m)
-        {
-            var positiveGuests = subtotals
-                .Where(pair => pair.Value > 0m)
-                .Select(pair => pair.Key)
-                .OrderBy(guest => guest)
-                .ToArray();
-
-            var allocated = 0m;
-            for (var index = 0; index < positiveGuests.Length; index++)
-            {
-                var guest = positiveGuests[index];
-                var isLast = index == positiveGuests.Length - 1;
-                var total = isLast
-                    ? Money(Math.Max(0m, order.Total - allocated))
-                    : Money(order.Total * subtotals[guest] / rawSubtotal);
-
-                totals[guest] = total;
-                allocated = Money(allocated + total);
-            }
-        }
 
         var paid = order.Payments
             .Where(x => IsCompleted(x) && x.GuestNumber.HasValue)
@@ -78,7 +46,7 @@ internal static class GuestPaymentMath
         return Enumerable.Range(1, guestCount)
             .Select(guest =>
             {
-                var total = Money(totals[guest]);
+                var total = Money(pricing.GuestTotals.GetValueOrDefault(guest));
                 var paidAmount = Money(paid.GetValueOrDefault(guest));
                 return new GuestPaymentBalance(
                     guest,
