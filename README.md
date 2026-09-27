@@ -24,6 +24,7 @@ A clean-room restaurant POS platform started from scratch. It does **not** depen
 - Flutter POS with tables, guests, kitchen flow, payments and guest-split payments
 - SignalR realtime synchronization between POS terminals
 - Optimistic order-version conflict protection for concurrent edits
+- Active table edit locks: only one POS session can edit a table at a time
 
 ## Development seed
 
