@@ -201,6 +201,7 @@ public sealed class Order : Entity
     public DateTimeOffset? ClosedAt { get; set; }
     public List<OrderItem> Items { get; set; } = [];
     public List<Payment> Payments { get; set; } = [];
+    public List<OrderAdjustment> Adjustments { get; set; } = [];
 }
 
 public sealed class OrderItem : Entity
@@ -231,6 +232,21 @@ public sealed class OrderItemModifier : Entity
     public decimal Quantity { get; set; } = 1m;
     public decimal PriceDelta { get; set; }
     public decimal Total { get; set; }
+}
+
+public sealed class OrderAdjustment : Entity
+{
+    public Guid OrderId { get; set; }
+    public Order? Order { get; set; }
+    public OrderAdjustmentType Type { get; set; }
+    public OrderAdjustmentMode Mode { get; set; }
+    public int? GuestNumber { get; set; }
+    public decimal Value { get; set; }
+    public decimal CalculatedAmount { get; set; }
+    public string? Reason { get; set; }
+    public Guid AppliedByEmployeeId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public sealed class Payment : Entity
