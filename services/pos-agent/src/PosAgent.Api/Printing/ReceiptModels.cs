@@ -26,7 +26,10 @@ public sealed record ReceiptPrintRequest(
     DateTimeOffset? CompletedAt,
     IReadOnlyList<ReceiptLineRequest> Items,
     bool IsCopy = false,
-    IReadOnlyList<ReceiptPaymentPartRequest>? Payments = null);
+    IReadOnlyList<ReceiptPaymentPartRequest>? Payments = null,
+    decimal? Subtotal = null,
+    decimal DiscountTotal = 0m,
+    decimal SurchargeTotal = 0m);
 
 public sealed record ReceiptPrintResult(
     Guid PrinterId,
