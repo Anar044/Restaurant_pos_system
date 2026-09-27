@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using RestaurantNode.Api.Domain;
 using RestaurantNode.Api.Features.Orders;
+using RestaurantNode.Api.Features.Realtime;
 using RestaurantNode.Api.Infrastructure;
 using RestaurantNode.Api.Security;
 
