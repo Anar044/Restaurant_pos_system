@@ -25,6 +25,7 @@ builder.Services.AddScoped<PinHasher>();
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<RestaurantRealtimePublisher>();
+builder.Services.AddSingleton<OrderEditLockRegistry>();
 
 var jwtKey = builder.Configuration["Jwt:Key"]
     ?? throw new InvalidOperationException("Jwt:Key is required.");
