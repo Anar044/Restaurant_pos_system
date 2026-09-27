@@ -1928,6 +1928,14 @@ public static class OrderEndpoints
             adjustment.UpdatedAt = now;
 
             Recalculate(order);
+            if (order.Total <= 0m)
+            {
+                return Results.BadRequest(new
+                {
+                    message = "Discount cannot reduce the whole order total to zero. Full complimentary orders will use a separate manager flow."
+                });
+            }
+
             order.Version++;
             order.UpdatedAt = now;
 
