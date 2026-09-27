@@ -30,7 +30,9 @@ public static class BackOfficeAdjustmentEndpoints
                 .Select(x => new
                 {
                     x.Id,
-                    x.Name
+                    x.Name,
+                    canApplyAdjustments =
+                        x.Permissions.Contains(Permissions.OrdersAdjustmentsApply)
                 })
                 .ToListAsync(ct);
 
@@ -269,17 +271,39 @@ public static class BackOfficeAdjustmentEndpoints
 
         if (roleIds.Length > 0)
         {
-            var validCount = await db.Roles.CountAsync(
-                x => x.RestaurantId == restaurantId &&
-                     roleIds.Contains(x.Id),
-                ct);
+            var selectedRoles = await db.Roles
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    roleIds.Contains(x.Id))
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Name,
+                    x.Permissions
+                })
+                .ToListAsync(ct);
 
-            if (validCount != roleIds.Length)
+            if (selectedRoles.Count != roleIds.Length)
             {
                 return ValidationResult.Fail(
                     Results.BadRequest(new
                     {
                         message = "Одна или несколько выбранных ролей не найдены."
+                    }));
+            }
+
+            var forbiddenRole = selectedRoles.FirstOrDefault(
+                x => !x.Permissions.Contains(
+                    Permissions.OrdersAdjustmentsApply));
+
+            if (forbiddenRole is not null)
+            {
+                return ValidationResult.Fail(
+                    Results.BadRequest(new
+                    {
+                        message =
+                            $"Роль «{forbiddenRole.Name}» не имеет права применять скидки и надбавки."
                     }));
             }
         }
