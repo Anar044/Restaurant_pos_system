@@ -38,6 +38,7 @@ For V1, Restaurant Node itself is a required local dependency. Device-independen
 6. Flutter never connects directly to PostgreSQL.
 7. Device/hardware integration belongs behind Restaurant Node adapters whenever practical.
 8. Start as a modular monolith, not microservices.
+9. Financial adjustments are centrally configured in BackOffice. POS clients may only apply active presets authorized for the employee role; they never define arbitrary discount/surcharge values.
 
 ## First vertical slice
 
