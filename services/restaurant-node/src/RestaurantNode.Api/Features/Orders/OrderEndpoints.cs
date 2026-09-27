@@ -1810,6 +1810,343 @@ public static class OrderEndpoints
             return Results.Ok(ToDto(order));
         }).RequireAuthorization("payments.write");
 
+        group.MapPut("/{id:guid}/discount", async (
+            Guid id,
+            ApplyOrderDiscountRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            if (!TryAdjustmentMode(request.Mode, out var mode))
+                return Results.BadRequest(new { message = "Mode must be PERCENT or FIXED." });
+
+            if (request.Value <= 0m)
+                return Results.BadRequest(new { message = "Discount value must be greater than zero." });
+
+            if (mode == OrderAdjustmentMode.Percent && request.Value > 100m)
+                return Results.BadRequest(new { message = "Percent discount cannot exceed 100%." });
+
+            if (request.Value > 1_000_000m)
+                return Results.BadRequest(new { message = "Discount value is too large." });
+
+            var reason = NormalizeText(request.Reason, 200);
+            if (reason is null)
+                return Results.BadRequest(new { message = "Discount reason is required." });
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            var order = await db.Orders
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (order is null)
+                return Results.NotFound(new { message = "Order not found." });
+
+            if (!CanEditOrder(order.Status))
+                return Results.Conflict(new { message = $"Order cannot be discounted in status {order.Status}." });
+
+            if (request.GuestNumber is int guestNumber)
+            {
+                if (guestNumber < 1 || guestNumber > order.GuestCount)
+                    return Results.BadRequest(new { message = "Selected guest does not exist in this order." });
+
+                var hasGuestItems = order.Items.Any(x =>
+                    x.Status != OrderItemStatus.Voided &&
+                    x.GuestNumber == guestNumber);
+
+                if (!hasGuestItems)
+                    return Results.Conflict(new { message = $"Guest {guestNumber} has no active items." });
+            }
+
+            var adjustment = order.Adjustments
+                .FirstOrDefault(x =>
+                    x.Type == OrderAdjustmentType.Discount &&
+                    x.GuestNumber == request.GuestNumber);
+
+            var now = DateTimeOffset.UtcNow;
+            if (adjustment is null)
+            {
+                adjustment = new OrderAdjustment
+                {
+                    OrderId = order.Id,
+                    Type = OrderAdjustmentType.Discount,
+                    GuestNumber = request.GuestNumber,
+                    CreatedAt = now
+                };
+                order.Adjustments.Add(adjustment);
+                db.OrderAdjustments.Add(adjustment);
+            }
+
+            adjustment.Mode = mode;
+            adjustment.Value = Money(request.Value);
+            adjustment.Reason = reason;
+            adjustment.AppliedByEmployeeId = employeeId;
+            adjustment.UpdatedAt = now;
+
+            Recalculate(order);
+            order.Version++;
+            order.UpdatedAt = now;
+
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "ORDER_DISCOUNT_APPLIED",
+                "Order",
+                order.Id,
+                new
+                {
+                    adjustment.Id,
+                    adjustment.GuestNumber,
+                    mode = EnumText(adjustment.Mode),
+                    adjustment.Value,
+                    adjustment.CalculatedAmount,
+                    adjustment.Reason,
+                    order.DiscountTotal,
+                    order.Total
+                }));
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CHANGED",
+                "Order",
+                order.Id,
+                new { order.Id, order.Version }));
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return Results.Ok(ToDto(order));
+        }).RequireAuthorization("orders.write");
+
+        group.MapDelete("/{id:guid}/discount", async (
+            Guid id,
+            int? guestNumber,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            var order = await db.Orders
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (order is null)
+                return Results.NotFound(new { message = "Order not found." });
+
+            if (!CanEditOrder(order.Status))
+                return Results.Conflict(new { message = $"Order cannot be changed in status {order.Status}." });
+
+            var adjustment = order.Adjustments
+                .FirstOrDefault(x =>
+                    x.Type == OrderAdjustmentType.Discount &&
+                    x.GuestNumber == guestNumber);
+
+            if (adjustment is null)
+                return Results.Ok(ToDto(order));
+
+            var removed = new
+            {
+                adjustment.Id,
+                adjustment.GuestNumber,
+                mode = EnumText(adjustment.Mode),
+                adjustment.Value,
+                adjustment.CalculatedAmount,
+                adjustment.Reason
+            };
+
+            order.Adjustments.Remove(adjustment);
+            db.OrderAdjustments.Remove(adjustment);
+
+            Recalculate(order);
+            order.Version++;
+            order.UpdatedAt = DateTimeOffset.UtcNow;
+
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "ORDER_DISCOUNT_REMOVED",
+                "Order",
+                order.Id,
+                removed));
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CHANGED",
+                "Order",
+                order.Id,
+                new { order.Id, order.Version }));
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return Results.Ok(ToDto(order));
+        }).RequireAuthorization("orders.write");
+
+        group.MapPut("/{id:guid}/service-charge", async (
+            Guid id,
+            ApplyServiceChargeRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            if (!TryAdjustmentMode(request.Mode, out var mode))
+                return Results.BadRequest(new { message = "Mode must be PERCENT or FIXED." });
+
+            if (request.Value <= 0m)
+                return Results.BadRequest(new { message = "Service charge value must be greater than zero." });
+
+            if (mode == OrderAdjustmentMode.Percent && request.Value > 100m)
+                return Results.BadRequest(new { message = "Service charge percent cannot exceed 100%." });
+
+            if (request.Value > 1_000_000m)
+                return Results.BadRequest(new { message = "Service charge value is too large." });
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            var order = await db.Orders
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (order is null)
+                return Results.NotFound(new { message = "Order not found." });
+
+            if (!CanEditOrder(order.Status))
+                return Results.Conflict(new { message = $"Order cannot be changed in status {order.Status}." });
+
+            if (!order.Items.Any(x => x.Status != OrderItemStatus.Voided))
+                return Results.Conflict(new { message = "Order has no active items." });
+
+            var adjustment = order.Adjustments
+                .FirstOrDefault(x => x.Type == OrderAdjustmentType.ServiceCharge);
+
+            var now = DateTimeOffset.UtcNow;
+            if (adjustment is null)
+            {
+                adjustment = new OrderAdjustment
+                {
+                    OrderId = order.Id,
+                    Type = OrderAdjustmentType.ServiceCharge,
+                    CreatedAt = now
+                };
+                order.Adjustments.Add(adjustment);
+                db.OrderAdjustments.Add(adjustment);
+            }
+
+            adjustment.Mode = mode;
+            adjustment.Value = Money(request.Value);
+            adjustment.GuestNumber = null;
+            adjustment.Reason = NormalizeText(request.Reason, 200) ?? "Сервисный сбор";
+            adjustment.AppliedByEmployeeId = employeeId;
+            adjustment.UpdatedAt = now;
+
+            Recalculate(order);
+            order.Version++;
+            order.UpdatedAt = now;
+
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "SERVICE_CHARGE_APPLIED",
+                "Order",
+                order.Id,
+                new
+                {
+                    adjustment.Id,
+                    mode = EnumText(adjustment.Mode),
+                    adjustment.Value,
+                    adjustment.CalculatedAmount,
+                    adjustment.Reason,
+                    order.SurchargeTotal,
+                    order.Total
+                }));
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CHANGED",
+                "Order",
+                order.Id,
+                new { order.Id, order.Version }));
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return Results.Ok(ToDto(order));
+        }).RequireAuthorization("orders.write");
+
+        group.MapDelete("/{id:guid}/service-charge", async (
+            Guid id,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            var order = await db.Orders
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (order is null)
+                return Results.NotFound(new { message = "Order not found." });
+
+            if (!CanEditOrder(order.Status))
+                return Results.Conflict(new { message = $"Order cannot be changed in status {order.Status}." });
+
+            var adjustments = order.Adjustments
+                .Where(x => x.Type == OrderAdjustmentType.ServiceCharge)
+                .ToArray();
+
+            if (adjustments.Length == 0)
+                return Results.Ok(ToDto(order));
+
+            var removed = adjustments.Select(x => new
+            {
+                x.Id,
+                mode = EnumText(x.Mode),
+                x.Value,
+                x.CalculatedAmount,
+                x.Reason
+            }).ToArray();
+
+            foreach (var adjustment in adjustments)
+            {
+                order.Adjustments.Remove(adjustment);
+                db.OrderAdjustments.Remove(adjustment);
+            }
+
+            Recalculate(order);
+            order.Version++;
+            order.UpdatedAt = DateTimeOffset.UtcNow;
+
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "SERVICE_CHARGE_REMOVED",
+                "Order",
+                order.Id,
+                new { removed }));
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CHANGED",
+                "Order",
+                order.Id,
+                new { order.Id, order.Version }));
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return Results.Ok(ToDto(order));
+        }).RequireAuthorization("orders.write");
+
         group.MapDelete("/{id:guid}/items/{itemId:guid}", async (Guid id, Guid itemId, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
             if (!TryClaims(user, out var restaurantId, out var employeeId)) return Results.Unauthorized();
@@ -1839,11 +2176,8 @@ public static class OrderEndpoints
         return app;
     }
 
-    private static void Recalculate(Order order)
-    {
-        order.Subtotal = order.Items.Where(x => x.Status != OrderItemStatus.Voided).Sum(x => x.LineTotal);
-        order.Total = decimal.Round(order.Subtotal - order.DiscountTotal + order.SurchargeTotal, 4, MidpointRounding.AwayFromZero);
-    }
+    private static void Recalculate(Order order) =>
+        OrderPricingCalculator.Recalculate(order);
 
     private static bool CanEditOrder(OrderStatus status) =>
         status is not (OrderStatus.Closed or OrderStatus.Cancelled or OrderStatus.Paid or OrderStatus.PartiallyPaid);
@@ -1867,6 +2201,31 @@ public static class OrderEndpoints
             _ => OrderStatus.Open
         };
     }
+
+    private static bool TryAdjustmentMode(
+        string? raw,
+        out OrderAdjustmentMode mode)
+    {
+        mode = default;
+        var normalized = raw?.Trim().Replace("-", "_").ToUpperInvariant();
+        return normalized switch
+        {
+            "PERCENT" => SetMode(OrderAdjustmentMode.Percent, out mode),
+            "FIXED" => SetMode(OrderAdjustmentMode.Fixed, out mode),
+            _ => false
+        };
+    }
+
+    private static bool SetMode(
+        OrderAdjustmentMode value,
+        out OrderAdjustmentMode mode)
+    {
+        mode = value;
+        return true;
+    }
+
+    private static decimal Money(decimal value) =>
+        decimal.Round(value, 4, MidpointRounding.AwayFromZero);
 
     private static string? NormalizeText(string? value, int maxLength)
     {
@@ -1903,6 +2262,23 @@ public static class OrderEndpoints
         order.CreatedAt,
         order.UpdatedAt,
         order.ClosedAt,
+        adjustments = order.Adjustments
+            .OrderBy(x => x.Type)
+            .ThenBy(x => x.GuestNumber)
+            .ThenBy(x => x.CreatedAt)
+            .Select(x => new
+            {
+                x.Id,
+                type = EnumText(x.Type),
+                mode = EnumText(x.Mode),
+                x.GuestNumber,
+                x.Value,
+                x.CalculatedAmount,
+                x.Reason,
+                x.AppliedByEmployeeId,
+                x.CreatedAt,
+                x.UpdatedAt
+            }),
         payments = order.Payments
             .GroupBy(x => x.Id)
             .Select(group => group.First())
@@ -1997,3 +2373,12 @@ public sealed record TransferOrderItemsRequest(Guid TargetTableId, Guid[]? ItemI
 public sealed record UpdateOrderItemCommentRequest(string? Comment);
 public sealed record UpdateOrderItemModifiersRequest(ModifierSelectionRequest[]? Modifiers);
 public sealed record VoidOrderItemRequest(string? Reason);
+public sealed record ApplyOrderDiscountRequest(
+    string Mode,
+    decimal Value,
+    string? Reason,
+    int? GuestNumber = null);
+public sealed record ApplyServiceChargeRequest(
+    string Mode,
+    decimal Value,
+    string? Reason = null);
