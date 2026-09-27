@@ -1872,6 +1872,16 @@ public static class OrderEndpoints
             if (preset is null)
                 return Results.Forbid();
 
+            var applicationComment = NormalizeText(request.Comment, 300);
+            if (preset.RequireComment && applicationComment is null)
+            {
+                return Results.BadRequest(new
+                {
+                    code = "ADJUSTMENT_COMMENT_REQUIRED",
+                    message = "Для этой скидки обязательно укажите комментарий."
+                });
+            }
+
             var guestScoped = request.GuestNumber.HasValue;
             if (guestScoped &&
                 preset.Scope is not (OrderAdjustmentScope.Guest or OrderAdjustmentScope.Both))
@@ -1940,7 +1950,7 @@ public static class OrderEndpoints
             adjustment.Value = Money(preset.Value);
             adjustment.PresetId = preset.Id;
             adjustment.PresetNameSnapshot = preset.Name;
-            adjustment.Reason = preset.Name;
+            adjustment.Reason = applicationComment;
             adjustment.AppliedByEmployeeId = employeeId;
             adjustment.UpdatedAt = now;
 
@@ -2085,6 +2095,16 @@ public static class OrderEndpoints
             if (preset is null)
                 return Results.Forbid();
 
+            var applicationComment = NormalizeText(request.Comment, 300);
+            if (preset.RequireComment && applicationComment is null)
+            {
+                return Results.BadRequest(new
+                {
+                    code = "ADJUSTMENT_COMMENT_REQUIRED",
+                    message = "Для этой надбавки обязательно укажите комментарий."
+                });
+            }
+
             if (preset.Scope != OrderAdjustmentScope.Order)
             {
                 return Results.BadRequest(new
@@ -2130,7 +2150,7 @@ public static class OrderEndpoints
             adjustment.GuestNumber = null;
             adjustment.PresetId = preset.Id;
             adjustment.PresetNameSnapshot = preset.Name;
-            adjustment.Reason = preset.Name;
+            adjustment.Reason = applicationComment;
             adjustment.AppliedByEmployeeId = employeeId;
             adjustment.UpdatedAt = now;
 
@@ -2535,6 +2555,8 @@ public sealed record UpdateOrderItemModifiersRequest(ModifierSelectionRequest[]?
 public sealed record VoidOrderItemRequest(string? Reason);
 public sealed record ApplyOrderDiscountRequest(
     Guid PresetId,
-    int? GuestNumber = null);
+    int? GuestNumber = null,
+    string? Comment = null);
 public sealed record ApplyServiceChargeRequest(
-    Guid PresetId);
+    Guid PresetId,
+    string? Comment = null);
