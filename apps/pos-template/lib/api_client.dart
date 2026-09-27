@@ -37,6 +37,7 @@ class PosApiClient {
 
   final String baseUrl;
   final http.Client _http;
+  final Map<String, int> _orderVersions = <String, int>{};
   AuthSession? session;
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
@@ -45,6 +46,36 @@ class PosApiClient {
         'Content-Type': 'application/json',
         if (session != null) 'Authorization': 'Bearer ${session!.token}',
       };
+
+  Map<String, String> _orderHeaders(String orderId) {
+    final version = _orderVersions[orderId];
+    return {
+      ..._headers,
+      if (version != null) 'If-Match': '"$version"',
+    };
+  }
+
+  void _rememberOrderVersions(Object? value) {
+    if (value is List) {
+      for (final item in value) {
+        _rememberOrderVersions(item);
+      }
+      return;
+    }
+
+    if (value is! Map) return;
+
+    final id = value['id'];
+    final version = value['version'];
+    final items = value['items'];
+    if (id is String && version is num && items is List) {
+      _orderVersions[id] = version.toInt();
+    }
+
+    for (final nested in value.values) {
+      _rememberOrderVersions(nested);
+    }
+  }
 
   Future<AuthSession> loginWithPin(String restaurantId, String pin) async {
     final response = await _http.post(
@@ -221,7 +252,7 @@ class PosApiClient {
   }) async {
     final response = await _http.post(
       _uri('/api/v1/orders/$orderId/items'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
       body: jsonEncode({
         'productId': productId,
         'quantity': 1,
@@ -237,7 +268,7 @@ class PosApiClient {
   Future<OrderDto> updateGuestCount(String orderId, int guestCount) async {
     final response = await _http.put(
       _uri('/api/v1/orders/$orderId/guest-count'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
       body: jsonEncode({'guestCount': guestCount}),
     );
     return OrderDto.fromJson(_decode(response));
@@ -246,7 +277,7 @@ class PosApiClient {
   Future<OrderDto> addGuest(String orderId) async {
     final response = await _http.post(
       _uri('/api/v1/orders/$orderId/guests'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
     );
     return OrderDto.fromJson(_decode(response));
   }
@@ -254,7 +285,7 @@ class PosApiClient {
   Future<OrderDto> removeGuest(String orderId, int guestNumber) async {
     final response = await _http.delete(
       _uri('/api/v1/orders/$orderId/guests/$guestNumber'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
     );
     return OrderDto.fromJson(_decode(response));
   }
@@ -266,7 +297,7 @@ class PosApiClient {
   ) async {
     final response = await _http.put(
       _uri('/api/v1/orders/$orderId/items/$itemId/guest'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
       body: jsonEncode({'guestNumber': guestNumber}),
     );
     return OrderDto.fromJson(_decode(response));
@@ -275,7 +306,7 @@ class PosApiClient {
   Future<OrderDto> moveOrder(String orderId, String tableId) async {
     final response = await _http.put(
       _uri('/api/v1/orders/$orderId/table'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
       body: jsonEncode({'tableId': tableId}),
     );
     return OrderDto.fromJson(_decode(response));
@@ -288,7 +319,7 @@ class PosApiClient {
   }) async {
     final response = await _http.post(
       _uri('/api/v1/orders/$orderId/transfer-items'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
       body: jsonEncode({
         'targetTableId': targetTableId,
         'itemIds': itemIds,
@@ -304,7 +335,7 @@ class PosApiClient {
   ) async {
     final response = await _http.put(
       _uri('/api/v1/orders/$orderId/items/$itemId/comment'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
       body: jsonEncode({'comment': comment}),
     );
     return OrderDto.fromJson(_decode(response));
@@ -316,7 +347,7 @@ class PosApiClient {
   ) async {
     final response = await _http.put(
       _uri('/api/v1/orders/$orderId/items/$itemId/modifiers'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
       body: jsonEncode({
         'modifiers': modifiers.map((item) => item.toJson()).toList(),
       }),
@@ -332,7 +363,7 @@ class PosApiClient {
   ) async {
     final response = await _http.post(
       _uri('/api/v1/orders/$orderId/items/$itemId/void'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
       body: jsonEncode({'reason': reason}),
     );
     return OrderDto.fromJson(_decode(response));
@@ -341,7 +372,7 @@ class PosApiClient {
   Future<OrderDto> deleteItem(String orderId, String itemId) async {
     final response = await _http.delete(
       _uri('/api/v1/orders/$orderId/items/$itemId'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
     );
     return OrderDto.fromJson(_decode(response));
   }
@@ -349,7 +380,7 @@ class PosApiClient {
   Future<OrderDto> sendOrderToKitchen(String orderId) async {
     final response = await _http.post(
       _uri('/api/v1/orders/$orderId/send'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
     );
     return OrderDto.fromJson(_decode(response));
   }
@@ -365,7 +396,7 @@ class PosApiClient {
   }) async {
     final response = await _http.post(
       _uri('/api/v1/payments'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
       body: jsonEncode({
         'orderId': orderId,
         'shiftId': shiftId,
@@ -383,7 +414,7 @@ class PosApiClient {
   Future<OrderDto> closeOrder(String orderId) async {
     final response = await _http.post(
       _uri('/api/v1/orders/$orderId/close'),
-      headers: _headers,
+      headers: _orderHeaders(orderId),
     );
     return OrderDto.fromJson(_decode(response));
   }
@@ -400,6 +431,8 @@ class PosApiClient {
         response.statusCode,
       );
     }
+
+    _rememberOrderVersions(data);
     return data;
   }
 }
