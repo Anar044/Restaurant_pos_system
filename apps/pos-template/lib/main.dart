@@ -4187,7 +4187,11 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
         : '${adjustment.value.toStringAsFixed(2)} AZN';
 
     final sign = adjustment.isDiscount ? '-' : '+';
-    return '$value · $sign${adjustment.calculatedAmount.toStringAsFixed(2)} AZN';
+    final amount =
+        '$value · $sign${adjustment.calculatedAmount.toStringAsFixed(2)} AZN';
+    final reason = adjustment.reason?.trim();
+    if (reason == null || reason.isEmpty) return amount;
+    return '$amount\n${adjustment.isDiscount ? 'Причина' : 'Описание'}: $reason';
   }
 
   Future<void> _editDiscount(int? guestNumber) async {
@@ -6110,7 +6114,7 @@ class _OrderPane extends StatelessWidget {
               label: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 child: Text(
-                  'Скидки / сервис · Гость $selectedGuestNumber',
+                  'Скидки / сервис',
                 ),
               ),
             ),
