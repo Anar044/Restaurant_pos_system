@@ -9,7 +9,8 @@ public sealed class RestaurantRealtimeMiddleware(RequestDelegate next)
     public async Task InvokeAsync(
         HttpContext context,
         RestaurantDbContext db,
-        RestaurantRealtimePublisher publisher)
+        RestaurantRealtimePublisher publisher,
+        OrderEditLockRegistry editLocks)
     {
         var isMutation = !HttpMethods.IsGet(context.Request.Method) &&
                          !HttpMethods.IsHead(context.Request.Method) &&
@@ -33,24 +34,40 @@ public sealed class RestaurantRealtimeMiddleware(RequestDelegate next)
                 return;
             }
 
-            if (expectedVersion.HasValue)
-            {
-                var currentVersion = await db.Orders
-                    .AsNoTracking()
-                    .Where(x =>
-                        x.Id == orderId &&
-                        x.RestaurantId == restaurantId)
-                    .Select(x => (int?)x.Version)
-                    .FirstOrDefaultAsync(context.RequestAborted);
-
-                if (currentVersion.HasValue &&
-                    currentVersion.Value != expectedVersion.Value)
+            var orderState = await db.Orders
+                .AsNoTracking()
+                .Where(x =>
+                    x.Id == orderId &&
+                    x.RestaurantId == restaurantId)
+                .Select(x => new
                 {
-                    await WriteResultAsync(
-                        context,
-                        OrderConcurrency.Conflict(orderId, currentVersion.Value));
+                    x.Version,
+                    x.TableId
+                })
+                .FirstOrDefaultAsync(context.RequestAborted);
+
+            if (orderState?.TableId is Guid tableId)
+            {
+                var lockConflict = editLocks.ValidateMutation(
+                    context.Request,
+                    restaurantId,
+                    tableId);
+
+                if (lockConflict is not null)
+                {
+                    await WriteResultAsync(context, lockConflict);
                     return;
                 }
+            }
+
+            if (expectedVersion.HasValue &&
+                orderState is not null &&
+                orderState.Version != expectedVersion.Value)
+            {
+                await WriteResultAsync(
+                    context,
+                    OrderConcurrency.Conflict(orderId, orderState.Version));
+                return;
             }
         }
 
