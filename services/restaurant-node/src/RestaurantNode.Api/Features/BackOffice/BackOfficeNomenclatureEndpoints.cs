@@ -39,7 +39,7 @@ public static class BackOfficeNomenclatureEndpoints
                 .Select(x => new { id = x.Id, name = x.Name, isActive = x.IsActive })
                 .ToListAsync(ct);
 
-            var preparationPlaces = await db.KitchenStations
+            var preparationPlaceTypes = await db.PreparationPlaceTypes
                 .AsNoTracking()
                 .Where(x => x.RestaurantId == restaurantId)
                 .OrderBy(x => x.Name)
@@ -58,7 +58,7 @@ public static class BackOfficeNomenclatureEndpoints
                     categoryName = x.CategoryId == null
                         ? null
                         : db.Categories.Where(c => c.Id == x.CategoryId).Select(c => c.Name).FirstOrDefault(),
-                    kitchenStationId = x.KitchenStationId,
+                    preparationPlaceTypeId = x.PreparationPlaceTypeId,
                     name = x.Name,
                     sku = x.Sku,
                     type = x.Type,
@@ -97,7 +97,7 @@ public static class BackOfficeNomenclatureEndpoints
                 supportedTypes = SupportedTypes,
                 currencyCode = restaurant.CurrencyCode,
                 categories,
-                preparationPlaces,
+                preparationPlaceTypes,
                 items
             });
         });
@@ -119,7 +119,7 @@ public static class BackOfficeNomenclatureEndpoints
             {
                 RestaurantId = restaurantId,
                 CategoryId = request.CategoryId,
-                KitchenStationId = request.KitchenStationId,
+                PreparationPlaceTypeId = request.PreparationPlaceTypeId,
                 Name = validation.Name!,
                 Sku = validation.Sku,
                 Type = validation.Type!,
@@ -187,7 +187,7 @@ public static class BackOfficeNomenclatureEndpoints
                 return validation.Error;
 
             item.CategoryId = request.CategoryId;
-            item.KitchenStationId = request.KitchenStationId;
+            item.PreparationPlaceTypeId = request.PreparationPlaceTypeId;
             item.Name = validation.Name!;
             item.Sku = validation.Sku;
             item.Type = validation.Type!;
@@ -373,12 +373,14 @@ public static class BackOfficeNomenclatureEndpoints
                 return ItemValidationResult.Fail(Results.BadRequest(new { message = "Категория меню не найдена." }));
         }
 
-        if (request.KitchenStationId is not null)
+        if (request.PreparationPlaceTypeId is not null)
         {
-            var stationExists = await db.KitchenStations.AnyAsync(
-                x => x.Id == request.KitchenStationId && x.RestaurantId == restaurantId,
+            var typeExists = await db.PreparationPlaceTypes.AnyAsync(
+                x => x.Id == request.PreparationPlaceTypeId &&
+                     x.RestaurantId == restaurantId &&
+                     x.IsActive,
                 ct);
-            if (!stationExists)
+            if (!typeExists)
                 return ItemValidationResult.Fail(Results.BadRequest(new { message = "Тип места приготовления не найден." }));
         }
 
@@ -451,7 +453,7 @@ public sealed record UpsertNomenclatureItemRequest(
     bool IsActive,
     int SortOrder,
     Guid? CategoryId,
-    Guid? KitchenStationId,
+    Guid? PreparationPlaceTypeId,
     decimal? Price);
 
 public sealed record RecipeLineRequest(Guid IngredientProductId, decimal Quantity);
