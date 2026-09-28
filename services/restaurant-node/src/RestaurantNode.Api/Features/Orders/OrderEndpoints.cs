@@ -274,12 +274,29 @@ public static class OrderEndpoints
                 .Distinct()
                 .ToArray();
 
-            var modifierEntities = await db.Modifiers
+            var modifierPriceAt = DateTimeOffset.UtcNow;
+            var modifierEntities = await db.Products
                 .AsNoTracking()
                 .Where(x =>
                     x.RestaurantId == restaurantId &&
                     x.IsActive &&
+                    x.IsSellable &&
+                    x.Type == "MODIFIER" &&
                     selectedModifierIds.Contains(x.Id))
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Name,
+                    PriceDelta = db.ProductPrices
+                        .Where(price =>
+                            price.RestaurantId == restaurantId &&
+                            price.ProductId == x.Id &&
+                            price.ValidFrom <= modifierPriceAt &&
+                            (price.ValidTo == null || price.ValidTo > modifierPriceAt))
+                        .OrderByDescending(price => price.ValidFrom)
+                        .Select(price => (decimal?)price.Amount)
+                        .FirstOrDefault() ?? 0m
+                })
                 .ToDictionaryAsync(x => x.Id, ct);
 
             foreach (var group in modifierGroups.Values)
@@ -1012,12 +1029,29 @@ public static class OrderEndpoints
                 .Distinct()
                 .ToArray();
 
-            var modifierEntities = await db.Modifiers
+            var modifierPriceAt = DateTimeOffset.UtcNow;
+            var modifierEntities = await db.Products
                 .AsNoTracking()
                 .Where(x =>
                     x.RestaurantId == restaurantId &&
                     x.IsActive &&
+                    x.IsSellable &&
+                    x.Type == "MODIFIER" &&
                     selectedModifierIds.Contains(x.Id))
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Name,
+                    PriceDelta = db.ProductPrices
+                        .Where(price =>
+                            price.RestaurantId == restaurantId &&
+                            price.ProductId == x.Id &&
+                            price.ValidFrom <= modifierPriceAt &&
+                            (price.ValidTo == null || price.ValidTo > modifierPriceAt))
+                        .OrderByDescending(price => price.ValidFrom)
+                        .Select(price => (decimal?)price.Amount)
+                        .FirstOrDefault() ?? 0m
+                })
                 .ToDictionaryAsync(x => x.Id, ct);
 
             foreach (var group in modifierGroups.Values)
