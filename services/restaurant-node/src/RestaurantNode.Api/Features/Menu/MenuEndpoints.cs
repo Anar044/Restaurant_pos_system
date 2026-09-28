@@ -20,7 +20,11 @@ public static class MenuEndpoints
 
             var categories = await db.Categories
                 .AsNoTracking()
-                .Where(x => x.RestaurantId == restaurantId && x.IsActive)
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive &&
+                    x.IsSellable &&
+                    x.Type != "MODIFIER")
                 .OrderBy(x => x.SortOrder)
                 .ThenBy(x => x.Name)
                 .Select(x => new
@@ -100,12 +104,28 @@ public static class MenuEndpoints
                 .Distinct()
                 .ToArray();
 
-            var modifiers = await db.Modifiers
+            var modifiers = await db.Products
                 .AsNoTracking()
                 .Where(x =>
                     x.RestaurantId == restaurantId &&
                     x.IsActive &&
+                    x.IsSellable &&
+                    x.Type == "MODIFIER" &&
                     modifierIds.Contains(x.Id))
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Name,
+                    PriceDelta = db.ProductPrices
+                        .Where(price =>
+                            price.RestaurantId == restaurantId &&
+                            price.ProductId == x.Id &&
+                            price.ValidFrom <= now &&
+                            (price.ValidTo == null || price.ValidTo > now))
+                        .OrderByDescending(price => price.ValidFrom)
+                        .Select(price => (decimal?)price.Amount)
+                        .FirstOrDefault() ?? 0m
+                })
                 .ToDictionaryAsync(x => x.Id, ct);
 
             var result = categories.Select(category => new
