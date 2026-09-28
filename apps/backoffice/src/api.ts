@@ -616,6 +616,79 @@ export type UpsertAdjustmentPresetInput = {
   categoryIds: string[];
 };
 
+export type InventoryWarehouse = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  createdAt: string;
+};
+
+export type InventoryWarehouseBalance = {
+  warehouseId: string;
+  warehouseName: string;
+  quantity: number;
+};
+
+export type InventoryStockItem = {
+  id: string;
+  name: string;
+  sku: string | null;
+  unit: string;
+  minStock: number;
+  isActive: boolean;
+  createdAt: string;
+  totalStock: number;
+  warehouseBalances: InventoryWarehouseBalance[];
+};
+
+export type InventoryMovement = {
+  id: string;
+  warehouseId: string;
+  warehouseName: string;
+  stockItemId: string;
+  stockItemName: string;
+  unit: string;
+  employeeId: string;
+  type: 'RECEIPT' | 'WRITE_OFF';
+  quantityDelta: number;
+  note: string | null;
+  createdAt: string;
+};
+
+export type BackOfficeInventory = {
+  warehouses: InventoryWarehouse[];
+  items: InventoryStockItem[];
+  recentMovements: InventoryMovement[];
+};
+
+export type CreateWarehouseInput = {
+  name: string;
+};
+
+export type UpdateWarehouseInput = {
+  name: string;
+  isActive: boolean;
+};
+
+export type CreateStockItemInput = {
+  name: string;
+  sku: string | null;
+  unit: string;
+  minStock: number;
+};
+
+export type UpdateStockItemInput = CreateStockItemInput & {
+  isActive: boolean;
+};
+
+export type CreateStockMovementInput = {
+  warehouseId: string;
+  stockItemId: string;
+  type: 'RECEIPT' | 'WRITE_OFF';
+  quantity: number;
+  note: string | null;
+};
+
 export type RefundPaymentResult = {
   refund: {
     id: string;
@@ -1046,6 +1119,62 @@ export async function updateAdjustmentPreset(
     },
     token,
   );
+}
+
+export async function getBackOfficeInventory(token: string): Promise<BackOfficeInventory> {
+  return request<BackOfficeInventory>('/api/v1/backoffice/inventory', {}, token);
+}
+
+export async function createWarehouse(
+  token: string,
+  input: CreateWarehouseInput,
+): Promise<InventoryWarehouse> {
+  return request<InventoryWarehouse>('/api/v1/backoffice/inventory/warehouses', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateWarehouse(
+  token: string,
+  warehouseId: string,
+  input: UpdateWarehouseInput,
+): Promise<InventoryWarehouse> {
+  return request<InventoryWarehouse>(`/api/v1/backoffice/inventory/warehouses/${warehouseId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createStockItem(
+  token: string,
+  input: CreateStockItemInput,
+): Promise<InventoryStockItem> {
+  return request<InventoryStockItem>('/api/v1/backoffice/inventory/items', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateStockItem(
+  token: string,
+  itemId: string,
+  input: UpdateStockItemInput,
+): Promise<InventoryStockItem> {
+  return request<InventoryStockItem>(`/api/v1/backoffice/inventory/items/${itemId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createStockMovement(
+  token: string,
+  input: CreateStockMovementInput,
+): Promise<InventoryMovement> {
+  return request<InventoryMovement>('/api/v1/backoffice/inventory/movements', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
 }
 
 export async function getBackOfficeFinance(
