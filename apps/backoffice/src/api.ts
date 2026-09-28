@@ -163,15 +163,6 @@ export type UpdateModifierGroupInput = CreateModifierGroupInput & {
   isActive: boolean;
 };
 
-export type CreateModifierInput = {
-  name: string;
-  priceDelta: number;
-};
-
-export type UpdateModifierInput = CreateModifierInput & {
-  isActive: boolean;
-};
-
 export type CreateCategoryInput = {
   name: string;
   sortOrder: number;
@@ -962,27 +953,6 @@ export async function updateModifierGroup(
   input: UpdateModifierGroupInput,
 ): Promise<BackOfficeModifierGroup> {
   return request(`/api/v1/backoffice/modifiers/groups/${groupId}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function createModifier(
-  token: string,
-  input: CreateModifierInput,
-): Promise<BackOfficeModifier> {
-  return request('/api/v1/backoffice/modifiers/items', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function updateModifier(
-  token: string,
-  modifierId: string,
-  input: UpdateModifierInput,
-): Promise<BackOfficeModifier> {
-  return request(`/api/v1/backoffice/modifiers/items/${modifierId}`, {
     method: 'PUT',
     body: JSON.stringify(input),
   }, token);
