@@ -163,14 +163,6 @@ public sealed class ModifierGroup : Entity
     public bool IsActive { get; set; } = true;
 }
 
-public sealed class Modifier : Entity
-{
-    public Guid RestaurantId { get; set; }
-    public required string Name { get; set; }
-    public decimal PriceDelta { get; set; }
-    public bool IsActive { get; set; } = true;
-}
-
 public sealed class ProductModifierGroup
 {
     public Guid ProductId { get; set; }
