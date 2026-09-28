@@ -1188,6 +1188,7 @@ class AdjustmentPresetDto {
     required this.weekdayMask,
     required this.productIds,
     required this.categoryIds,
+    required this.eligibleOrderItemIds,
     required this.requireComment,
     this.startMinute,
     this.endMinute,
@@ -1209,6 +1210,7 @@ class AdjustmentPresetDto {
   final int? endMinute;
   final List<String> productIds;
   final List<String> categoryIds;
+  final List<String> eligibleOrderItemIds;
   final bool requireComment;
 
   bool get isDiscount => type == 'DISCOUNT';
@@ -1244,6 +1246,10 @@ class AdjustmentPresetDto {
         categoryIds: ((json['categoryIds'] as List<dynamic>?) ?? const [])
             .map((value) => value.toString())
             .toList(),
+        eligibleOrderItemIds:
+            ((json['eligibleOrderItemIds'] as List<dynamic>?) ?? const [])
+                .map((value) => value.toString())
+                .toList(),
         requireComment: json['requireComment'] as bool? ?? false,
       );
 }
