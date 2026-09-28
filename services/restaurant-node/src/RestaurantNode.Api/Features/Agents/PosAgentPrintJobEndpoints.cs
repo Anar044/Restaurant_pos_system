@@ -218,18 +218,18 @@ public static class PosAgentPrintJobEndpoints
         CancellationToken ct)
     {
         var rows = await (
-            from station in db.KitchenStations.AsNoTracking()
+            from department in db.RestaurantDepartments.AsNoTracking()
             join printer in db.Printers.AsNoTracking()
-                on station.PrinterId equals (Guid?)printer.Id
-            where station.RestaurantId == restaurantId &&
-                  station.IsActive &&
+                on department.PrinterId equals (Guid?)printer.Id
+            where department.RestaurantId == restaurantId &&
+                  department.IsActive &&
                   printer.RestaurantId == restaurantId &&
                   printer.HostDeviceId == deviceId &&
                   printer.IsConfigured &&
                   printer.IsActive
             select new
             {
-                station.Id,
+                department.Id,
                 PrinterId = printer.Id,
                 PrinterName = printer.Name,
                 printer.ConnectionType,
