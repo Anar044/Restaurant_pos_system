@@ -84,6 +84,8 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
             migrationBuilder.DropTable(
                 name: "group_preparation_maps");
 
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_halls_RestaurantId_Name\";");
+
             migrationBuilder.CreateIndex(
                 name: "IX_halls_GroupId_Name",
                 table: "halls",
