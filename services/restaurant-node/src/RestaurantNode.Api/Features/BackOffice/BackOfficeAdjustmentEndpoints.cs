@@ -113,6 +113,7 @@ public static class BackOfficeAdjustmentEndpoints
                 Scope = validation.Scope!.Value,
                 ApplicationMode = validation.ApplicationMode!.Value,
                 TimeBasis = validation.TimeBasis!.Value,
+                TargetMode = validation.TargetMode!.Value,
                 Value = Money(request.Value),
                 Priority = request.Priority,
                 CanStack = request.CanStack,
@@ -186,6 +187,7 @@ public static class BackOfficeAdjustmentEndpoints
             preset.ApplicationMode =
                 validation.ApplicationMode!.Value;
             preset.TimeBasis = validation.TimeBasis!.Value;
+            preset.TargetMode = validation.TargetMode!.Value;
             preset.Value = Money(request.Value);
             preset.Priority = request.Priority;
             preset.CanStack = request.CanStack;
@@ -247,12 +249,15 @@ public static class BackOfficeAdjustmentEndpoints
                 out OrderAdjustmentApplicationMode applicationMode) ||
             !TryEnum(
                 request.TimeBasis,
-                out OrderAdjustmentTimeBasis timeBasis))
+                out OrderAdjustmentTimeBasis timeBasis) ||
+            !TryEnum(
+                request.TargetMode,
+                out OrderAdjustmentTargetMode targetMode))
         {
             return ValidationResult.Fail(
                 Results.BadRequest(new
                 {
-                    message = "Некорректный тип, режим, область или режим времени правила."
+                    message = "Некорректный тип, режим, область, цель или режим времени правила."
                 }));
         }
 
@@ -276,6 +281,18 @@ public static class BackOfficeAdjustmentEndpoints
                 {
                     message =
                         "Автоматическое правило должно иметь область «весь заказ»."
+                }));
+        }
+
+        if (applicationMode ==
+                OrderAdjustmentApplicationMode.Automatic &&
+            targetMode == OrderAdjustmentTargetMode.PosSelection)
+        {
+            return ValidationResult.Fail(
+                Results.BadRequest(new
+                {
+                    message =
+                        "Автоматическое правило не может требовать выбора позиций кассиром."
                 }));
         }
 
@@ -399,10 +416,13 @@ public static class BackOfficeAdjustmentEndpoints
             }
         }
 
-        var productIds = (request.ProductIds ?? [])
-            .Where(x => x != Guid.Empty)
-            .Distinct()
-            .ToArray();
+        var productIds = targetMode ==
+                OrderAdjustmentTargetMode.PresetSelection
+            ? (request.ProductIds ?? [])
+                .Where(x => x != Guid.Empty)
+                .Distinct()
+                .ToArray()
+            : [];
 
         if (productIds.Length > 0)
         {
@@ -423,10 +443,13 @@ public static class BackOfficeAdjustmentEndpoints
             }
         }
 
-        var categoryIds = (request.CategoryIds ?? [])
-            .Where(x => x != Guid.Empty)
-            .Distinct()
-            .ToArray();
+        var categoryIds = targetMode ==
+                OrderAdjustmentTargetMode.PresetSelection
+            ? (request.CategoryIds ?? [])
+                .Where(x => x != Guid.Empty)
+                .Distinct()
+                .ToArray()
+            : [];
 
         if (categoryIds.Length > 0)
         {
@@ -447,6 +470,19 @@ public static class BackOfficeAdjustmentEndpoints
             }
         }
 
+        if (targetMode ==
+                OrderAdjustmentTargetMode.PresetSelection &&
+            productIds.Length == 0 &&
+            categoryIds.Length == 0)
+        {
+            return ValidationResult.Fail(
+                Results.BadRequest(new
+                {
+                    message =
+                        "Для режима «Заданные категории / блюда» выберите хотя бы одну категорию или блюдо."
+                }));
+        }
+
         return new ValidationResult(
             name,
             type,
@@ -454,6 +490,7 @@ public static class BackOfficeAdjustmentEndpoints
             scope,
             applicationMode,
             timeBasis,
+            targetMode,
             roleIds,
             productIds,
             categoryIds,
@@ -606,6 +643,7 @@ public static class BackOfficeAdjustmentEndpoints
         scope = EnumText(preset.Scope),
         applicationMode = EnumText(preset.ApplicationMode),
         timeBasis = EnumText(preset.TimeBasis),
+        targetMode = EnumText(preset.TargetMode),
         preset.Value,
         preset.Priority,
         preset.CanStack,
@@ -720,6 +758,7 @@ public static class BackOfficeAdjustmentEndpoints
         OrderAdjustmentScope? Scope,
         OrderAdjustmentApplicationMode? ApplicationMode,
         OrderAdjustmentTimeBasis? TimeBasis,
+        OrderAdjustmentTargetMode? TargetMode,
         Guid[] RoleIds,
         Guid[] ProductIds,
         Guid[] CategoryIds,
@@ -728,6 +767,7 @@ public static class BackOfficeAdjustmentEndpoints
         public static ValidationResult Fail(
             IResult error) =>
             new(
+                null,
                 null,
                 null,
                 null,
@@ -748,6 +788,7 @@ public sealed record UpsertAdjustmentPresetRequest(
     string Scope,
     string ApplicationMode,
     string TimeBasis,
+    string TargetMode,
     decimal Value,
     int Priority,
     bool CanStack,
