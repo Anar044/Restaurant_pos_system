@@ -104,9 +104,20 @@ public static class BackOfficeGroupEndpoints
             if(valid!=ids.Length) return Results.BadRequest(new{message="Один или несколько терминалов не найдены."});
             if(request.MainCashRegisterId.HasValue && !ids.Contains(request.MainCashRegisterId.Value))
                 return Results.BadRequest(new{message="Главная касса должна входить в группу."});
-            var old=await db.RestaurantGroupDevices.Where(x=>x.GroupId==id).ToListAsync(ct);
+            var old = await db.RestaurantGroupDevices
+                .Where(x => x.GroupId == id || ids.Contains(x.DeviceId))
+                .ToListAsync(ct);
             db.RestaurantGroupDevices.RemoveRange(old);
-            foreach(var deviceId in ids) db.RestaurantGroupDevices.Add(new RestaurantGroupDevice{GroupId=id,DeviceId=deviceId,IsMainCashRegister=request.MainCashRegisterId==deviceId});
+
+            foreach (var deviceId in ids)
+            {
+                db.RestaurantGroupDevices.Add(new RestaurantGroupDevice
+                {
+                    GroupId = id,
+                    DeviceId = deviceId,
+                    IsMainCashRegister = request.MainCashRegisterId == deviceId
+                });
+            }
             await db.SaveChangesAsync(ct); return Results.Ok(new{id});
         }).RequireAuthorization(Permissions.KitchenManage);
 
