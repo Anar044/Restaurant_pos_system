@@ -12,6 +12,7 @@ public static class OrderAdjustmentPresetEndpoints
         this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/v1/order-adjustment-presets", async (
+            Guid? orderId,
             ClaimsPrincipal user,
             RestaurantDbContext db,
             CancellationToken ct) =>
@@ -51,6 +52,33 @@ public static class OrderAdjustmentPresetEndpoints
                 .OrderBy(x => x.Type)
                 .ThenBy(x => x.Name)
                 .ToListAsync(ct);
+
+            if (orderId.HasValue)
+            {
+                var order = await db.Orders
+                    .AsNoTracking()
+                    .Include(x => x.Items)
+                    .FirstOrDefaultAsync(
+                        x => x.Id == orderId.Value &&
+                             x.RestaurantId == restaurantId,
+                        ct);
+
+                if (order is null)
+                    return Results.NotFound(new { message = "Order not found." });
+
+                var timeZoneId = await db.Restaurants
+                    .AsNoTracking()
+                    .Where(x => x.Id == restaurantId)
+                    .Select(x => x.TimeZone)
+                    .FirstOrDefaultAsync(ct) ?? "Asia/Baku";
+
+                presets = presets
+                    .Where(x => PricingRuleEngine.PresetHasEligibleItems(
+                        x,
+                        order,
+                        timeZoneId))
+                    .ToList();
+            }
 
             return Results.Ok(new
             {
