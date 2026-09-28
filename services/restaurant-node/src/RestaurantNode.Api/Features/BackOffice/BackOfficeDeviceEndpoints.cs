@@ -46,6 +46,13 @@ public static class BackOfficeDeviceEndpoints
                 .ThenBy(x => x.Name)
                 .ToListAsync(ct);
 
+            var halls = await db.Halls
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId)
+                .OrderByDescending(x => x.IsActive)
+                .ThenBy(x => x.Name)
+                .ToListAsync(ct);
+
             return Results.Ok(new
             {
                 deviceTypes = Enum.GetNames<DeviceType>(),
@@ -75,6 +82,7 @@ public static class BackOfficeDeviceEndpoints
                     lastSeenAt = printer.LastSeenAt,
                     isOnline = printer.ConnectionType == PrinterConnectionType.Network || IsOnline(printer.LastSeenAt),
                     departmentCount = departments.Count(x => x.PrinterId == printer.Id),
+                    hallPrecheckCount = halls.Count(x => x.PrecheckPrinterId == printer.Id),
                     posDeviceCount = devices.Count(x => x.Type == DeviceType.Pos && x.ReceiptPrinterId == printer.Id)
                 })
             });
@@ -160,6 +168,14 @@ public static class BackOfficeDeviceEndpoints
                     .Take(5)
                     .ToListAsync(ct);
 
+                var hallNames = await db.Halls
+                    .AsNoTracking()
+                    .Where(x => x.RestaurantId == restaurantId && x.PrecheckPrinterId == printerId && x.IsActive)
+                    .Select(x => x.Name)
+                    .OrderBy(x => x)
+                    .Take(5)
+                    .ToListAsync(ct);
+
                 var deviceNames = await db.Devices
                     .AsNoTracking()
                     .Where(x => x.RestaurantId == restaurantId && x.ReceiptPrinterId == printerId && x.IsActive)
@@ -168,12 +184,13 @@ public static class BackOfficeDeviceEndpoints
                     .Take(5)
                     .ToListAsync(ct);
 
-                if (departmentNames.Count > 0 || deviceNames.Count > 0)
+                if (departmentNames.Count > 0 || hallNames.Count > 0 || deviceNames.Count > 0)
                 {
                     return Results.Conflict(new
                     {
-                        message = "The printer cannot be deactivated while active departments or POS devices use it. Remove those assignments first.",
+                        message = "The printer cannot be deactivated while active departments, halls or POS devices use it. Remove those assignments first.",
                         departments = departmentNames,
+                        halls = hallNames,
                         devices = deviceNames
                     });
                 }
