@@ -13,6 +13,14 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropForeignKey(
+                name: "FK_products_categories_CategoryId",
+                table: "products");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_products_categories_CategoryId",
+                table: "products");
+
             migrationBuilder.AlterColumn<Guid>(
                 name: "CategoryId",
                 table: "products",
@@ -20,6 +28,13 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                 nullable: true,
                 oldClrType: typeof(Guid),
                 oldType: "uuid");
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_products_categories_CategoryId",
+                table: "products",
+                column: "CategoryId",
+                principalTable: "categories",
+                principalColumn: "Id");
 
             migrationBuilder.AddColumn<bool>(
                 name: "IsSellable",
@@ -255,6 +270,14 @@ SET ""StockItemId"" = ""ProductId"";
                 oldClrType: typeof(Guid),
                 oldType: "uuid",
                 oldNullable: true);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_products_categories_CategoryId",
+                table: "products",
+                column: "CategoryId",
+                principalTable: "categories",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
 
             migrationBuilder.CreateIndex(
                 name: "IX_stock_items_RestaurantId_Name",
