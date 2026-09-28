@@ -91,8 +91,10 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<OrderAdjustmentPreset>().Property(x => x.Scope).HasConversion<string>();
         modelBuilder.Entity<OrderAdjustmentPreset>().Property(x => x.ApplicationMode).HasConversion<string>();
         modelBuilder.Entity<OrderAdjustmentPreset>().Property(x => x.TimeBasis).HasConversion<string>();
+        modelBuilder.Entity<OrderAdjustmentPreset>().Property(x => x.TargetMode).HasConversion<string>();
         modelBuilder.Entity<OrderAdjustment>().Property(x => x.ApplicationModeSnapshot).HasConversion<string>();
         modelBuilder.Entity<OrderAdjustment>().Property(x => x.TimeBasisSnapshot).HasConversion<string>();
+        modelBuilder.Entity<OrderAdjustment>().Property(x => x.TargetModeSnapshot).HasConversion<string>();
         modelBuilder.Entity<Shift>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<Payment>().Property(x => x.Method).HasConversion<string>();
         modelBuilder.Entity<Payment>().Property(x => x.Status).HasConversion<string>();
