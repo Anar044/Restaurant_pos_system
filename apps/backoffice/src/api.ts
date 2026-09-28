@@ -42,28 +42,6 @@ export type DiningTable = {
   isActive: boolean;
 };
 
-export type Hall = {
-  id: string;
-  groupId?: string;
-  precheckPrinterId?: string | null;
-  precheckPrinterName?: string | null;
-  name: string;
-  sortOrder: number;
-  isActive: boolean;
-  tables: DiningTable[];
-};
-
-export type CreateHallInput = {
-  name: string;
-  sortOrder: number;
-  groupId?: string;
-  precheckPrinterId?: string | null;
-};
-
-export type UpdateHallInput = CreateHallInput & {
-  isActive: boolean;
-};
-
 export type CreateTableInput = {
   name: string;
   seats: number;
@@ -741,31 +719,6 @@ export async function getBackOfficeContext(
   token: string,
 ): Promise<BackOfficeContext> {
   return request<BackOfficeContext>('/api/v1/backoffice/context', {}, token);
-}
-
-export async function getHalls(token: string): Promise<Hall[]> {
-  return request<Hall[]>('/api/v1/backoffice/halls', {}, token);
-}
-
-export async function createHall(
-  token: string,
-  input: CreateHallInput,
-): Promise<Omit<Hall, 'tables'>> {
-  return request('/api/v1/backoffice/halls', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function updateHall(
-  token: string,
-  hallId: string,
-  input: UpdateHallInput,
-): Promise<Omit<Hall, 'tables'>> {
-  return request(`/api/v1/backoffice/halls/${hallId}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  }, token);
 }
 
 export async function createTable(
