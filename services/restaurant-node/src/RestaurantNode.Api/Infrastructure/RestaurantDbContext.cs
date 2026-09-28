@@ -19,7 +19,6 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<RestaurantDepartment> RestaurantDepartments => Set<RestaurantDepartment>();
     public DbSet<GroupPreparationMap> GroupPreparationMaps => Set<GroupPreparationMap>();
     public DbSet<PreparationPlaceType> PreparationPlaceTypes => Set<PreparationPlaceType>();
-    public DbSet<KitchenStation> KitchenStations => Set<KitchenStation>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<RecipeLine> RecipeLines => Set<RecipeLine>();
     public DbSet<ProductPrice> ProductPrices => Set<ProductPrice>();
@@ -63,7 +62,6 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<RestaurantDepartment>().ToTable("restaurant_departments");
         modelBuilder.Entity<GroupPreparationMap>().ToTable("group_preparation_maps");
         modelBuilder.Entity<PreparationPlaceType>().ToTable("preparation_place_types");
-        modelBuilder.Entity<KitchenStation>().ToTable("kitchen_stations");
         modelBuilder.Entity<Product>().ToTable("products");
         modelBuilder.Entity<RecipeLine>().ToTable("recipe_lines");
         modelBuilder.Entity<ProductPrice>().ToTable("product_prices");
@@ -167,17 +165,12 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<GroupPreparationMap>().HasIndex(x => new { x.GroupId, x.PreparationPlaceTypeId }).IsUnique();
         modelBuilder.Entity<GroupPreparationMap>().HasIndex(x => x.DepartmentId);
         modelBuilder.Entity<PreparationPlaceType>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
-        modelBuilder.Entity<KitchenStation>()
-            .HasOne(x => x.Printer)
+        modelBuilder.Entity<KitchenTicket>().HasIndex(x => new { x.RestaurantId, x.DepartmentId, x.CreatedAt });
+        modelBuilder.Entity<KitchenTicket>()
+            .HasOne(x => x.Department)
             .WithMany()
-            .HasForeignKey(x => x.PrinterId)
-            .OnDelete(DeleteBehavior.SetNull);
-
-        modelBuilder.Entity<KitchenStation>()
-            .HasOne(x => x.Warehouse)
-            .WithMany()
-            .HasForeignKey(x => x.WarehouseId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .HasForeignKey(x => x.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<Order>()
             .HasMany(x => x.Items)
