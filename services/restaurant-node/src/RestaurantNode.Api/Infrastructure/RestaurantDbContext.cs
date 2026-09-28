@@ -165,12 +165,122 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<GroupPreparationMap>().HasIndex(x => new { x.GroupId, x.PreparationPlaceTypeId }).IsUnique();
         modelBuilder.Entity<GroupPreparationMap>().HasIndex(x => x.DepartmentId);
         modelBuilder.Entity<PreparationPlaceType>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Name });
+        modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Sku });
+        modelBuilder.Entity<RecipeLine>().HasIndex(x => new { x.ProductId, x.IngredientProductId }).IsUnique();
+        modelBuilder.Entity<RecipeLine>().HasIndex(x => x.IngredientProductId);
+        modelBuilder.Entity<ProductPrice>().HasIndex(x => new { x.ProductId, x.ValidFrom });
+        modelBuilder.Entity<Warehouse>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<StockMovement>().HasIndex(x => new { x.RestaurantId, x.WarehouseId, x.ProductId, x.CreatedAt });
+        modelBuilder.Entity<Shift>().HasIndex(x => new { x.RestaurantId, x.DeviceId, x.Status, x.OpenedAt });
+        modelBuilder.Entity<Shift>()
+            .HasIndex(x => new { x.RestaurantId, x.DeviceId })
+            .HasFilter("\"Status\" = 'Open'")
+            .IsUnique();
+        modelBuilder.Entity<Order>().HasIndex(x => new { x.RestaurantId, x.Status, x.CreatedAt });
+        modelBuilder.Entity<Order>().HasIndex(x => new { x.RestaurantId, x.OriginDeviceId, x.CreatedAt });
+        modelBuilder.Entity<Order>().HasIndex(x => new { x.OpenedShiftId, x.Status });
+        modelBuilder.Entity<OrderItem>().HasIndex(x => new { x.OrderId, x.GuestNumber });
+        modelBuilder.Entity<OrderAdjustment>().HasIndex(x => new { x.OrderId, x.Type, x.GuestNumber });
+        modelBuilder.Entity<OrderAdjustmentPreset>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<OrderAdjustmentPresetRole>().HasKey(x => new { x.PresetId, x.RoleId });
+        modelBuilder.Entity<OrderAdjustmentPresetRole>().HasIndex(x => x.RoleId);
+        modelBuilder.Entity<OrderAdjustmentPresetProduct>().HasKey(x => new { x.PresetId, x.ProductId });
+        modelBuilder.Entity<OrderAdjustmentPresetProduct>().HasIndex(x => x.ProductId);
+        modelBuilder.Entity<OrderAdjustmentPresetCategory>().HasKey(x => new { x.PresetId, x.CategoryId });
+        modelBuilder.Entity<OrderAdjustmentPresetCategory>().HasIndex(x => x.CategoryId);
+        modelBuilder.Entity<Payment>().HasIndex(x => new { x.RestaurantId, x.ShiftId, x.CreatedAt });
+        modelBuilder.Entity<Payment>().HasIndex(x => new { x.OrderId, x.GuestNumber, x.CreatedAt });
+        modelBuilder.Entity<PaymentRefund>().HasIndex(x => new { x.RestaurantId, x.ShiftId, x.CreatedAt });
+        modelBuilder.Entity<PaymentRefund>().HasIndex(x => x.PaymentId);
+        modelBuilder.Entity<OutboxEvent>().HasIndex(x => new { x.ProcessedAt, x.OccurredAt });
+        modelBuilder.Entity<AuditEvent>().HasIndex(x => new { x.RestaurantId, x.EntityId, x.CreatedAt });
         modelBuilder.Entity<KitchenTicket>().HasIndex(x => new { x.RestaurantId, x.DepartmentId, x.CreatedAt });
-        modelBuilder.Entity<KitchenTicket>()
-            .HasOne(x => x.Department)
+
+        modelBuilder.Entity<ProductModifierGroup>().HasKey(x => new { x.ProductId, x.ModifierGroupId });
+        modelBuilder.Entity<ModifierGroupModifier>().HasKey(x => new { x.ModifierGroupId, x.ModifierId });
+
+        modelBuilder.Entity<OrderAdjustmentPreset>()
+            .HasMany(x => x.AllowedRoles)
+            .WithOne(x => x.Preset)
+            .HasForeignKey(x => x.PresetId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<OrderAdjustmentPresetRole>()
+            .HasOne(x => x.Role)
             .WithMany()
-            .HasForeignKey(x => x.DepartmentId)
+            .HasForeignKey(x => x.RoleId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<OrderAdjustmentPreset>()
+            .HasMany(x => x.Products)
+            .WithOne(x => x.Preset)
+            .HasForeignKey(x => x.PresetId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<OrderAdjustmentPresetProduct>()
+            .HasOne(x => x.Product)
+            .WithMany()
+            .HasForeignKey(x => x.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<OrderAdjustmentPreset>()
+            .HasMany(x => x.Categories)
+            .WithOne(x => x.Preset)
+            .HasForeignKey(x => x.PresetId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<OrderAdjustmentPresetCategory>()
+            .HasOne(x => x.Category)
+            .WithMany()
+            .HasForeignKey(x => x.CategoryId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<OrderAdjustment>()
+            .HasOne(x => x.Order)
+            .WithMany(x => x.Adjustments)
+            .HasForeignKey(x => x.OrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Order>()
+            .Navigation(x => x.Adjustments)
+            .AutoInclude();
+
+        modelBuilder.Entity<StockMovement>()
+            .HasOne(x => x.Warehouse)
+            .WithMany()
+            .HasForeignKey(x => x.WarehouseId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<StockMovement>()
+            .HasOne(x => x.Product)
+            .WithMany()
+            .HasForeignKey(x => x.ProductId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<RecipeLine>()
+            .HasOne(x => x.Product)
+            .WithMany()
+            .HasForeignKey(x => x.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RecipeLine>()
+            .HasOne(x => x.IngredientProduct)
+            .WithMany()
+            .HasForeignKey(x => x.IngredientProductId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Restaurant>()
+            .HasOne(x => x.Organization)
+            .WithMany()
+            .HasForeignKey(x => x.OrganizationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Printer>()
+            .HasOne(x => x.HostDevice)
+            .WithMany()
+            .HasForeignKey(x => x.HostDeviceId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<Device>()
             .HasOne(x => x.ReceiptPrinter)
@@ -178,11 +288,71 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .HasForeignKey(x => x.ReceiptPrinterId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        modelBuilder.Entity<Printer>()
-            .HasOne(x => x.HostDevice)
+        modelBuilder.Entity<RestaurantGroupDevice>()
+            .HasOne(x => x.Group)
             .WithMany()
-            .HasForeignKey(x => x.HostDeviceId)
+            .HasForeignKey(x => x.GroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RestaurantGroupDevice>()
+            .HasOne(x => x.Device)
+            .WithMany()
+            .HasForeignKey(x => x.DeviceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RestaurantDepartment>()
+            .HasOne(x => x.Group)
+            .WithMany()
+            .HasForeignKey(x => x.GroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RestaurantDepartment>()
+            .HasOne(x => x.Hall)
+            .WithMany()
+            .HasForeignKey(x => x.HallId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<RestaurantDepartment>()
+            .HasOne(x => x.Warehouse)
+            .WithMany()
+            .HasForeignKey(x => x.WarehouseId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<RestaurantDepartment>()
+            .HasOne(x => x.Printer)
+            .WithMany()
+            .HasForeignKey(x => x.PrinterId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<GroupPreparationMap>()
+            .HasOne(x => x.Group)
+            .WithMany()
+            .HasForeignKey(x => x.GroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<GroupPreparationMap>()
+            .HasOne(x => x.PreparationPlaceType)
+            .WithMany()
+            .HasForeignKey(x => x.PreparationPlaceTypeId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<GroupPreparationMap>()
+            .HasOne(x => x.Department)
+            .WithMany()
+            .HasForeignKey(x => x.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Product>()
+            .HasOne(x => x.PreparationPlaceType)
+            .WithMany()
+            .HasForeignKey(x => x.PreparationPlaceTypeId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<KitchenTicket>()
+            .HasOne(x => x.Department)
+            .WithMany()
+            .HasForeignKey(x => x.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<Order>()
             .HasMany(x => x.Items)
