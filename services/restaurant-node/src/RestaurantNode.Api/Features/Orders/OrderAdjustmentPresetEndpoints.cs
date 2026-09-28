@@ -53,6 +53,9 @@ public static class OrderAdjustmentPresetEndpoints
                 .ThenBy(x => x.Name)
                 .ToListAsync(ct);
 
+            var eligibleItemIdsByPresetId =
+                new Dictionary<Guid, Guid[]>();
+
             if (orderId.HasValue)
             {
                 var order = await db.Orders
@@ -78,6 +81,19 @@ public static class OrderAdjustmentPresetEndpoints
                         order,
                         timeZoneId))
                     .ToList();
+
+                foreach (var preset in presets)
+                {
+                    eligibleItemIdsByPresetId[preset.Id] = order.Items
+                        .Where(item => PricingRuleEngine.IsPresetItemEligible(
+                            preset,
+                            order,
+                            item,
+                            timeZoneId))
+                        .Select(item => item.Id)
+                        .Distinct()
+                        .ToArray();
+                }
             }
 
             return Results.Ok(new
@@ -100,6 +116,8 @@ public static class OrderAdjustmentPresetEndpoints
                     x.EndMinute,
                     productIds = x.Products.Select(p => p.ProductId).ToArray(),
                     categoryIds = x.Categories.Select(category => category.CategoryId).ToArray(),
+                    eligibleOrderItemIds =
+                        eligibleItemIdsByPresetId.GetValueOrDefault(x.Id) ?? [],
                     x.RequireComment
                 })
             });
