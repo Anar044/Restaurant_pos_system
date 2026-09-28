@@ -4163,7 +4163,9 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
     selectedGuestNumber = widget.initialGuestNumber
         .clamp(1, widget.order.guestCount)
         .toInt();
-    presetsFuture = widget.api.getAdjustmentPresets();
+    presetsFuture = widget.api.getAdjustmentPresets(
+      orderId: currentOrder.id,
+    );
   }
 
   Future<String?> _requestAdjustmentComment(
