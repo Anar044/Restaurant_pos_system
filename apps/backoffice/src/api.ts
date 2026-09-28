@@ -682,7 +682,7 @@ export type NomenclatureItem = {
   id: string;
   categoryId: string | null;
   categoryName: string | null;
-  kitchenStationId: string | null;
+  preparationPlaceTypeId: string | null;
   name: string;
   sku: string | null;
   type: 'DISH' | 'GOODS' | 'PREPARATION' | 'MODIFIER';
