@@ -19,12 +19,13 @@ import { KitchenPage } from './KitchenPage';
 import { InventoryPage } from './InventoryPage';
 import { MenuPage } from './MenuPage';
 import { ModifiersPage } from './ModifiersPage';
+import { NomenclaturePage } from './NomenclaturePage';
 import { OverviewPage } from './OverviewPage';
 import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'halls' | 'menu' | 'modifiers' | 'inventory' | 'adjustments' | 'kitchen' | 'employees' | 'roles' | 'devices' | 'finance';
+type PageKey = 'overview' | 'halls' | 'menu' | 'modifiers' | 'nomenclature' | 'inventory' | 'adjustments' | 'kitchen' | 'employees' | 'roles' | 'devices' | 'finance';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -165,6 +166,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'halls', label: 'Залы и столы', icon: '▦', ready: true },
     { key: 'kitchen', label: 'Тип места приготовления', icon: '◫', ready: true },
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
+    { key: 'nomenclature', label: 'Номенклатура', icon: '▤', ready: true },
     { key: 'menu', label: 'Меню', icon: '≡', ready: true },
     { key: 'modifiers', label: 'Модификаторы', icon: '±', ready: true },
     { key: 'inventory', label: 'Склад', icon: '▥', ready: true },
@@ -174,7 +176,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
   ];
 
   const restaurantSettingsItems: PageKey[] = ['halls', 'kitchen', 'devices'];
-  const catalogItems: PageKey[] = ['menu', 'modifiers', 'inventory'];
+  const catalogItems: PageKey[] = ['nomenclature', 'menu', 'modifiers', 'inventory'];
   const employeeItems: PageKey[] = ['employees', 'roles'];
 
   function renderNavItem(key: PageKey, nested = false) {
@@ -318,6 +320,11 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             <MenuPage token={session.token} />
           ) : page === 'modifiers' ? (
             <ModifiersPage token={session.token} />
+          ) : page === 'nomenclature' ? (
+            <NomenclaturePage
+              token={session.token}
+              canManage={(session.permissions ?? []).includes('inventory.manage')}
+            />
           ) : page === 'inventory' ? (
             <InventoryPage
               token={session.token}
