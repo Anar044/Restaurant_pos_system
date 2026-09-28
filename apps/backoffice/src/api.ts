@@ -441,6 +441,47 @@ export type UpsertAdjustmentPresetInput = {
   categoryIds: string[];
 };
 
+export type BackOfficeModifier = {
+  id: string;
+  name: string;
+  priceDelta: number;
+  isActive: boolean;
+  groupIds: string[];
+};
+
+export type BackOfficeModifierGroupItem = {
+  id: string;
+  name: string;
+  priceDelta: number;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+export type BackOfficeModifierGroup = {
+  id: string;
+  name: string;
+  minSelections: number;
+  maxSelections: number;
+  isRequired: boolean;
+  isActive: boolean;
+  modifiers: BackOfficeModifierGroupItem[];
+  productIds: string[];
+};
+
+export type ModifierProduct = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  groupIds: string[];
+};
+
+export type BackOfficeModifiers = {
+  currencyCode: string;
+  modifiers: BackOfficeModifier[];
+  groups: BackOfficeModifierGroup[];
+  products: ModifierProduct[];
+};
+
 export type RestaurantGroupOption = {
   id: string;
   name: string;
