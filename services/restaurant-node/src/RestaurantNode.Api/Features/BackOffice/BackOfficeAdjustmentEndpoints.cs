@@ -32,15 +32,46 @@ public static class BackOfficeAdjustmentEndpoints
                     x.Id,
                     x.Name,
                     canApplyAdjustments =
-                        x.Permissions.Contains(Permissions.OrdersAdjustmentsApply)
+                        x.Permissions.Contains(
+                            Permissions.OrdersAdjustmentsApply)
+                })
+                .ToListAsync(ct);
+
+            var categories = await db.Categories
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId)
+                .OrderBy(x => x.SortOrder)
+                .ThenBy(x => x.Name)
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Name,
+                    x.IsActive
+                })
+                .ToListAsync(ct);
+
+            var products = await db.Products
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId)
+                .OrderBy(x => x.SortOrder)
+                .ThenBy(x => x.Name)
+                .Select(x => new
+                {
+                    x.Id,
+                    x.CategoryId,
+                    x.Name,
+                    x.IsActive
                 })
                 .ToListAsync(ct);
 
             var presets = await db.OrderAdjustmentPresets
                 .AsNoTracking()
                 .Include(x => x.AllowedRoles)
+                .Include(x => x.Products)
+                .Include(x => x.Categories)
                 .Where(x => x.RestaurantId == restaurantId)
                 .OrderByDescending(x => x.IsActive)
+                .ThenBy(x => x.Priority)
                 .ThenBy(x => x.Type)
                 .ThenBy(x => x.Name)
                 .ToListAsync(ct);
@@ -48,6 +79,8 @@ public static class BackOfficeAdjustmentEndpoints
             return Results.Ok(new
             {
                 roles,
+                categories,
+                products,
                 presets = presets.Select(ToResponse)
             });
         });
@@ -70,6 +103,7 @@ public static class BackOfficeAdjustmentEndpoints
             if (validation.Error is not null)
                 return validation.Error;
 
+            var now = DateTimeOffset.UtcNow;
             var preset = new OrderAdjustmentPreset
             {
                 RestaurantId = restaurantId,
@@ -77,21 +111,28 @@ public static class BackOfficeAdjustmentEndpoints
                 Type = validation.Type!.Value,
                 Mode = validation.Mode!.Value,
                 Scope = validation.Scope!.Value,
+                ApplicationMode = validation.ApplicationMode!.Value,
+                TimeBasis = validation.TimeBasis!.Value,
                 Value = Money(request.Value),
-                RequireComment = request.RequireComment,
+                Priority = request.Priority,
+                CanStack = request.CanStack,
+                WeekdayMask = request.WeekdayMask,
+                StartMinute = request.StartMinute,
+                EndMinute = request.EndMinute,
+                RequireComment =
+                    validation.ApplicationMode ==
+                    OrderAdjustmentApplicationMode.Manual &&
+                    request.RequireComment,
                 IsActive = request.IsActive,
-                CreatedAt = DateTimeOffset.UtcNow,
-                UpdatedAt = DateTimeOffset.UtcNow
+                CreatedAt = now,
+                UpdatedAt = now
             };
 
-            foreach (var roleId in validation.RoleIds)
-            {
-                preset.AllowedRoles.Add(new OrderAdjustmentPresetRole
-                {
-                    PresetId = preset.Id,
-                    RoleId = roleId
-                });
-            }
+            ApplyLinks(
+                preset,
+                validation.RoleIds,
+                validation.ProductIds,
+                validation.CategoryIds);
 
             db.OrderAdjustmentPresets.Add(preset);
             AddAudit(
@@ -99,8 +140,7 @@ public static class BackOfficeAdjustmentEndpoints
                 user,
                 restaurantId,
                 "ADJUSTMENT_PRESET_CREATED",
-                preset,
-                validation.RoleIds);
+                preset);
             await db.SaveChangesAsync(ct);
 
             return Results.Created(
@@ -120,6 +160,8 @@ public static class BackOfficeAdjustmentEndpoints
 
             var preset = await db.OrderAdjustmentPresets
                 .Include(x => x.AllowedRoles)
+                .Include(x => x.Products)
+                .Include(x => x.Categories)
                 .FirstOrDefaultAsync(
                     x => x.Id == presetId &&
                          x.RestaurantId == restaurantId,
@@ -141,41 +183,35 @@ public static class BackOfficeAdjustmentEndpoints
             preset.Type = validation.Type!.Value;
             preset.Mode = validation.Mode!.Value;
             preset.Scope = validation.Scope!.Value;
+            preset.ApplicationMode =
+                validation.ApplicationMode!.Value;
+            preset.TimeBasis = validation.TimeBasis!.Value;
             preset.Value = Money(request.Value);
-            preset.RequireComment = request.RequireComment;
+            preset.Priority = request.Priority;
+            preset.CanStack = request.CanStack;
+            preset.WeekdayMask = request.WeekdayMask;
+            preset.StartMinute = request.StartMinute;
+            preset.EndMinute = request.EndMinute;
+            preset.RequireComment =
+                preset.ApplicationMode ==
+                OrderAdjustmentApplicationMode.Manual &&
+                request.RequireComment;
             preset.IsActive = request.IsActive;
             preset.UpdatedAt = DateTimeOffset.UtcNow;
 
-            var requestedRoles = validation.RoleIds.ToHashSet();
-            foreach (var link in preset.AllowedRoles
-                         .Where(x => !requestedRoles.Contains(x.RoleId))
-                         .ToArray())
-            {
-                preset.AllowedRoles.Remove(link);
-                db.OrderAdjustmentPresetRoles.Remove(link);
-            }
-
-            var existingRoles = preset.AllowedRoles
-                .Select(x => x.RoleId)
-                .ToHashSet();
-
-            foreach (var roleId in validation.RoleIds.Where(
-                         x => !existingRoles.Contains(x)))
-            {
-                preset.AllowedRoles.Add(new OrderAdjustmentPresetRole
-                {
-                    PresetId = preset.Id,
-                    RoleId = roleId
-                });
-            }
+            ReplaceLinks(
+                db,
+                preset,
+                validation.RoleIds,
+                validation.ProductIds,
+                validation.CategoryIds);
 
             AddAudit(
                 db,
                 user,
                 restaurantId,
                 "ADJUSTMENT_PRESET_UPDATED",
-                preset,
-                validation.RoleIds);
+                preset);
             await db.SaveChangesAsync(ct);
 
             return Results.Ok(ToResponse(preset));
@@ -192,39 +228,31 @@ public static class BackOfficeAdjustmentEndpoints
         CancellationToken ct)
     {
         var name = request.Name?.Trim();
-        if (string.IsNullOrWhiteSpace(name) || name.Length > 120)
+        if (string.IsNullOrWhiteSpace(name) ||
+            name.Length > 120)
         {
             return ValidationResult.Fail(
                 Results.BadRequest(new
                 {
-                    message = "Название обязательно и не должно превышать 120 символов."
+                    message =
+                        "Название обязательно и не должно превышать 120 символов."
                 }));
         }
 
-        if (!TryType(request.Type, out var type))
+        if (!TryEnum(request.Type, out OrderAdjustmentType type) ||
+            !TryEnum(request.Mode, out OrderAdjustmentMode mode) ||
+            !TryEnum(request.Scope, out OrderAdjustmentScope scope) ||
+            !TryEnum(
+                request.ApplicationMode,
+                out OrderAdjustmentApplicationMode applicationMode) ||
+            !TryEnum(
+                request.TimeBasis,
+                out OrderAdjustmentTimeBasis timeBasis))
         {
             return ValidationResult.Fail(
                 Results.BadRequest(new
                 {
-                    message = "Тип должен быть DISCOUNT или SERVICE_CHARGE."
-                }));
-        }
-
-        if (!TryMode(request.Mode, out var mode))
-        {
-            return ValidationResult.Fail(
-                Results.BadRequest(new
-                {
-                    message = "Режим должен быть PERCENT или FIXED."
-                }));
-        }
-
-        if (!TryScope(request.Scope, out var scope))
-        {
-            return ValidationResult.Fail(
-                Results.BadRequest(new
-                {
-                    message = "Область должна быть ORDER, GUEST или BOTH."
+                    message = "Некорректный тип, режим, область или режим времени правила."
                 }));
         }
 
@@ -234,13 +262,27 @@ public static class BackOfficeAdjustmentEndpoints
             return ValidationResult.Fail(
                 Results.BadRequest(new
                 {
-                    message = "Сервисный сбор пока применяется только ко всему заказу."
+                    message =
+                        "Надбавка/сервис применяется ко всему заказу; ограничение по блюдам задаётся отдельным блоком целей."
+                }));
+        }
+
+        if (applicationMode ==
+                OrderAdjustmentApplicationMode.Automatic &&
+            scope != OrderAdjustmentScope.Order)
+        {
+            return ValidationResult.Fail(
+                Results.BadRequest(new
+                {
+                    message =
+                        "Автоматическое правило должно иметь область «весь заказ»."
                 }));
         }
 
         if (request.Value <= 0m ||
             request.Value > 1_000_000m ||
-            (mode == OrderAdjustmentMode.Percent && request.Value > 100m))
+            (mode == OrderAdjustmentMode.Percent &&
+             request.Value > 100m))
         {
             return ValidationResult.Fail(
                 Results.BadRequest(new
@@ -251,25 +293,71 @@ public static class BackOfficeAdjustmentEndpoints
                 }));
         }
 
-        var duplicate = await db.OrderAdjustmentPresets.AnyAsync(
-            x => x.RestaurantId == restaurantId &&
-                 x.Id != existingPresetId &&
-                 x.Name.ToLower() == name.ToLower(),
-            ct);
+        if (request.Priority is < 0 or > 9999)
+        {
+            return ValidationResult.Fail(
+                Results.BadRequest(new
+                {
+                    message = "Приоритет должен быть от 0 до 9999."
+                }));
+        }
+
+        if (request.WeekdayMask is < 1 or > 127)
+        {
+            return ValidationResult.Fail(
+                Results.BadRequest(new
+                {
+                    message = "Выберите хотя бы один день недели."
+                }));
+        }
+
+        if (request.StartMinute.HasValue !=
+            request.EndMinute.HasValue)
+        {
+            return ValidationResult.Fail(
+                Results.BadRequest(new
+                {
+                    message =
+                        "Для временного окна нужно указать и начало, и конец."
+                }));
+        }
+
+        if (request.StartMinute is < 0 or > 1439 ||
+            request.EndMinute is < 0 or > 1439)
+        {
+            return ValidationResult.Fail(
+                Results.BadRequest(new
+                {
+                    message =
+                        "Время должно находиться в диапазоне суток."
+                }));
+        }
+
+        var duplicate = await db.OrderAdjustmentPresets
+            .AnyAsync(
+                x =>
+                    x.RestaurantId == restaurantId &&
+                    x.Id != existingPresetId &&
+                    x.Name.ToLower() == name.ToLower(),
+                ct);
 
         if (duplicate)
         {
             return ValidationResult.Fail(
                 Results.Conflict(new
                 {
-                    message = "Правило с таким названием уже существует."
+                    message =
+                        "Правило с таким названием уже существует."
                 }));
         }
 
-        var roleIds = (request.RoleIds ?? [])
-            .Where(x => x != Guid.Empty)
-            .Distinct()
-            .ToArray();
+        var roleIds = applicationMode ==
+                OrderAdjustmentApplicationMode.Manual
+            ? (request.RoleIds ?? [])
+                .Where(x => x != Guid.Empty)
+                .Distinct()
+                .ToArray()
+            : [];
 
         if (roleIds.Length > 0)
         {
@@ -291,7 +379,8 @@ public static class BackOfficeAdjustmentEndpoints
                 return ValidationResult.Fail(
                     Results.BadRequest(new
                     {
-                        message = "Одна или несколько выбранных ролей не найдены."
+                        message =
+                            "Одна или несколько выбранных ролей не найдены."
                     }));
             }
 
@@ -310,27 +399,231 @@ public static class BackOfficeAdjustmentEndpoints
             }
         }
 
+        var productIds = (request.ProductIds ?? [])
+            .Where(x => x != Guid.Empty)
+            .Distinct()
+            .ToArray();
+
+        if (productIds.Length > 0)
+        {
+            var count = await db.Products.CountAsync(
+                x =>
+                    x.RestaurantId == restaurantId &&
+                    productIds.Contains(x.Id),
+                ct);
+
+            if (count != productIds.Length)
+            {
+                return ValidationResult.Fail(
+                    Results.BadRequest(new
+                    {
+                        message =
+                            "Одно или несколько выбранных блюд не найдены."
+                    }));
+            }
+        }
+
+        var categoryIds = (request.CategoryIds ?? [])
+            .Where(x => x != Guid.Empty)
+            .Distinct()
+            .ToArray();
+
+        if (categoryIds.Length > 0)
+        {
+            var count = await db.Categories.CountAsync(
+                x =>
+                    x.RestaurantId == restaurantId &&
+                    categoryIds.Contains(x.Id),
+                ct);
+
+            if (count != categoryIds.Length)
+            {
+                return ValidationResult.Fail(
+                    Results.BadRequest(new
+                    {
+                        message =
+                            "Одна или несколько выбранных категорий не найдены."
+                    }));
+            }
+        }
+
         return new ValidationResult(
             name,
             type,
             mode,
             scope,
+            applicationMode,
+            timeBasis,
             roleIds,
+            productIds,
+            categoryIds,
             null);
     }
 
-    private static object ToResponse(OrderAdjustmentPreset preset) => new
+    private static void ApplyLinks(
+        OrderAdjustmentPreset preset,
+        IReadOnlyCollection<Guid> roleIds,
+        IReadOnlyCollection<Guid> productIds,
+        IReadOnlyCollection<Guid> categoryIds)
+    {
+        foreach (var roleId in roleIds)
+        {
+            preset.AllowedRoles.Add(
+                new OrderAdjustmentPresetRole
+                {
+                    PresetId = preset.Id,
+                    RoleId = roleId
+                });
+        }
+
+        foreach (var productId in productIds)
+        {
+            preset.Products.Add(
+                new OrderAdjustmentPresetProduct
+                {
+                    PresetId = preset.Id,
+                    ProductId = productId
+                });
+        }
+
+        foreach (var categoryId in categoryIds)
+        {
+            preset.Categories.Add(
+                new OrderAdjustmentPresetCategory
+                {
+                    PresetId = preset.Id,
+                    CategoryId = categoryId
+                });
+        }
+    }
+
+    private static void ReplaceLinks(
+        RestaurantDbContext db,
+        OrderAdjustmentPreset preset,
+        IReadOnlyCollection<Guid> roleIds,
+        IReadOnlyCollection<Guid> productIds,
+        IReadOnlyCollection<Guid> categoryIds)
+    {
+        ReplaceRoleLinks(db, preset, roleIds);
+        ReplaceProductLinks(db, preset, productIds);
+        ReplaceCategoryLinks(db, preset, categoryIds);
+    }
+
+    private static void ReplaceRoleLinks(
+        RestaurantDbContext db,
+        OrderAdjustmentPreset preset,
+        IReadOnlyCollection<Guid> requestedIds)
+    {
+        var requested = requestedIds.ToHashSet();
+        foreach (var link in preset.AllowedRoles
+                     .Where(x => !requested.Contains(x.RoleId))
+                     .ToArray())
+        {
+            preset.AllowedRoles.Remove(link);
+            db.OrderAdjustmentPresetRoles.Remove(link);
+        }
+
+        var existing = preset.AllowedRoles
+            .Select(x => x.RoleId)
+            .ToHashSet();
+
+        foreach (var id in requested.Where(x => !existing.Contains(x)))
+        {
+            preset.AllowedRoles.Add(
+                new OrderAdjustmentPresetRole
+                {
+                    PresetId = preset.Id,
+                    RoleId = id
+                });
+        }
+    }
+
+    private static void ReplaceProductLinks(
+        RestaurantDbContext db,
+        OrderAdjustmentPreset preset,
+        IReadOnlyCollection<Guid> requestedIds)
+    {
+        var requested = requestedIds.ToHashSet();
+        foreach (var link in preset.Products
+                     .Where(x => !requested.Contains(x.ProductId))
+                     .ToArray())
+        {
+            preset.Products.Remove(link);
+            db.OrderAdjustmentPresetProducts.Remove(link);
+        }
+
+        var existing = preset.Products
+            .Select(x => x.ProductId)
+            .ToHashSet();
+
+        foreach (var id in requested.Where(x => !existing.Contains(x)))
+        {
+            preset.Products.Add(
+                new OrderAdjustmentPresetProduct
+                {
+                    PresetId = preset.Id,
+                    ProductId = id
+                });
+        }
+    }
+
+    private static void ReplaceCategoryLinks(
+        RestaurantDbContext db,
+        OrderAdjustmentPreset preset,
+        IReadOnlyCollection<Guid> requestedIds)
+    {
+        var requested = requestedIds.ToHashSet();
+        foreach (var link in preset.Categories
+                     .Where(x => !requested.Contains(x.CategoryId))
+                     .ToArray())
+        {
+            preset.Categories.Remove(link);
+            db.OrderAdjustmentPresetCategories.Remove(link);
+        }
+
+        var existing = preset.Categories
+            .Select(x => x.CategoryId)
+            .ToHashSet();
+
+        foreach (var id in requested.Where(x => !existing.Contains(x)))
+        {
+            preset.Categories.Add(
+                new OrderAdjustmentPresetCategory
+                {
+                    PresetId = preset.Id,
+                    CategoryId = id
+                });
+        }
+    }
+
+    private static object ToResponse(
+        OrderAdjustmentPreset preset) => new
     {
         preset.Id,
         preset.Name,
         type = EnumText(preset.Type),
         mode = EnumText(preset.Mode),
         scope = EnumText(preset.Scope),
+        applicationMode = EnumText(preset.ApplicationMode),
+        timeBasis = EnumText(preset.TimeBasis),
         preset.Value,
+        preset.Priority,
+        preset.CanStack,
+        preset.WeekdayMask,
+        preset.StartMinute,
+        preset.EndMinute,
         preset.RequireComment,
         preset.IsActive,
         roleIds = preset.AllowedRoles
             .Select(x => x.RoleId)
+            .OrderBy(x => x)
+            .ToArray(),
+        productIds = preset.Products
+            .Select(x => x.ProductId)
+            .OrderBy(x => x)
+            .ToArray(),
+        categoryIds = preset.Categories
+            .Select(x => x.CategoryId)
             .OrderBy(x => x)
             .ToArray(),
         preset.CreatedAt,
@@ -342,8 +635,7 @@ public static class BackOfficeAdjustmentEndpoints
         ClaimsPrincipal user,
         Guid restaurantId,
         string eventType,
-        OrderAdjustmentPreset preset,
-        IReadOnlyCollection<Guid> roleIds)
+        OrderAdjustmentPreset preset)
     {
         Guid.TryParse(
             user.FindFirstValue("employee_id"),
@@ -352,21 +644,13 @@ public static class BackOfficeAdjustmentEndpoints
         db.AuditEvents.Add(new AuditEvent
         {
             RestaurantId = restaurantId,
-            EmployeeId = employeeId == Guid.Empty ? null : employeeId,
+            EmployeeId =
+                employeeId == Guid.Empty ? null : employeeId,
             EventType = eventType,
             EntityType = "OrderAdjustmentPreset",
             EntityId = preset.Id,
-            PayloadJson = JsonSerializer.Serialize(new
-            {
-                preset.Name,
-                type = EnumText(preset.Type),
-                mode = EnumText(preset.Mode),
-                scope = EnumText(preset.Scope),
-                preset.Value,
-                preset.RequireComment,
-                preset.IsActive,
-                roleIds
-            })
+            PayloadJson = JsonSerializer.Serialize(
+                ToResponse(preset))
         });
     }
 
@@ -376,21 +660,6 @@ public static class BackOfficeAdjustmentEndpoints
         Guid.TryParse(
             user.FindFirstValue("restaurant_id"),
             out restaurantId);
-
-    private static bool TryType(
-        string? raw,
-        out OrderAdjustmentType value) =>
-        TryEnum(raw, out value);
-
-    private static bool TryMode(
-        string? raw,
-        out OrderAdjustmentMode value) =>
-        TryEnum(raw, out value);
-
-    private static bool TryScope(
-        string? raw,
-        out OrderAdjustmentScope value) =>
-        TryEnum(raw, out value);
 
     private static bool TryEnum<TEnum>(
         string? raw,
@@ -425,10 +694,14 @@ public static class BackOfficeAdjustmentEndpoints
 
         for (var index = 0; index < text.Length; index++)
         {
-            if (index > 0 && char.IsUpper(text[index]))
+            if (index > 0 &&
+                char.IsUpper(text[index]))
+            {
                 result.Append('_');
+            }
 
-            result.Append(char.ToUpperInvariant(text[index]));
+            result.Append(
+                char.ToUpperInvariant(text[index]));
         }
 
         return result.ToString();
@@ -445,15 +718,24 @@ public static class BackOfficeAdjustmentEndpoints
         OrderAdjustmentType? Type,
         OrderAdjustmentMode? Mode,
         OrderAdjustmentScope? Scope,
+        OrderAdjustmentApplicationMode? ApplicationMode,
+        OrderAdjustmentTimeBasis? TimeBasis,
         Guid[] RoleIds,
+        Guid[] ProductIds,
+        Guid[] CategoryIds,
         IResult? Error)
     {
-        public static ValidationResult Fail(IResult error) =>
+        public static ValidationResult Fail(
+            IResult error) =>
             new(
                 null,
                 null,
                 null,
                 null,
+                null,
+                null,
+                [],
+                [],
                 [],
                 error);
     }
@@ -464,7 +746,16 @@ public sealed record UpsertAdjustmentPresetRequest(
     string Type,
     string Mode,
     string Scope,
+    string ApplicationMode,
+    string TimeBasis,
     decimal Value,
+    int Priority,
+    bool CanStack,
+    int WeekdayMask,
+    int? StartMinute,
+    int? EndMinute,
     bool RequireComment,
     bool IsActive,
-    Guid[]? RoleIds);
+    Guid[]? RoleIds,
+    Guid[]? ProductIds,
+    Guid[]? CategoryIds);
