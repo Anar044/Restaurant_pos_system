@@ -22,22 +22,33 @@ public static class BackOfficeModifierEndpoints
             if (!TryRestaurantId(user, out var restaurantId))
                 return Results.Unauthorized();
 
+            var now = DateTimeOffset.UtcNow;
             var currencyCode = await db.Restaurants
                 .AsNoTracking()
                 .Where(x => x.Id == restaurantId)
                 .Select(x => x.CurrencyCode)
                 .FirstOrDefaultAsync(ct) ?? "AZN";
 
-            var modifierRows = await db.Modifiers
+            var modifierRows = await db.Products
                 .AsNoTracking()
-                .Where(x => x.RestaurantId == restaurantId)
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.Type == "MODIFIER")
                 .OrderBy(x => x.Name)
                 .Select(x => new
                 {
                     x.Id,
                     x.Name,
-                    x.PriceDelta,
-                    x.IsActive
+                    x.IsActive,
+                    PriceDelta = db.ProductPrices
+                        .Where(price =>
+                            price.RestaurantId == restaurantId &&
+                            price.ProductId == x.Id &&
+                            price.ValidFrom <= now &&
+                            (price.ValidTo == null || price.ValidTo > now))
+                        .OrderByDescending(price => price.ValidFrom)
+                        .Select(price => (decimal?)price.Amount)
+                        .FirstOrDefault() ?? 0m
                 })
                 .ToListAsync(ct);
 
@@ -65,7 +76,10 @@ public static class BackOfficeModifierEndpoints
 
             var productRows = await db.Products
                 .AsNoTracking()
-                .Where(x => x.RestaurantId == restaurantId)
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.Type != "MODIFIER" &&
+                    x.IsSellable)
                 .OrderBy(x => x.Name)
                 .Select(x => new
                 {
@@ -162,7 +176,7 @@ public static class BackOfficeModifierEndpoints
                 x => x.RestaurantId == restaurantId && x.Name == name,
                 ct);
             if (duplicate)
-                return Results.Conflict(new { message = "A modifier group with this name already exists." });
+                return Results.Conflict(new { message = "Группа модификаторов с таким названием уже существует." });
 
             var entity = new ModifierGroup
             {
@@ -185,9 +199,7 @@ public static class BackOfficeModifierEndpoints
             });
             await db.SaveChangesAsync(ct);
 
-            return Results.Created(
-                $"/api/v1/backoffice/modifiers/groups/{entity.Id}",
-                ToGroup(entity));
+            return Results.Created($"/api/v1/backoffice/modifiers/groups/{entity.Id}", ToGroup(entity));
         }).RequireAuthorization(Permissions.MenuManage);
 
         group.MapPut("/groups/{groupId:guid}", async (
@@ -215,7 +227,7 @@ public static class BackOfficeModifierEndpoints
                 x => x.RestaurantId == restaurantId && x.Id != groupId && x.Name == name,
                 ct);
             if (duplicate)
-                return Results.Conflict(new { message = "A modifier group with this name already exists." });
+                return Results.Conflict(new { message = "Группа модификаторов с таким названием уже существует." });
 
             entity.Name = name;
             entity.MinSelections = request.MinSelections;
@@ -234,92 +246,6 @@ public static class BackOfficeModifierEndpoints
             await db.SaveChangesAsync(ct);
 
             return Results.Ok(ToGroup(entity));
-        }).RequireAuthorization(Permissions.MenuManage);
-
-        group.MapPost("/items", async (
-            CreateModifierRequest request,
-            ClaimsPrincipal user,
-            RestaurantDbContext db,
-            CancellationToken ct) =>
-        {
-            if (!TryRestaurantId(user, out var restaurantId))
-                return Results.Unauthorized();
-
-            var name = NormalizeName(request.Name, 160);
-            if (name is null)
-                return Results.BadRequest(new { message = "Modifier name is required and must be 160 characters or fewer." });
-            if (request.PriceDelta is < -1_000_000m or > 1_000_000m)
-                return Results.BadRequest(new { message = "Modifier price delta is out of range." });
-
-            var duplicate = await db.Modifiers.AnyAsync(
-                x => x.RestaurantId == restaurantId && x.Name == name,
-                ct);
-            if (duplicate)
-                return Results.Conflict(new { message = "A modifier with this name already exists." });
-
-            var entity = new Modifier
-            {
-                RestaurantId = restaurantId,
-                Name = name,
-                PriceDelta = request.PriceDelta,
-                IsActive = true
-            };
-
-            db.Modifiers.Add(entity);
-            AddAudit(db, user, restaurantId, "MODIFIER_CREATED", "Modifier", entity.Id, new
-            {
-                entity.Name,
-                entity.PriceDelta,
-                entity.IsActive
-            });
-            await db.SaveChangesAsync(ct);
-
-            return Results.Created(
-                $"/api/v1/backoffice/modifiers/items/{entity.Id}",
-                ToModifier(entity));
-        }).RequireAuthorization(Permissions.MenuManage);
-
-        group.MapPut("/items/{modifierId:guid}", async (
-            Guid modifierId,
-            UpdateModifierRequest request,
-            ClaimsPrincipal user,
-            RestaurantDbContext db,
-            CancellationToken ct) =>
-        {
-            if (!TryRestaurantId(user, out var restaurantId))
-                return Results.Unauthorized();
-
-            var name = NormalizeName(request.Name, 160);
-            if (name is null)
-                return Results.BadRequest(new { message = "Modifier name is required and must be 160 characters or fewer." });
-            if (request.PriceDelta is < -1_000_000m or > 1_000_000m)
-                return Results.BadRequest(new { message = "Modifier price delta is out of range." });
-
-            var entity = await db.Modifiers.FirstOrDefaultAsync(
-                x => x.Id == modifierId && x.RestaurantId == restaurantId,
-                ct);
-            if (entity is null)
-                return Results.NotFound();
-
-            var duplicate = await db.Modifiers.AnyAsync(
-                x => x.RestaurantId == restaurantId && x.Id != modifierId && x.Name == name,
-                ct);
-            if (duplicate)
-                return Results.Conflict(new { message = "A modifier with this name already exists." });
-
-            entity.Name = name;
-            entity.PriceDelta = request.PriceDelta;
-            entity.IsActive = request.IsActive;
-
-            AddAudit(db, user, restaurantId, "MODIFIER_UPDATED", "Modifier", entity.Id, new
-            {
-                entity.Name,
-                entity.PriceDelta,
-                entity.IsActive
-            });
-            await db.SaveChangesAsync(ct);
-
-            return Results.Ok(ToModifier(entity));
         }).RequireAuthorization(Permissions.MenuManage);
 
         group.MapPut("/groups/{groupId:guid}/items", async (
@@ -343,11 +269,14 @@ public static class BackOfficeModifierEndpoints
                 .Distinct()
                 .ToArray();
 
-            var validCount = await db.Modifiers.CountAsync(
-                x => x.RestaurantId == restaurantId && ids.Contains(x.Id),
+            var validCount = await db.Products.CountAsync(
+                x =>
+                    x.RestaurantId == restaurantId &&
+                    x.Type == "MODIFIER" &&
+                    ids.Contains(x.Id),
                 ct);
             if (validCount != ids.Length)
-                return Results.BadRequest(new { message = "One or more modifiers do not belong to this restaurant." });
+                return Results.BadRequest(new { message = "Один или несколько модификаторов не найдены в номенклатуре." });
 
             var existing = await db.ModifierGroupModifiers
                 .Where(x => x.ModifierGroupId == groupId)
@@ -384,7 +313,10 @@ public static class BackOfficeModifierEndpoints
                 return Results.Unauthorized();
 
             var productExists = await db.Products.AnyAsync(
-                x => x.Id == productId && x.RestaurantId == restaurantId,
+                x =>
+                    x.Id == productId &&
+                    x.RestaurantId == restaurantId &&
+                    x.Type != "MODIFIER",
                 ct);
             if (!productExists)
                 return Results.NotFound();
@@ -398,7 +330,7 @@ public static class BackOfficeModifierEndpoints
                 x => x.RestaurantId == restaurantId && ids.Contains(x.Id),
                 ct);
             if (validCount != ids.Length)
-                return Results.BadRequest(new { message = "One or more modifier groups do not belong to this restaurant." });
+                return Results.BadRequest(new { message = "Одна или несколько групп модификаторов не найдены." });
 
             var existing = await db.ProductModifierGroups
                 .Where(x => x.ProductId == productId)
@@ -429,27 +361,19 @@ public static class BackOfficeModifierEndpoints
 
     private static IResult? ValidateGroup(string? rawName, int minSelections, int maxSelections, bool isRequired)
     {
-        var name = NormalizeName(rawName, 120);
-        if (name is null)
-            return Results.BadRequest(new { message = "Modifier group name is required and must be 120 characters or fewer." });
+        var name = rawName?.Trim();
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 120)
+            return Results.BadRequest(new { message = "Название группы обязательно и должно быть не длиннее 120 символов." });
         if (minSelections < 0)
-            return Results.BadRequest(new { message = "Minimum selections cannot be negative." });
+            return Results.BadRequest(new { message = "Минимум выборов не может быть отрицательным." });
         if (maxSelections < 1 || maxSelections > 100)
-            return Results.BadRequest(new { message = "Maximum selections must be between 1 and 100." });
+            return Results.BadRequest(new { message = "Максимум выборов должен быть от 1 до 100." });
         if (minSelections > maxSelections)
-            return Results.BadRequest(new { message = "Minimum selections cannot exceed maximum selections." });
+            return Results.BadRequest(new { message = "Минимум не может быть больше максимума." });
         if (isRequired && minSelections < 1)
-            return Results.BadRequest(new { message = "A required group must require at least one selection." });
+            return Results.BadRequest(new { message = "Для обязательной группы минимум должен быть не меньше 1." });
 
         return null;
-    }
-
-    private static string? NormalizeName(string? raw, int maxLength)
-    {
-        var value = raw?.Trim();
-        if (string.IsNullOrWhiteSpace(value) || value.Length > maxLength)
-            return null;
-        return value;
     }
 
     private static bool TryRestaurantId(ClaimsPrincipal user, out Guid restaurantId) =>
@@ -462,14 +386,6 @@ public static class BackOfficeModifierEndpoints
         minSelections = entity.MinSelections,
         maxSelections = entity.MaxSelections,
         isRequired = entity.IsRequired,
-        isActive = entity.IsActive
-    };
-
-    private static object ToModifier(Modifier entity) => new
-    {
-        id = entity.Id,
-        name = entity.Name,
-        priceDelta = entity.PriceDelta,
         isActive = entity.IsActive
     };
 
@@ -509,15 +425,6 @@ public sealed record UpdateModifierGroupRequest(
     int MinSelections,
     int MaxSelections,
     bool IsRequired,
-    bool IsActive);
-
-public sealed record CreateModifierRequest(
-    string Name,
-    decimal PriceDelta);
-
-public sealed record UpdateModifierRequest(
-    string Name,
-    decimal PriceDelta,
     bool IsActive);
 
 public sealed record SetGroupModifiersRequest(Guid[]? ModifierIds);
