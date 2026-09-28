@@ -21,6 +21,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<Modifier> Modifiers => Set<Modifier>();
     public DbSet<ProductModifierGroup> ProductModifierGroups => Set<ProductModifierGroup>();
     public DbSet<ModifierGroupModifier> ModifierGroupModifiers => Set<ModifierGroupModifier>();
+    public DbSet<Warehouse> Warehouses => Set<Warehouse>();
+    public DbSet<StockItem> StockItems => Set<StockItem>();
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
     public DbSet<Shift> Shifts => Set<Shift>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
@@ -58,6 +61,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Modifier>().ToTable("modifiers");
         modelBuilder.Entity<ProductModifierGroup>().ToTable("product_modifier_groups");
         modelBuilder.Entity<ModifierGroupModifier>().ToTable("modifier_group_modifiers");
+        modelBuilder.Entity<Warehouse>().ToTable("warehouses");
+        modelBuilder.Entity<StockItem>().ToTable("stock_items");
+        modelBuilder.Entity<StockMovement>().ToTable("stock_movements");
         modelBuilder.Entity<Shift>().ToTable("shifts");
         modelBuilder.Entity<Order>().ToTable("orders");
         modelBuilder.Entity<OrderItem>().ToTable("order_items");
@@ -104,6 +110,8 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
 
         modelBuilder.Entity<ProductPrice>().Property(x => x.Amount).HasPrecision(18, 4);
         modelBuilder.Entity<Modifier>().Property(x => x.PriceDelta).HasPrecision(18, 4);
+        modelBuilder.Entity<StockItem>().Property(x => x.MinStock).HasPrecision(18, 3);
+        modelBuilder.Entity<StockMovement>().Property(x => x.QuantityDelta).HasPrecision(18, 3);
         modelBuilder.Entity<Shift>().Property(x => x.OpeningCash).HasPrecision(18, 4);
         modelBuilder.Entity<Shift>().Property(x => x.ClosingCash).HasPrecision(18, 4);
         modelBuilder.Entity<Shift>().Property(x => x.ExpectedCashAtClose).HasPrecision(18, 4);
@@ -146,6 +154,10 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Category>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Name });
         modelBuilder.Entity<ProductPrice>().HasIndex(x => new { x.ProductId, x.ValidFrom });
+        modelBuilder.Entity<Warehouse>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<StockItem>().HasIndex(x => new { x.RestaurantId, x.Name });
+        modelBuilder.Entity<StockItem>().HasIndex(x => new { x.RestaurantId, x.Sku }).IsUnique();
+        modelBuilder.Entity<StockMovement>().HasIndex(x => new { x.RestaurantId, x.WarehouseId, x.StockItemId, x.CreatedAt });
         modelBuilder.Entity<Shift>().HasIndex(x => new { x.RestaurantId, x.DeviceId, x.Status, x.OpenedAt });
         modelBuilder.Entity<Shift>()
             .HasIndex(x => new { x.RestaurantId, x.DeviceId })
@@ -210,6 +222,18 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
 
         modelBuilder.Entity<ProductModifierGroup>().HasKey(x => new { x.ProductId, x.ModifierGroupId });
         modelBuilder.Entity<ModifierGroupModifier>().HasKey(x => new { x.ModifierGroupId, x.ModifierId });
+
+        modelBuilder.Entity<StockMovement>()
+            .HasOne(x => x.Warehouse)
+            .WithMany()
+            .HasForeignKey(x => x.WarehouseId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<StockMovement>()
+            .HasOne(x => x.StockItem)
+            .WithMany()
+            .HasForeignKey(x => x.StockItemId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<Restaurant>()
             .HasOne(x => x.Organization)
