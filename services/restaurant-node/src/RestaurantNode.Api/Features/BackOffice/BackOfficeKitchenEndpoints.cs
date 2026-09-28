@@ -40,14 +40,17 @@ public static class BackOfficeKitchenEndpoints
                     activeProductCount = db.Products.Count(product =>
                         product.RestaurantId == restaurantId &&
                         product.KitchenStationId == station.Id &&
+                        (product.IsSellable || product.Type == "PREPARATION") &&
                         product.IsActive),
                     totalProductCount = db.Products.Count(product =>
                         product.RestaurantId == restaurantId &&
-                        product.KitchenStationId == station.Id),
+                        product.KitchenStationId == station.Id &&
+                        (product.IsSellable || product.Type == "PREPARATION")),
                     products = db.Products
                         .Where(product =>
                             product.RestaurantId == restaurantId &&
-                            product.KitchenStationId == station.Id)
+                            product.KitchenStationId == station.Id &&
+                            (product.IsSellable || product.Type == "PREPARATION"))
                         .OrderByDescending(product => product.IsActive)
                         .ThenBy(product => product.Name)
                         .Select(product => new
@@ -71,6 +74,7 @@ public static class BackOfficeKitchenEndpoints
                 .Where(product =>
                     product.RestaurantId == restaurantId &&
                     product.KitchenStationId == null &&
+                    (product.IsSellable || product.Type == "PREPARATION") &&
                     product.IsActive)
                 .OrderBy(product => product.Name)
                 .Select(product => new
@@ -215,6 +219,7 @@ public static class BackOfficeKitchenEndpoints
                     .Where(x =>
                         x.RestaurantId == restaurantId &&
                         x.KitchenStationId == stationId &&
+                        (x.IsSellable || x.Type == "PREPARATION") &&
                         x.IsActive)
                     .Select(x => x.Name)
                     .OrderBy(x => x)
