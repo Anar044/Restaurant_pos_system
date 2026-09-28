@@ -217,6 +217,39 @@ public sealed class OrderAdjustmentPresetCategory
     public Category? Category { get; set; }
 }
 
+public sealed class Warehouse : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public required string Name { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class StockItem : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public required string Name { get; set; }
+    public string? Sku { get; set; }
+    public string Unit { get; set; } = "pcs";
+    public decimal MinStock { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class StockMovement : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public Guid WarehouseId { get; set; }
+    public Warehouse? Warehouse { get; set; }
+    public Guid StockItemId { get; set; }
+    public StockItem? StockItem { get; set; }
+    public Guid EmployeeId { get; set; }
+    public string Type { get; set; } = "RECEIPT";
+    public decimal QuantityDelta { get; set; }
+    public string? Note { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class Shift : Entity
 {
     public Guid RestaurantId { get; set; }
