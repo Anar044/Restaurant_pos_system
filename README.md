@@ -28,6 +28,12 @@ A clean-room restaurant POS platform started from scratch. It does **not** depen
 - BackOffice-managed discount and surcharge presets; POS users cannot type arbitrary rates or amounts
 - Two-layer adjustment access: role permission plus per-preset allowed roles
 - Per-preset POS comment policy: BackOffice can require a cashier comment before applying a discount or surcharge
+- Pricing Engine v1: rules can target selected dishes and/or categories
+- Manual or automatic pricing rules with weekday/time schedules
+- Time eligibility can use order-open time or each item's add time
+- Explicit rule priority controls discount/surcharge calculation order
+- Stackable/non-stackable rules prevent unwanted promotion combinations
+- Applied-rule snapshots freeze value, targets, schedule and priority for existing orders
 - Order/guest discounts and service charges with audit trail and correct guest-payment allocation
 - Receipt/precheck printing with subtotal, discount, service and final total
 
