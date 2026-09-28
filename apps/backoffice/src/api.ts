@@ -638,11 +638,27 @@ export type NomenclatureItem = {
   isSellable: boolean;
   isActive: boolean;
   sortOrder: number;
+  currentPrice: number | null;
   recipe: NomenclatureRecipeLine[];
+};
+
+export type NomenclatureCategoryOption = {
+  id: string;
+  name: string;
+  isActive: boolean;
+};
+
+export type NomenclaturePreparationPlaceOption = {
+  id: string;
+  name: string;
+  isActive: boolean;
 };
 
 export type BackOfficeNomenclature = {
   supportedTypes: string[];
+  currencyCode: string;
+  categories: NomenclatureCategoryOption[];
+  preparationPlaces: NomenclaturePreparationPlaceOption[];
   items: NomenclatureItem[];
 };
 
@@ -658,6 +674,7 @@ export type UpsertNomenclatureItemInput = {
   sortOrder: number;
   categoryId: string | null;
   kitchenStationId: string | null;
+  price: number | null;
 };
 
 export type InventoryWarehouse = {
