@@ -572,17 +572,11 @@ export type NomenclatureCategoryOption = {
   isActive: boolean;
 };
 
-export type NomenclaturePreparationPlaceTypeOption = {
-  id: string;
-  name: string;
-  isActive: boolean;
-};
-
 export type BackOfficeNomenclature = {
   supportedTypes: string[];
   currencyCode: string;
   categories: NomenclatureCategoryOption[];
-  preparationPlaceTypes: NomenclaturePreparationPlaceTypeOption[];
+  preparationPlaceTypes: PreparationPlaceTypeOption[];
   items: NomenclatureItem[];
 };
 
@@ -614,7 +608,7 @@ export type InventoryWarehouseBalance = {
   quantity: number;
 };
 
-export type InventoryStockItem = {
+export type InventoryNomenclatureItem = {
   id: string;
   name: string;
   sku: string | null;
@@ -630,8 +624,8 @@ export type InventoryMovement = {
   id: string;
   warehouseId: string;
   warehouseName: string;
-  stockItemId: string;
-  stockItemName: string;
+  productId: string;
+  productName: string;
   unit: string;
   employeeId: string;
   type: 'RECEIPT' | 'WRITE_OFF';
@@ -642,7 +636,7 @@ export type InventoryMovement = {
 
 export type BackOfficeInventory = {
   warehouses: InventoryWarehouse[];
-  items: InventoryStockItem[];
+  items: InventoryNomenclatureItem[];
   recentMovements: InventoryMovement[];
 };
 
@@ -657,7 +651,7 @@ export type UpdateWarehouseInput = {
 
 export type CreateStockMovementInput = {
   warehouseId: string;
-  stockItemId: string;
+  productId: string;
   type: 'RECEIPT' | 'WRITE_OFF';
   quantity: number;
   note: string | null;
