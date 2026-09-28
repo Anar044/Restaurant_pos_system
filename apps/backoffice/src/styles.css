@@ -144,30 +144,69 @@ input:focus, select:focus { border-color: #6172f3; box-shadow: 0 0 0 3px rgba(97
 .restaurant-switcher small { display: block; margin-top: 3px; color: #667085; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 nav {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   min-height: 0;
   overflow-y: auto;
   padding-right: 2px;
 }
-.nav-group {
-  display: grid;
-  gap: 5px;
-}
-.nav-group + .nav-group {
-  padding-top: 8px;
-  border-top: 1px solid #f2f4f7;
-}
-.nav-group-title {
-  padding: 0 11px;
-  color: #98a2b3;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-.nav-group-items {
+.nav-section {
   display: grid;
   gap: 3px;
+}
+.nav-section + .nav-section {
+  padding-top: 7px;
+  border-top: 1px solid #f2f4f7;
+}
+.nav-parent {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 10px;
+  color: #344054;
+  background: transparent;
+  text-align: left;
+  font-weight: 750;
+}
+.nav-parent:hover,
+.nav-parent.active-parent {
+  background: #f8fafc;
+}
+.nav-parent-icon {
+  width: 24px;
+  color: #667085;
+  font-size: 16px;
+  text-align: center;
+}
+.nav-parent > span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+}
+.nav-chevron {
+  flex: 0 0 auto;
+  color: #98a2b3;
+  font-size: 20px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform .16s ease;
+}
+.nav-chevron.open {
+  transform: rotate(90deg);
+}
+.nav-submenu {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 3px 17px;
+  padding-left: 10px;
+  border-left: 1px solid #e4e7ec;
+}
+.nav-item.nested {
+  min-height: 40px;
+  padding-left: 8px;
+  font-size: 13px;
 }
 .nav-item {
   width: 100%;
@@ -346,9 +385,10 @@ nav {
 
 @media (max-width: 900px) {
   .sidebar { width: 76px; padding: 18px 10px; }
-  .sidebar-brand > div:not(.brand-mark), .restaurant-switcher, .nav-group-title, .nav-item > span:not(.nav-icon), .nav-item small, .user-meta { display: none; }
+  .sidebar-brand > div:not(.brand-mark), .restaurant-switcher, .nav-parent > span:not(.nav-parent-icon), .nav-item > span:not(.nav-icon), .nav-item small, .user-meta { display: none; }
   .sidebar-brand { padding-inline: 8px; justify-content: center; }
-  .nav-item { justify-content: center; padding: 0; }
+  .nav-item, .nav-parent { justify-content: center; padding: 0; }
+  .nav-submenu { margin-left: 0; padding-left: 0; border-left: 0; }
   .sidebar-footer { justify-content: center; padding-inline: 0; flex-wrap: wrap; }
   .main-area { margin-left: 76px; width: calc(100% - 76px); }
   .content-area { padding: 22px; }
