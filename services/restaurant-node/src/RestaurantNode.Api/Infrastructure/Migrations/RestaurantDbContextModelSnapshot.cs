@@ -180,7 +180,8 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.Property<Guid>("DeviceId").HasColumnType("uuid");
                     b.Property<bool>("IsMainCashRegister").HasColumnType("boolean");
                     b.HasKey("GroupId", "DeviceId");
-                    b.HasIndex("DeviceId");
+                    b.HasIndex("DeviceId")
+                        .IsUnique();
                     b.ToTable("restaurant_group_devices", (string)null);
                 });
 
