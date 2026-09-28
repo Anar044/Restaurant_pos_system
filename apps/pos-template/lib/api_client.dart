@@ -464,6 +464,17 @@ class PosApiClient {
     return OrderDto.fromJson(_decode(response));
   }
 
+  Future<OrderDto> removeAdjustment({
+    required String orderId,
+    required String adjustmentId,
+  }) async {
+    final response = await _http.delete(
+      _uri('/api/v1/orders/$orderId/adjustments/$adjustmentId'),
+      headers: _orderHeaders(orderId),
+    );
+    return OrderDto.fromJson(_decode(response));
+  }
+
   Future<PaymentResultDto> payOrder({
     required String orderId,
     required String shiftId,
@@ -1161,8 +1172,17 @@ class AdjustmentPresetDto {
     required this.type,
     required this.mode,
     required this.scope,
+    required this.applicationMode,
+    required this.timeBasis,
     required this.value,
+    required this.priority,
+    required this.canStack,
+    required this.weekdayMask,
+    required this.productIds,
+    required this.categoryIds,
     required this.requireComment,
+    this.startMinute,
+    this.endMinute,
   });
 
   final String id;
@@ -1170,11 +1190,21 @@ class AdjustmentPresetDto {
   final String type;
   final String mode;
   final String scope;
+  final String applicationMode;
+  final String timeBasis;
   final double value;
+  final int priority;
+  final bool canStack;
+  final int weekdayMask;
+  final int? startMinute;
+  final int? endMinute;
+  final List<String> productIds;
+  final List<String> categoryIds;
   final bool requireComment;
 
   bool get isDiscount => type == 'DISCOUNT';
   bool get isServiceCharge => type == 'SERVICE_CHARGE';
+  bool get isAutomatic => applicationMode == 'AUTOMATIC';
   bool get allowsOrder => scope == 'ORDER' || scope == 'BOTH';
   bool get allowsGuest => scope == 'GUEST' || scope == 'BOTH';
 
@@ -1189,7 +1219,20 @@ class AdjustmentPresetDto {
         type: json['type'] as String,
         mode: json['mode'] as String,
         scope: json['scope'] as String,
+        applicationMode: json['applicationMode'] as String? ?? 'MANUAL',
+        timeBasis: json['timeBasis'] as String? ?? 'ITEM_ADDED_AT',
         value: (json['value'] as num?)?.toDouble() ?? 0,
+        priority: (json['priority'] as num?)?.toInt() ?? 100,
+        canStack: json['canStack'] as bool? ?? true,
+        weekdayMask: (json['weekdayMask'] as num?)?.toInt() ?? 127,
+        startMinute: (json['startMinute'] as num?)?.toInt(),
+        endMinute: (json['endMinute'] as num?)?.toInt(),
+        productIds: ((json['productIds'] as List<dynamic>?) ?? const [])
+            .map((value) => value.toString())
+            .toList(),
+        categoryIds: ((json['categoryIds'] as List<dynamic>?) ?? const [])
+            .map((value) => value.toString())
+            .toList(),
         requireComment: json['requireComment'] as bool? ?? false,
       );
 }
@@ -1201,6 +1244,10 @@ class OrderAdjustmentDto {
     required this.mode,
     required this.value,
     required this.calculatedAmount,
+    required this.applicationMode,
+    required this.timeBasis,
+    required this.priority,
+    required this.canStack,
     required this.appliedByEmployeeId,
     required this.createdAt,
     required this.updatedAt,
@@ -1218,6 +1265,10 @@ class OrderAdjustmentDto {
   final String? presetNameSnapshot;
   final double value;
   final double calculatedAmount;
+  final String applicationMode;
+  final String timeBasis;
+  final int priority;
+  final bool canStack;
   final String? reason;
   final String appliedByEmployeeId;
   final DateTime createdAt;
@@ -1237,6 +1288,11 @@ class OrderAdjustmentDto {
         value: (json['value'] as num?)?.toDouble() ?? 0,
         calculatedAmount:
             (json['calculatedAmount'] as num?)?.toDouble() ?? 0,
+        applicationMode:
+            json['applicationMode'] as String? ?? 'MANUAL',
+        timeBasis: json['timeBasis'] as String? ?? 'ITEM_ADDED_AT',
+        priority: (json['priority'] as num?)?.toInt() ?? 100,
+        canStack: json['canStack'] as bool? ?? true,
         reason: json['reason'] as String?,
         appliedByEmployeeId:
             json['appliedByEmployeeId'] as String? ?? '',
