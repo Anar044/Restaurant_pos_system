@@ -157,8 +157,6 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RestaurantId", "Name")
-                        .IsUnique();
 
                     b.ToTable("categories", (string)null);
                 });
