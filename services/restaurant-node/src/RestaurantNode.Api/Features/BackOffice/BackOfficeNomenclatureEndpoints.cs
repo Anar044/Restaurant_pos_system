@@ -135,8 +135,18 @@ public static class BackOfficeNomenclatureEndpoints
 
             if (request.IsSellable)
             {
-                if (request.Price is null || request.Price < 0)
-                    return Results.BadRequest(new { message = "Для продаваемой позиции нужно указать цену." });
+                if (request.Price is null ||
+                    (validation.Type != "MODIFIER" && request.Price < 0) ||
+                    request.Price < -1_000_000m ||
+                    request.Price > 1_000_000m)
+                {
+                    return Results.BadRequest(new
+                    {
+                        message = validation.Type == "MODIFIER"
+                            ? "Для модификатора укажите изменение цены от -1000000 до 1000000."
+                            : "Для продаваемой позиции укажите неотрицательную цену."
+                    });
+                }
 
                 db.ProductPrices.Add(new ProductPrice
                 {
@@ -190,8 +200,18 @@ public static class BackOfficeNomenclatureEndpoints
 
             if (request.IsSellable)
             {
-                if (request.Price is null || request.Price < 0)
-                    return Results.BadRequest(new { message = "Для продаваемой позиции нужно указать цену." });
+                if (request.Price is null ||
+                    (validation.Type != "MODIFIER" && request.Price < 0) ||
+                    request.Price < -1_000_000m ||
+                    request.Price > 1_000_000m)
+                {
+                    return Results.BadRequest(new
+                    {
+                        message = validation.Type == "MODIFIER"
+                            ? "Для модификатора укажите изменение цены от -1000000 до 1000000."
+                            : "Для продаваемой позиции укажите неотрицательную цену."
+                    });
+                }
 
                 var now = DateTimeOffset.UtcNow;
                 var restaurant = await db.Restaurants
@@ -341,8 +361,8 @@ public static class BackOfficeNomenclatureEndpoints
                 return ItemValidationResult.Fail(Results.Conflict(new { message = "Позиция с таким SKU уже существует." }));
         }
 
-        if (request.IsSellable && request.CategoryId is null)
-            return ItemValidationResult.Fail(Results.BadRequest(new { message = "Для продаваемой позиции нужно выбрать категорию меню." }));
+        if (request.IsSellable && type != "MODIFIER" && request.CategoryId is null)
+            return ItemValidationResult.Fail(Results.BadRequest(new { message = "Для продаваемой позиции нужно выбрать категорию продажи." }));
 
         if (request.CategoryId is not null)
         {
