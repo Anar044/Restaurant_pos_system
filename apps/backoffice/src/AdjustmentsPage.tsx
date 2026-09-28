@@ -313,16 +313,30 @@ function AdjustmentEditor({
             <label><span>Тип</span><select value={type} onChange={(e) => setType(e.target.value as 'DISCOUNT' | 'SERVICE_CHARGE')}><option value="DISCOUNT">Скидка</option><option value="SERVICE_CHARGE">Надбавка / сервис</option></select></label>
             <label><span>Расчёт</span><select value={mode} onChange={(e) => setMode(e.target.value as 'PERCENT' | 'FIXED')}><option value="PERCENT">Процент</option><option value="FIXED">Фиксированная сумма</option></select></label>
             <label><span>{mode === 'PERCENT' ? 'Процент' : 'Сумма'}</span><input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" /></label>
-            <label><span>Применение</span><select value={applicationMode} onChange={(e) => {
-              const next = e.target.value as 'MANUAL' | 'AUTOMATIC';
-              setApplicationMode(next);
-              if (next === 'AUTOMATIC' && targetMode === 'POS_SELECTION') {
-                setTargetMode('ALL_ITEMS');
-              }
-            }}><option value="MANUAL">Вручную на POS</option><option value="AUTOMATIC">Автоматически</option></select></label>
+            
             <label><span>Область</span><select value={applicationMode === 'AUTOMATIC' || type === 'SERVICE_CHARGE' ? 'ORDER' : scope} disabled={applicationMode === 'AUTOMATIC' || type === 'SERVICE_CHARGE'} onChange={(e) => setScope(e.target.value as 'ORDER' | 'GUEST' | 'BOTH')}><option value="ORDER">Весь заказ</option><option value="GUEST">Выбранный гость</option><option value="BOTH">Заказ или гость</option></select></label>
             <label><span>Приоритет</span><input type="number" min="0" max="9999" value={priority} onChange={(e) => setPriority(e.target.value)} /></label>
           </div>
+          <label className="toggle-row application-mode-toggle">
+            <span>
+              <strong>Применять автоматически</strong>
+              <small>
+                Сервер применит правило сам, когда совпадут блюда, категории, дни и время.
+                Если выключено — правило выбирает кассир на POS.
+              </small>
+            </span>
+            <input
+              type="checkbox"
+              checked={applicationMode === 'AUTOMATIC'}
+              onChange={(e) => {
+                const next = e.target.checked ? 'AUTOMATIC' : 'MANUAL';
+                setApplicationMode(next);
+                if (next === 'AUTOMATIC' && targetMode === 'POS_SELECTION') {
+                  setTargetMode('ALL_ITEMS');
+                }
+              }}
+            />
+          </label>
           <label className="toggle-row"><span><strong>Можно совмещать</strong><small>Если выключено, правило не применяется к позициям, уже затронутым другим правилом, и блокирует их для следующих правил.</small></span><input type="checkbox" checked={canStack} onChange={(e) => setCanStack(e.target.checked)} /></label>
         </div>
 
