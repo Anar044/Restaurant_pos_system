@@ -616,6 +616,50 @@ export type UpsertAdjustmentPresetInput = {
   categoryIds: string[];
 };
 
+export type NomenclatureRecipeLine = {
+  id: string;
+  ingredientProductId: string;
+  ingredientName: string;
+  ingredientUnit: string;
+  quantity: number;
+};
+
+export type NomenclatureItem = {
+  id: string;
+  categoryId: string | null;
+  categoryName: string | null;
+  kitchenStationId: string | null;
+  name: string;
+  sku: string | null;
+  type: 'DISH' | 'GOODS' | 'PREPARATION' | 'MODIFIER';
+  unit: string;
+  minStock: number;
+  trackStock: boolean;
+  isSellable: boolean;
+  isActive: boolean;
+  sortOrder: number;
+  recipe: NomenclatureRecipeLine[];
+};
+
+export type BackOfficeNomenclature = {
+  supportedTypes: string[];
+  items: NomenclatureItem[];
+};
+
+export type UpsertNomenclatureItemInput = {
+  name: string;
+  sku: string | null;
+  type: NomenclatureItem['type'];
+  unit: string;
+  minStock: number;
+  trackStock: boolean;
+  isSellable: boolean;
+  isActive: boolean;
+  sortOrder: number;
+  categoryId: string | null;
+  kitchenStationId: string | null;
+};
+
 export type InventoryWarehouse = {
   id: string;
   name: string;
@@ -1116,6 +1160,46 @@ export async function updateAdjustmentPreset(
     {
       method: 'PUT',
       body: JSON.stringify(input),
+    },
+    token,
+  );
+}
+
+export async function getBackOfficeNomenclature(token: string): Promise<BackOfficeNomenclature> {
+  return request<BackOfficeNomenclature>('/api/v1/backoffice/nomenclature', {}, token);
+}
+
+export async function createNomenclatureItem(
+  token: string,
+  input: UpsertNomenclatureItemInput,
+): Promise<{ id: string }> {
+  return request<{ id: string }>('/api/v1/backoffice/nomenclature/items', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateNomenclatureItem(
+  token: string,
+  itemId: string,
+  input: UpsertNomenclatureItemInput,
+): Promise<{ id: string }> {
+  return request<{ id: string }>(`/api/v1/backoffice/nomenclature/items/${itemId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateNomenclatureRecipe(
+  token: string,
+  itemId: string,
+  lines: Array<{ ingredientProductId: string; quantity: number }>,
+): Promise<{ id: string; lineCount: number }> {
+  return request<{ id: string; lineCount: number }>(
+    `/api/v1/backoffice/nomenclature/items/${itemId}/recipe`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ lines }),
     },
     token,
   );
