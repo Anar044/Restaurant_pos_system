@@ -31,6 +31,8 @@ jobs:
       - run: dotnet build services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj --no-restore
       - name: Runtime smoke
         shell: bash
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
         run: |
           cd services/restaurant-node/src/RestaurantNode.Api
           dotnet run --no-build --no-launch-profile > /tmp/node.log 2>&1 &
