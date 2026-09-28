@@ -42,12 +42,16 @@ const permissionMeta: Record<string, { label: string; description: string; group
 export function EmployeesPage({
   token,
   currentEmployeeId,
+  initialTab = 'employees',
+  showTabs = true,
 }: {
   token: string;
   currentEmployeeId: string;
+  initialTab?: TabKey;
+  showTabs?: boolean;
 }) {
   const [data, setData] = useState<BackOfficeEmployees | null>(null);
-  const [tab, setTab] = useState<TabKey>('employees');
+  const [tab, setTab] = useState<TabKey>(initialTab);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +72,10 @@ export function EmployeesPage({
   useEffect(() => {
     void refresh();
   }, [token]);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
 
   const visibleEmployees = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -104,8 +112,12 @@ export function EmployeesPage({
       <div className="page-heading employees-heading">
         <div>
           <div className="eyebrow">КОМАНДА И ДОСТУП</div>
-          <h1>Сотрудники</h1>
-          <p>Создавайте сотрудников, назначайте роли и управляйте правами доступа к POS и BackOffice.</p>
+          <h1>{tab === 'employees' ? 'Список сотрудников' : 'Роли и права'}</h1>
+          <p>
+            {tab === 'employees'
+              ? 'Создавайте сотрудников, назначайте им роли и управляйте доступом к системе.'
+              : 'Настраивайте роли и права доступа сотрудников к POS и BackOffice.'}
+          </p>
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>Обновить</button>
@@ -131,16 +143,18 @@ export function EmployeesPage({
         <EmployeeStat label="Доступ BackOffice" value={stats.backOfficeUsers} detail="активных сотрудников" />
       </div>
 
-      <div className="employees-tabs">
-        <button className={tab === 'employees' ? 'active' : ''} onClick={() => setTab('employees')}>
-          Сотрудники
-          <span>{stats.totalEmployees}</span>
-        </button>
-        <button className={tab === 'roles' ? 'active' : ''} onClick={() => setTab('roles')}>
-          Роли и права
-          <span>{stats.roles}</span>
-        </button>
-      </div>
+      {showTabs && (
+        <div className="employees-tabs">
+          <button className={tab === 'employees' ? 'active' : ''} onClick={() => setTab('employees')}>
+            Сотрудники
+            <span>{stats.totalEmployees}</span>
+          </button>
+          <button className={tab === 'roles' ? 'active' : ''} onClick={() => setTab('roles')}>
+            Роли и права
+            <span>{stats.roles}</span>
+          </button>
+        </div>
+      )}
 
       {tab === 'employees' ? (
         <div className="employees-panel">
