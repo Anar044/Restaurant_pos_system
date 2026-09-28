@@ -196,6 +196,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<OutboxEvent>().HasIndex(x => new { x.ProcessedAt, x.OccurredAt });
         modelBuilder.Entity<AuditEvent>().HasIndex(x => new { x.RestaurantId, x.EntityId, x.CreatedAt });
         modelBuilder.Entity<KitchenTicket>().HasIndex(x => new { x.RestaurantId, x.DepartmentId, x.CreatedAt });
+        modelBuilder.Entity<KitchenTicket>().HasIndex(x => x.DepartmentId);
 
         modelBuilder.Entity<ProductModifierGroup>().HasKey(x => new { x.ProductId, x.ModifierGroupId });
         modelBuilder.Entity<ModifierGroupModifier>().HasKey(x => new { x.ModifierGroupId, x.ModifierId });
