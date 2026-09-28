@@ -395,6 +395,14 @@ class PosApiClient {
     return OrderDto.fromJson(_decode(response));
   }
 
+  Future<PrecheckPrintResultDto> printPrecheck(String orderId) async {
+    final response = await _http.post(
+      _uri('/api/v1/orders/$orderId/precheck'),
+      headers: _headers,
+    );
+    return PrecheckPrintResultDto.fromJson(_decode(response));
+  }
+
   Future<OrderDto> sendOrderToKitchen(String orderId) async {
     final response = await _http.post(
       _uri('/api/v1/orders/$orderId/send'),
@@ -542,6 +550,28 @@ class PosApiClient {
     _rememberOrderVersions(data);
     return data;
   }
+}
+
+class PrecheckPrintResultDto {
+  const PrecheckPrintResultDto({
+    required this.jobId,
+    required this.printerId,
+    required this.printerName,
+    required this.status,
+  });
+
+  final String jobId;
+  final String printerId;
+  final String printerName;
+  final String status;
+
+  factory PrecheckPrintResultDto.fromJson(Map<String, dynamic> json) =>
+      PrecheckPrintResultDto(
+        jobId: json['jobId'] as String,
+        printerId: json['printerId'] as String,
+        printerName: json['printerName'] as String? ?? 'Printer',
+        status: json['status'] as String? ?? 'QUEUED',
+      );
 }
 
 class ShiftDto {
