@@ -169,7 +169,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<RestaurantGroup>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<RestaurantGroupDevice>().HasKey(x => new { x.GroupId, x.DeviceId });
         modelBuilder.Entity<RestaurantGroupDevice>().HasIndex(x => x.DeviceId);
-        modelBuilder.Entity<RestaurantDepartment>().HasIndex(x => new { x.GroupId, x.Name }).IsUnique();
+        modelBuilder.Entity<RestaurantDepartment>().HasIndex(x => new { x.GroupId, x.Name });
         modelBuilder.Entity<GroupPreparationMap>().HasIndex(x => new { x.GroupId, x.PreparationPlaceTypeId }).IsUnique();
         modelBuilder.Entity<GroupPreparationMap>().HasIndex(x => x.DepartmentId);
         modelBuilder.Entity<PreparationPlaceType>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
