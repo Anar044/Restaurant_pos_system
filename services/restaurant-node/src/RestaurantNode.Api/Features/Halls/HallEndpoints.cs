@@ -9,14 +9,27 @@ public static class HallEndpoints
 {
     public static IEndpointRouteBuilder MapHallEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/v1/halls", async (ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
+        app.MapGet("/api/v1/halls", async (HttpRequest request, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
             if (!Guid.TryParse(user.FindFirstValue("restaurant_id"), out var restaurantId))
                 return Results.Unauthorized();
 
+            Guid? groupId = null;
+            if (Guid.TryParse(request.Headers["X-POS-DEVICE-ID"].FirstOrDefault(), out var deviceId))
+            {
+                groupId = await db.RestaurantGroupDevices
+                    .AsNoTracking()
+                    .Where(x => x.DeviceId == deviceId)
+                    .Select(x => (Guid?)x.GroupId)
+                    .FirstOrDefaultAsync(ct);
+            }
+
             var halls = await db.Halls
                 .AsNoTracking()
-                .Where(x => x.RestaurantId == restaurantId && x.IsActive)
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive &&
+                    (!groupId.HasValue || x.GroupId == groupId.Value))
                 .OrderBy(x => x.SortOrder)
                 .ThenBy(x => x.Name)
                 .Select(x => new { x.Id, x.Name, x.SortOrder })
