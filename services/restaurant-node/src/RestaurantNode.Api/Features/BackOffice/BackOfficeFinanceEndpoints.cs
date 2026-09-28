@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using RestaurantNode.Api.Domain;
+using RestaurantNode.Api.Features.Shifts;
 using RestaurantNode.Api.Infrastructure;
 using RestaurantNode.Api.Security;
 
@@ -37,13 +38,35 @@ public static class BackOfficeFinanceEndpoints
                     deviceId = shift.DeviceId,
                     deviceName = device.Name,
                     status = shift.Status.ToString().ToUpperInvariant(),
+                    shift.OpenedByEmployeeId,
+                    shift.ClosedByEmployeeId,
                     shift.OpeningCash,
                     shift.ClosingCash,
+                    shift.ExpectedCashAtClose,
+                    shift.CashDifference,
+                    shift.ClosingNote,
                     shift.OpenedAt,
                     shift.ClosedAt
                 })
                 .Take(50)
                 .ToListAsync(ct);
+
+            var shiftEmployeeIds = shifts
+                .SelectMany(x => new[]
+                {
+                    x.OpenedByEmployeeId,
+                    x.ClosedByEmployeeId ?? Guid.Empty
+                })
+                .Where(x => x != Guid.Empty)
+                .Distinct()
+                .ToArray();
+
+            var shiftEmployeeNames = await db.Employees
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    shiftEmployeeIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
 
             var paymentQuery =
                 from payment in db.Payments.AsNoTracking()
@@ -120,21 +143,87 @@ public static class BackOfficeFinanceEndpoints
                 .Take(limit)
                 .ToListAsync(ct);
 
-            var openShifts = shifts
+            var openShiftRows = shifts
                 .Where(x => x.status == "OPEN")
-                .Select(x => new
+                .ToArray();
+
+            var openShiftReports = new List<ShiftReportDto>();
+            foreach (var row in openShiftRows)
+            {
+                var shift = await db.Shifts
+                    .AsNoTracking()
+                    .FirstAsync(x =>
+                        x.Id == row.id &&
+                        x.RestaurantId == restaurantId,
+                        ct);
+
+                openShiftReports.Add(
+                    await ShiftEndpoints.BuildReportAsync(
+                        db,
+                        restaurantId,
+                        shift,
+                        ct));
+            }
+
+            ShiftReportDto? selectedShiftReport = null;
+            if (shiftId.HasValue)
+            {
+                var selectedShift = await db.Shifts
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x =>
+                        x.Id == shiftId.Value &&
+                        x.RestaurantId == restaurantId,
+                        ct);
+
+                if (selectedShift is not null)
+                {
+                    selectedShiftReport =
+                        await ShiftEndpoints.BuildReportAsync(
+                            db,
+                            restaurantId,
+                            selectedShift,
+                            ct);
+                }
+            }
+
+            return Results.Ok(new
+            {
+                shifts = shifts.Select(x => new
                 {
                     x.id,
                     x.deviceId,
                     x.deviceName,
-                    openedAt = x.OpenedAt
-                })
-                .ToArray();
-
-            return Results.Ok(new
-            {
-                shifts,
-                openShifts,
+                    x.status,
+                    x.OpenedByEmployeeId,
+                    openedByEmployeeName =
+                        shiftEmployeeNames.GetValueOrDefault(
+                            x.OpenedByEmployeeId),
+                    x.ClosedByEmployeeId,
+                    closedByEmployeeName =
+                        x.ClosedByEmployeeId.HasValue
+                            ? shiftEmployeeNames.GetValueOrDefault(
+                                x.ClosedByEmployeeId.Value)
+                            : null,
+                    x.OpeningCash,
+                    x.ClosingCash,
+                    x.ExpectedCashAtClose,
+                    x.CashDifference,
+                    x.ClosingNote,
+                    x.OpenedAt,
+                    x.ClosedAt
+                }),
+                openShifts = openShiftReports.Select(report => new
+                {
+                    id = report.ShiftId,
+                    deviceId = report.DeviceId,
+                    deviceName = report.DeviceName,
+                    openedAt = report.OpenedAt,
+                    report.ExpectedCash,
+                    report.CashSales,
+                    report.Deposits,
+                    report.Withdrawals
+                }),
+                selectedShiftReport,
                 payments = paymentRows.Select(row =>
                 {
                     var refunded = refundedByPayment.GetValueOrDefault(row.Payment.Id);
