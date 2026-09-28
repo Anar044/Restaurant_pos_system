@@ -85,24 +85,6 @@
 .connection-state.online { color: #027a48; }
 .connection-state.online > span { background: #12b76a; box-shadow: 0 0 0 3px rgba(18,183,106,.1); }
 
-.route-list { display: grid; gap: 9px; }
-.route-row {
-  min-height: 64px;
-  padding: 10px 12px;
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) 36px minmax(240px, 360px);
-  align-items: center;
-  gap: 12px;
-  border: 1px solid #eaecf0;
-  border-radius: 13px;
-  background: #fcfcfd;
-}
-.route-row > div:first-child strong, .route-row > div:first-child span { display: block; }
-.route-row > div:first-child strong { font-size: 13px; color: #101828; }
-.route-row > div:first-child span { margin-top: 3px; color: #98a2b3; font-size: 11px; }
-.route-arrow { color: #98a2b3; font-size: 20px; text-align: center; }
-.route-row select { margin: 0; }
-
 .equipment-modal { width: min(560px, 100%); }
 
 .pos-agent-grid {
