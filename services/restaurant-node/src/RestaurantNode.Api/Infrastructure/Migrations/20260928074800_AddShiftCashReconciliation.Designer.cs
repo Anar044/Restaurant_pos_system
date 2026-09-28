@@ -1226,6 +1226,10 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("RestaurantId", "DeviceId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Open'");
+
                     b.HasIndex("RestaurantId", "DeviceId", "Status", "OpenedAt");
 
                     b.ToTable("shifts", (string)null);
