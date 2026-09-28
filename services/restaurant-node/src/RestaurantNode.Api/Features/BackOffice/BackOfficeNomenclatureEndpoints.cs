@@ -186,6 +186,22 @@ public static class BackOfficeNomenclatureEndpoints
             if (validation.Error is not null)
                 return validation.Error;
 
+            var isUsedAsIngredient = await db.RecipeLines
+                .AsNoTracking()
+                .AnyAsync(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.IngredientProductId == itemId,
+                    ct);
+
+            if (isUsedAsIngredient &&
+                (validation.Type is not ("GOODS" or "PREPARATION") || !request.IsActive))
+            {
+                return Results.Conflict(new
+                {
+                    message = "Эта позиция используется как ингредиент в техкартах. Сначала удалите её из этих техкарт."
+                });
+            }
+
             item.CategoryId = request.CategoryId;
             item.PreparationPlaceTypeId = request.PreparationPlaceTypeId;
             item.Name = validation.Name!;
@@ -197,6 +213,14 @@ public static class BackOfficeNomenclatureEndpoints
             item.IsSellable = request.IsSellable;
             item.IsActive = request.IsActive;
             item.SortOrder = request.SortOrder;
+
+            if (validation.Type is not ("DISH" or "PREPARATION" or "MODIFIER"))
+            {
+                var obsoleteRecipe = await db.RecipeLines
+                    .Where(x => x.ProductId == itemId)
+                    .ToListAsync(ct);
+                db.RecipeLines.RemoveRange(obsoleteRecipe);
+            }
 
             if (request.IsSellable)
             {
@@ -293,13 +317,43 @@ public static class BackOfficeNomenclatureEndpoints
                 return Results.BadRequest(new { message = "Количество ингредиента должно быть больше нуля." });
 
             var ingredientIds = request.Lines.Select(x => x.IngredientProductId).Distinct().ToArray();
-            var validIngredientIds = await db.Products
-                .Where(x => x.RestaurantId == restaurantId && x.IsActive && ingredientIds.Contains(x.Id))
-                .Select(x => x.Id)
+            var validIngredients = await db.Products
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive &&
+                    ingredientIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.Type })
                 .ToListAsync(ct);
 
-            if (validIngredientIds.Count != ingredientIds.Length)
+            if (validIngredients.Count != ingredientIds.Length)
                 return Results.BadRequest(new { message = "Один или несколько ингредиентов не найдены." });
+
+            var invalidIngredient = validIngredients.FirstOrDefault(x => x.Type is not ("GOODS" or "PREPARATION"));
+            if (invalidIngredient is not null)
+            {
+                return Results.BadRequest(new
+                {
+                    message = "В техкарте ингредиентами могут быть только товары и заготовки."
+                });
+            }
+
+            var allRecipeLinks = await db.RecipeLines
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId)
+                .Select(x => new { x.ProductId, x.IngredientProductId })
+                .ToListAsync(ct);
+
+            if (WouldCreateRecipeCycle(
+                    itemId,
+                    allRecipeLinks.Select(x => (x.ProductId, x.IngredientProductId)),
+                    request.Lines))
+            {
+                return Results.Conflict(new
+                {
+                    message = "Техкарта образует циклическую зависимость между заготовками. Проверьте состав."
+                });
+            }
 
             var existing = await db.RecipeLines
                 .Where(x => x.ProductId == itemId)
@@ -385,6 +439,54 @@ public static class BackOfficeNomenclatureEndpoints
         }
 
         return ItemValidationResult.Ok(name, sku, type, unit);
+    }
+
+    private static bool WouldCreateRecipeCycle(
+        Guid productId,
+        IEnumerable<(Guid ProductId, Guid IngredientProductId)> existingLinks,
+        IReadOnlyCollection<RecipeLineRequest> candidateLines)
+    {
+        var graph = existingLinks
+            .Where(x => x.ProductId != productId)
+            .GroupBy(x => x.ProductId)
+            .ToDictionary(
+                x => x.Key,
+                x => x.Select(y => y.IngredientProductId).Distinct().ToList());
+
+        graph[productId] = candidateLines
+            .Select(x => x.IngredientProductId)
+            .Distinct()
+            .ToList();
+
+        var visiting = new HashSet<Guid>();
+        var visited = new HashSet<Guid>();
+
+        bool Visit(Guid node)
+        {
+            if (!visiting.Add(node))
+                return true;
+
+            if (visited.Contains(node))
+            {
+                visiting.Remove(node);
+                return false;
+            }
+
+            if (graph.TryGetValue(node, out var children))
+            {
+                foreach (var child in children)
+                {
+                    if (Visit(child))
+                        return true;
+                }
+            }
+
+            visiting.Remove(node);
+            visited.Add(node);
+            return false;
+        }
+
+        return Visit(productId);
     }
 
     private static bool TryGetRestaurantId(ClaimsPrincipal user, out Guid restaurantId) =>
