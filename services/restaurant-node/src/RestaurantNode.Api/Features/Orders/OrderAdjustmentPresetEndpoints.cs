@@ -91,6 +91,7 @@ public static class OrderAdjustmentPresetEndpoints
                     scope = ToEnumText(x.Scope.ToString()),
                     applicationMode = ToEnumText(x.ApplicationMode.ToString()),
                     timeBasis = ToEnumText(x.TimeBasis.ToString()),
+                    targetMode = ToEnumText(x.TargetMode.ToString()),
                     x.Value,
                     x.Priority,
                     x.CanStack,
