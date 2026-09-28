@@ -112,7 +112,7 @@ export function NomenclaturePage({
             <span>{item.sku ? 'SKU ' + item.sku + ' · ' : ''}{unitLabel(item.unit)}</span>
             <div className="nomenclature-card-meta">
               <small>{item.trackStock ? 'Складской учёт' : 'Без складского учёта'}</small>
-              {(item.type === 'DISH' || item.type === 'PREPARATION') && (
+              {(item.type === 'DISH' || item.type === 'PREPARATION' || item.type === 'MODIFIER') && (
                 <small>Техкарта: {item.recipe.length} поз.</small>
               )}
             </div>
@@ -131,6 +131,9 @@ export function NomenclaturePage({
         <NomenclatureEditor
           editor={editor}
           allItems={data.items}
+          categories={data.categories}
+          preparationPlaces={data.preparationPlaces}
+          currencyCode={data.currencyCode}
           token={token}
           canManage={canManage}
           onClose={() => setEditor(null)}
@@ -147,6 +150,9 @@ export function NomenclaturePage({
 function NomenclatureEditor({
   editor,
   allItems,
+  categories,
+  preparationPlaces,
+  currencyCode,
   token,
   canManage,
   onClose,
@@ -154,13 +160,16 @@ function NomenclatureEditor({
 }: {
   editor: Exclude<EditorState, null>;
   allItems: NomenclatureItem[];
+  categories: BackOfficeNomenclature['categories'];
+  preparationPlaces: BackOfficeNomenclature['preparationPlaces'];
+  currencyCode: string;
   token: string;
   canManage: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   const item = editor.kind === 'edit' ? editor.item : null;
-  const [tab, setTab] = useState<'main' | 'recipe'>('main');
+  const [tab, setTab] = useState<'main' | 'sale' | 'recipe'>('main');
   const [name, setName] = useState(item?.name ?? '');
   const [sku, setSku] = useState(item?.sku ?? '');
   const [type, setType] = useState<NomenclatureItem['type']>(item?.type ?? 'GOODS');
@@ -168,6 +177,10 @@ function NomenclatureEditor({
   const [minStock, setMinStock] = useState(String(item?.minStock ?? 0));
   const [trackStock, setTrackStock] = useState(item?.trackStock ?? (item?.type === 'GOODS' || item?.type === 'PREPARATION'));
   const [isActive, setIsActive] = useState(item?.isActive ?? true);
+  const [isSellable, setIsSellable] = useState(item?.isSellable ?? false);
+  const [price, setPrice] = useState(item?.currentPrice?.toString() ?? '0');
+  const [categoryId, setCategoryId] = useState(item?.categoryId ?? '');
+  const [kitchenStationId, setKitchenStationId] = useState(item?.kitchenStationId ?? '');
   const [recipe, setRecipe] = useState(
     item?.recipe.map((line) => ({
       ingredientProductId: line.ingredientProductId,
@@ -177,12 +190,17 @@ function NomenclatureEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const recipeEnabled = type === 'DISH' || type === 'PREPARATION';
+  const recipeEnabled = type === 'DISH' || type === 'PREPARATION' || type === 'MODIFIER';
 
   async function saveMain(event: FormEvent) {
     event.preventDefault();
     const min = Number(minStock.replace(',', '.'));
+    const numericPrice = Number(price.replace(',', '.'));
     if (!name.trim() || !Number.isFinite(min) || min < 0) return;
+    if (isSellable && (!Number.isFinite(numericPrice) || numericPrice < 0)) {
+      setError('Укажите корректную цену продажи.');
+      return;
+    }
 
     setSaving(true);
     setError(null);
@@ -194,11 +212,12 @@ function NomenclatureEditor({
         unit,
         minStock: min,
         trackStock,
-        isSellable: item?.isSellable ?? false,
+        isSellable,
         isActive,
         sortOrder: item?.sortOrder ?? 0,
-        categoryId: item?.categoryId ?? null,
-        kitchenStationId: item?.kitchenStationId ?? null,
+        categoryId: categoryId || null,
+        kitchenStationId: kitchenStationId || null,
+        price: isSellable ? numericPrice : null,
       };
 
       if (editor.kind === 'create') {
@@ -240,6 +259,7 @@ function NomenclatureEditor({
 
         <div className="nomenclature-editor-tabs">
           <button type="button" className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>Основное</button>
+          <button type="button" className={tab === 'sale' ? 'active' : ''} onClick={() => setTab('sale')}>Продажа</button>
           {recipeEnabled && (
             <button type="button" className={tab === 'recipe' ? 'active' : ''} onClick={() => setTab('recipe')}>Тех. карта</button>
           )}
@@ -275,6 +295,60 @@ function NomenclatureEditor({
               </label>
             )}
           </>
+        ) : tab === 'sale' ? (
+          <div className="nomenclature-sale-tab">
+            <label className="toggle-row">
+              <span>
+                <strong>Продаётся</strong>
+                <small>Активная позиция будет доступна POS для продажи или выбора как модификатор.</small>
+              </span>
+              <input type="checkbox" checked={isSellable} onChange={(e) => setIsSellable(e.target.checked)} disabled={!canManage} />
+            </label>
+
+            <div className="form-grid">
+              <label>
+                <span>Цена продажи</span>
+                <input
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  inputMode="decimal"
+                  disabled={!canManage || !isSellable}
+                />
+                <small className="field-help">{currencyCode}</small>
+              </label>
+
+              <label>
+                <span>Категория продажи</span>
+                <select
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                  disabled={!canManage || !isSellable}
+                >
+                  <option value="">Без категории</option>
+                  {categories.filter((x) => x.isActive).map((category) => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="full-field">
+                <span>Тип места приготовления</span>
+                <select
+                  value={kitchenStationId}
+                  onChange={(e) => setKitchenStationId(e.target.value)}
+                  disabled={!canManage || !isSellable}
+                >
+                  <option value="">Не назначено</option>
+                  {preparationPlaces.filter((x) => x.isActive).map((place) => (
+                    <option key={place.id} value={place.id}>{place.name}</option>
+                  ))}
+                </select>
+                <small className="field-help">
+                  Принтер настраивается отдельно в разделе «Тип места приготовления».
+                </small>
+              </label>
+            </div>
+          </div>
         ) : (
           <div className="recipe-editor">
             <div className="recipe-editor-head">
