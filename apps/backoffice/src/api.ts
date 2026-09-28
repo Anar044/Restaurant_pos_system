@@ -493,7 +493,6 @@ export type GroupHallOption = {
   sortOrder: number;
   precheckPrinterId: string | null;
   precheckPrinterName: string | null;
-  tableCount: number;
   tables: DiningTable[];
   isActive: boolean;
 };
