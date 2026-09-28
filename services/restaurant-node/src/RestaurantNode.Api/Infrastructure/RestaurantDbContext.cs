@@ -163,6 +163,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .HasIndex(x => new { x.GroupId, x.PreparationPlaceTypeId })
             .IsUnique()
             .HasFilter("\"PreparationPlaceTypeId\" IS NOT NULL");
+        modelBuilder.Entity<Hall>().HasIndex(x => x.RestaurantId);
         modelBuilder.Entity<Hall>().HasIndex(x => new { x.GroupId, x.Name }).IsUnique();
         modelBuilder.Entity<PreparationPlaceType>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Name });
