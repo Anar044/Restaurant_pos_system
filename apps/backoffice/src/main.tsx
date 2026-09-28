@@ -15,16 +15,16 @@ import { DevicesPage } from './DevicesPage';
 import { EmployeesPage } from './EmployeesPage';
 import { FinancePage } from './FinancePage';
 import { HallsPage } from './HallsPage';
-import { KitchenPage } from './KitchenPage';
 import { InventoryPage } from './InventoryPage';
 import { ModifiersPage } from './ModifiersPage';
 import { NomenclaturePage } from './NomenclaturePage';
 import { OverviewPage } from './OverviewPage';
+import { RoutingPage } from './RoutingPage';
 import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'halls' | 'modifiers' | 'nomenclature' | 'inventory' | 'adjustments' | 'kitchen' | 'employees' | 'roles' | 'devices' | 'finance';
+type PageKey = 'overview' | 'halls' | 'prepTypes' | 'prepPlaces' | 'salesPoints' | 'routing' | 'modifiers' | 'nomenclature' | 'inventory' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -163,7 +163,10 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'overview', label: 'Обзор', icon: '⌂', ready: true },
     { key: 'finance', label: 'Кассы и смены', icon: '₼', ready: true },
     { key: 'halls', label: 'Залы и столы', icon: '▦', ready: true },
-    { key: 'kitchen', label: 'Тип места приготовления', icon: '◫', ready: true },
+    { key: 'prepTypes', label: 'Типы мест приготовления', icon: '◫', ready: true },
+    { key: 'prepPlaces', label: 'Места приготовления', icon: '▧', ready: true },
+    { key: 'salesPoints', label: 'Места продаж', icon: '◉', ready: true },
+    { key: 'routing', label: 'Маршрутизация', icon: '⇄', ready: true },
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
     { key: 'nomenclature', label: 'Номенклатура', icon: '▤', ready: true },
     { key: 'modifiers', label: 'Группы модификаторов', icon: '±', ready: true },
@@ -173,7 +176,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'roles', label: 'Роли и права', icon: '◉', ready: true },
   ];
 
-  const restaurantSettingsItems: PageKey[] = ['halls', 'kitchen', 'devices'];
+  const restaurantSettingsItems: PageKey[] = ['halls', 'prepTypes', 'prepPlaces', 'salesPoints', 'routing', 'devices'];
   const catalogItems: PageKey[] = ['nomenclature', 'modifiers', 'inventory'];
   const employeeItems: PageKey[] = ['employees', 'roles'];
 
@@ -331,8 +334,14 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
               token={session.token}
               canManage={(session.permissions ?? []).includes('pricing.manage')}
             />
-          ) : page === 'kitchen' ? (
-            <KitchenPage token={session.token} />
+          ) : page === 'prepTypes' ? (
+            <RoutingPage token={session.token} mode="types" />
+          ) : page === 'prepPlaces' ? (
+            <RoutingPage token={session.token} mode="places" />
+          ) : page === 'salesPoints' ? (
+            <RoutingPage token={session.token} mode="sales" />
+          ) : page === 'routing' ? (
+            <RoutingPage token={session.token} mode="routes" />
           ) : page === 'employees' ? (
             <EmployeesPage
               token={session.token}
