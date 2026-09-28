@@ -18,19 +18,27 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                 nullable: false,
                 defaultValue: new Guid("00000000-0000-0000-0000-000000000000"));
 
+            migrationBuilder.Sql(
+                """
+                UPDATE order_items AS oi
+                SET "CategoryIdSnapshot" = p."CategoryId"
+                FROM products AS p
+                WHERE oi."ProductId" = p."Id";
+                """);
+
             migrationBuilder.AddColumn<string>(
                 name: "ApplicationModeSnapshot",
                 table: "order_adjustments",
                 type: "text",
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "Manual");
 
             migrationBuilder.AddColumn<bool>(
                 name: "CanStackSnapshot",
                 table: "order_adjustments",
                 type: "boolean",
                 nullable: false,
-                defaultValue: false);
+                defaultValue: true);
 
             migrationBuilder.AddColumn<Guid[]>(
                 name: "CategoryIdsSnapshot",
@@ -50,7 +58,7 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                 table: "order_adjustments",
                 type: "integer",
                 nullable: false,
-                defaultValue: 0);
+                defaultValue: 100);
 
             migrationBuilder.AddColumn<Guid[]>(
                 name: "ProductIdsSnapshot",
@@ -70,35 +78,35 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                 table: "order_adjustments",
                 type: "text",
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "ItemAddedAt");
 
             migrationBuilder.AddColumn<string>(
                 name: "TimeZoneIdSnapshot",
                 table: "order_adjustments",
                 type: "text",
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "Asia/Baku");
 
             migrationBuilder.AddColumn<int>(
                 name: "WeekdayMaskSnapshot",
                 table: "order_adjustments",
                 type: "integer",
                 nullable: false,
-                defaultValue: 0);
+                defaultValue: 127);
 
             migrationBuilder.AddColumn<string>(
                 name: "ApplicationMode",
                 table: "order_adjustment_presets",
                 type: "text",
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "Manual");
 
             migrationBuilder.AddColumn<bool>(
                 name: "CanStack",
                 table: "order_adjustment_presets",
                 type: "boolean",
                 nullable: false,
-                defaultValue: false);
+                defaultValue: true);
 
             migrationBuilder.AddColumn<int>(
                 name: "EndMinute",
@@ -111,7 +119,7 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                 table: "order_adjustment_presets",
                 type: "integer",
                 nullable: false,
-                defaultValue: 0);
+                defaultValue: 100);
 
             migrationBuilder.AddColumn<int>(
                 name: "StartMinute",
@@ -124,14 +132,14 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                 table: "order_adjustment_presets",
                 type: "text",
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "ItemAddedAt");
 
             migrationBuilder.AddColumn<int>(
                 name: "WeekdayMask",
                 table: "order_adjustment_presets",
                 type: "integer",
                 nullable: false,
-                defaultValue: 0);
+                defaultValue: 127);
 
             migrationBuilder.CreateTable(
                 name: "order_adjustment_preset_categories",
