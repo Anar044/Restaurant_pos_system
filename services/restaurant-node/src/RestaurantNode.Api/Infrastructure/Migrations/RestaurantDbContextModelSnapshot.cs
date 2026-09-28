@@ -100,9 +100,9 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                 {
-                    b.HasOne("RestaurantNode.Api.Domain.StockItem", "StockItem")
+                    b.HasOne("RestaurantNode.Api.Domain.Product", "Product")
                         .WithMany()
-                        .HasForeignKey("StockItemId")
+                        .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -112,9 +112,28 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("StockItem");
+                    b.Navigation("Product");
 
                     b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.RecipeLine", b =>
+                {
+                    b.HasOne("RestaurantNode.Api.Domain.Product", "IngredientProduct")
+                        .WithMany()
+                        .HasForeignKey("IngredientProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RestaurantNode.Api.Domain.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("IngredientProduct");
+
+                    b.Navigation("Product");
                 });
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.Category", b =>
@@ -1063,14 +1082,21 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("CategoryId")
+                    b.Property<Guid?>("CategoryId")
                         .HasColumnType("uuid");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsSellable")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid?>("KitchenStationId")
                         .HasColumnType("uuid");
+
+                    b.Property<decimal>("MinStock")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1085,6 +1111,17 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("TrackStock")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CategoryId");
@@ -1092,6 +1129,8 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.HasIndex("KitchenStationId");
 
                     b.HasIndex("RestaurantId", "Name");
+
+                    b.HasIndex("RestaurantId", "Sku");
 
                     b.ToTable("products", (string)null);
                 });
@@ -1110,6 +1149,35 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.HasKey("ProductId", "ModifierGroupId");
 
                     b.ToTable("product_modifier_groups", (string)null);
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.RecipeLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("IngredientProductId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<Guid>("RestaurantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IngredientProductId");
+
+                    b.HasIndex("ProductId", "IngredientProductId")
+                        .IsUnique();
+
+                    b.ToTable("recipe_lines", (string)null);
                 });
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.ProductPrice", b =>
@@ -1203,46 +1271,6 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.ToTable("roles", (string)null);
                 });
 
-            modelBuilder.Entity("RestaurantNode.Api.Domain.StockItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<decimal>("MinStock")
-                        .HasPrecision(18, 3)
-                        .HasColumnType("numeric(18,3)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("RestaurantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Sku")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Unit")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RestaurantId", "Name");
-
-                    b.HasIndex("RestaurantId", "Sku")
-                        .IsUnique();
-
-                    b.ToTable("stock_items", (string)null);
-                });
-
             modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1258,14 +1286,14 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.Property<string>("Note")
                         .HasColumnType("text");
 
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid");
+
                     b.Property<decimal>("QuantityDelta")
                         .HasPrecision(18, 3)
                         .HasColumnType("numeric(18,3)");
 
                     b.Property<Guid>("RestaurantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("StockItemId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Type")
@@ -1277,11 +1305,11 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("StockItemId");
+                    b.HasIndex("ProductId");
 
                     b.HasIndex("WarehouseId");
 
-                    b.HasIndex("RestaurantId", "WarehouseId", "StockItemId", "CreatedAt");
+                    b.HasIndex("RestaurantId", "WarehouseId", "ProductId", "CreatedAt");
 
                     b.ToTable("stock_movements", (string)null);
                 });
@@ -1476,8 +1504,7 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.HasOne("RestaurantNode.Api.Domain.Category", "Category")
                         .WithMany()
                         .HasForeignKey("CategoryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.HasOne("RestaurantNode.Api.Domain.OrderAdjustmentPreset", "Preset")
                         .WithMany("Categories")
