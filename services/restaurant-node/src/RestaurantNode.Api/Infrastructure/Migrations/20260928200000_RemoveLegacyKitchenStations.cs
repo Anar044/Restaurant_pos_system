@@ -47,9 +47,10 @@ DROP CONSTRAINT IF EXISTS ""FK_products_kitchen_stations_KitchenStationId"";
 DROP INDEX IF EXISTS ""IX_products_KitchenStationId"";
 ");
 
-            migrationBuilder.DropColumn(
-                name: "KitchenStationId",
-                table: "products");
+            migrationBuilder.Sql(@"
+ALTER TABLE products
+DROP COLUMN IF EXISTS ""KitchenStationId"";
+");
 
             migrationBuilder.Sql(@"
 ALTER TABLE kitchen_tickets
@@ -74,8 +75,9 @@ DROP CONSTRAINT IF EXISTS ""FK_kitchen_tickets_kitchen_stations_KitchenStationId
                 principalColumn: "Id",
                 onDelete: ReferentialAction.Restrict);
 
-            migrationBuilder.DropTable(
-                name: "kitchen_stations");
+            migrationBuilder.Sql(@"
+DROP TABLE IF EXISTS kitchen_stations CASCADE;
+");
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
