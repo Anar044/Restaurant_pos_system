@@ -1,12 +1,22 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   type BackOfficeFinance,
+  type FinanceShift,
   type FinanceShiftReport,
   addShiftCashTransaction,
   closeShiftFromBackOffice,
   getBackOfficeFinance,
 } from './api';
 import './finance.css';
+
+type PeriodPreset = 'today' | 'yesterday' | '7d' | '30d' | 'custom';
+type ShiftStatusFilter = 'ALL' | 'OPEN' | 'CLOSED';
+
+type FinanceFilters = {
+  fromDate: string;
+  toDate: string;
+  deviceIds: string[];
+};
 
 type CashMovementState = {
   shiftId: string;
@@ -21,375 +31,630 @@ export function FinancePage({
   token: string;
   canManageShifts: boolean;
 }) {
+  const today = dateInputValue(new Date());
+  const initialFilters = useMemo<FinanceFilters>(
+    () => ({ fromDate: today, toDate: today, deviceIds: [] }),
+    [today],
+  );
+
+  const [draftFilters, setDraftFilters] = useState<FinanceFilters>(initialFilters);
+  const [filters, setFilters] = useState<FinanceFilters>(initialFilters);
+  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('today');
+  const [statusFilter, setStatusFilter] = useState<ShiftStatusFilter>('ALL');
+  const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
   const [data, setData] = useState<BackOfficeFinance | null>(null);
-  const [shiftId, setShiftId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [movement, setMovement] = useState<CashMovementState>(null);
   const [closing, setClosing] = useState(false);
 
-  async function refresh(selectedShift = shiftId) {
+  async function load(
+    nextShiftId: string | null,
+    nextFilters: FinanceFilters = filters,
+  ) {
     setLoading(true);
     setError(null);
+
     try {
-      setData(await getBackOfficeFinance(token, selectedShift || null));
+      const bounds = periodBounds(nextFilters.fromDate, nextFilters.toDate);
+      const next = await getBackOfficeFinance(token, {
+        shiftId: nextShiftId,
+        from: bounds.from,
+        to: bounds.to,
+        deviceIds: nextFilters.deviceIds,
+      });
+
+      setData(next);
+      setSelectedShiftId(nextShiftId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить кассовые данные');
+      setError(
+        e instanceof Error
+          ? e.message
+          : 'Не удалось загрузить кассовые данные',
+      );
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    void refresh('');
+    void load(null, initialFilters);
   }, [token]);
 
-  const totals = useMemo(() => {
-    const payments = data?.payments ?? [];
-    const refundsList = data?.refunds ?? [];
-    const gross = payments.reduce((sum, payment) => sum + payment.amount, 0);
-    const refunds = refundsList.reduce((sum, refund) => sum + refund.amount, 0);
-    return { gross, refunds, net: gross - refunds, count: payments.length };
-  }, [data]);
+  const selectedShift =
+    data?.shifts.find((shift) => shift.id === selectedShiftId) ?? null;
 
-  function changeShift(value: string) {
-    setShiftId(value);
-    void refresh(value);
+  const visibleShifts = useMemo(() => {
+    const shifts = data?.shifts ?? [];
+    if (statusFilter === 'ALL') return shifts;
+    return shifts.filter((shift) => shift.status === statusFilter);
+  }, [data, statusFilter]);
+
+  function applyFilters() {
+    const next = {
+      ...draftFilters,
+      deviceIds: [...draftFilters.deviceIds],
+    };
+    setFilters(next);
+    setSelectedShiftId(null);
+    void load(null, next);
   }
 
-  const selectedShift =
-    data?.shifts.find((shift) => shift.id === shiftId) ?? null;
-  const report = data?.selectedShiftReport ?? null;
+  function applyPreset(preset: Exclude<PeriodPreset, 'custom'>) {
+    const range = presetRange(preset);
+    const next = {
+      ...draftFilters,
+      fromDate: range.fromDate,
+      toDate: range.toDate,
+    };
+
+    setPeriodPreset(preset);
+    setDraftFilters(next);
+    setFilters(next);
+    setSelectedShiftId(null);
+    void load(null, next);
+  }
+
+  function toggleRegister(id: string) {
+    setDraftFilters((current) => {
+      const selected = current.deviceIds.includes(id);
+      return {
+        ...current,
+        deviceIds: selected
+          ? current.deviceIds.filter((value) => value !== id)
+          : [...current.deviceIds, id],
+      };
+    });
+  }
+
+  function openShift(id: string) {
+    void load(id, filters);
+  }
+
+  function backToDashboard() {
+    setSelectedShiftId(null);
+    void load(null, filters);
+  }
+
+  if (selectedShiftId && selectedShift && data?.selectedShiftReport) {
+    return (
+      <ShiftDetailView
+        data={data}
+        shift={selectedShift}
+        report={data.selectedShiftReport}
+        loading={loading}
+        canManageShifts={canManageShifts}
+        onBack={backToDashboard}
+        onRefresh={() => void load(selectedShift.id, filters)}
+        onCashMovement={(type) =>
+          setMovement({
+            shiftId: selectedShift.id,
+            deviceName: selectedShift.deviceName,
+            type,
+          })
+        }
+        onCloseShift={() => setClosing(true)}
+        movement={movement}
+        setMovement={setMovement}
+        closing={closing}
+        setClosing={setClosing}
+        token={token}
+        onMutationSaved={async () => {
+          await load(selectedShift.id, filters);
+        }}
+      />
+    );
+  }
+
+  const summary = data?.summary;
 
   return (
-    <section>
-      <div className="page-heading">
+    <section className="finance-dashboard">
+      <div className="page-heading finance-page-heading">
         <div>
           <div className="eyebrow">КАССА И СМЕНЫ</div>
           <h1>Кассовый контроль</h1>
           <p>
-            X/Z-отчёты, ожидаемая наличность, внесения, изъятия,
-            оплаты, возвраты и расхождения по каждой кассе.
+            Выручка, открытые заказы и кассовые смены за выбранный период.
+            Детали операций находятся внутри конкретной смены.
           </p>
         </div>
-        <div className="heading-actions finance-filter-actions">
-          <select value={shiftId} onChange={(e) => changeShift(e.target.value)}>
-            <option value="">Все последние операции</option>
-            {data?.shifts.map((shift) => (
-              <option key={shift.id} value={shift.id}>
-                {shift.deviceName + ' · ' + formatDate(shift.openedAt) + ' · ' +
-                  (shift.status === 'OPEN' ? 'Открыта' : 'Закрыта')}
-              </option>
-            ))}
-          </select>
-          <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>
-            Обновить
-          </button>
-        </div>
+        <button
+          className="secondary-button"
+          onClick={() => void load(null, filters)}
+          disabled={loading}
+        >
+          {loading ? 'Обновляем…' : 'Обновить'}
+        </button>
       </div>
 
       {error && (
         <div className="global-error">
           <span>{error}</span>
-          <button onClick={() => void refresh()}>Повторить</button>
+          <button onClick={() => void load(null, filters)}>Повторить</button>
         </div>
       )}
 
-      <div className="stats-grid finance-stats">
-        <FinanceStat
-          label="Продажи"
-          value={money(totals.gross)}
-          detail={String(totals.count) + ' оплат'}
+      <div className="finance-filter-bar">
+        <div className="finance-period-presets">
+          <button
+            className={periodPreset === 'today' ? 'active' : ''}
+            onClick={() => applyPreset('today')}
+          >
+            Сегодня
+          </button>
+          <button
+            className={periodPreset === 'yesterday' ? 'active' : ''}
+            onClick={() => applyPreset('yesterday')}
+          >
+            Вчера
+          </button>
+          <button
+            className={periodPreset === '7d' ? 'active' : ''}
+            onClick={() => applyPreset('7d')}
+          >
+            7 дней
+          </button>
+          <button
+            className={periodPreset === '30d' ? 'active' : ''}
+            onClick={() => applyPreset('30d')}
+          >
+            30 дней
+          </button>
+        </div>
+
+        <div className="finance-custom-period">
+          <label>
+            <span>С</span>
+            <input
+              type="date"
+              value={draftFilters.fromDate}
+              onChange={(e) => {
+                setPeriodPreset('custom');
+                setDraftFilters((current) => ({
+                  ...current,
+                  fromDate: e.target.value,
+                }));
+              }}
+            />
+          </label>
+          <span className="date-separator">—</span>
+          <label>
+            <span>По</span>
+            <input
+              type="date"
+              value={draftFilters.toDate}
+              min={draftFilters.fromDate}
+              onChange={(e) => {
+                setPeriodPreset('custom');
+                setDraftFilters((current) => ({
+                  ...current,
+                  toDate: e.target.value,
+                }));
+              }}
+            />
+          </label>
+        </div>
+
+        <details className="finance-register-picker">
+          <summary>
+            <span>Кассы</span>
+            <strong>
+              {draftFilters.deviceIds.length === 0
+                ? 'Все кассы'
+                : draftFilters.deviceIds.length === 1
+                  ? registerName(
+                      data,
+                      draftFilters.deviceIds[0],
+                    )
+                  : draftFilters.deviceIds.length + ' кассы'}
+            </strong>
+            <span className="picker-chevron">⌄</span>
+          </summary>
+
+          <div className="finance-register-popover">
+            <label className="register-option register-all">
+              <input
+                type="checkbox"
+                checked={draftFilters.deviceIds.length === 0}
+                onChange={() =>
+                  setDraftFilters((current) => ({
+                    ...current,
+                    deviceIds: [],
+                  }))
+                }
+              />
+              <span>
+                <strong>Все кассы</strong>
+                <small>Показать ресторан целиком</small>
+              </span>
+            </label>
+
+            {(data?.cashRegisters ?? []).map((register) => (
+              <label className="register-option" key={register.id}>
+                <input
+                  type="checkbox"
+                  checked={draftFilters.deviceIds.includes(register.id)}
+                  onChange={() => toggleRegister(register.id)}
+                />
+                <span>
+                  <strong>{register.name}</strong>
+                  <small>{register.isActive ? 'Активна' : 'Отключена'}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+        </details>
+
+        <button
+          className="primary-button finance-apply-filter"
+          onClick={applyFilters}
+          disabled={
+            !draftFilters.fromDate ||
+            !draftFilters.toDate ||
+            draftFilters.toDate < draftFilters.fromDate
+          }
+        >
+          Показать
+        </button>
+      </div>
+
+      <div className="finance-filter-summary">
+        <span>{humanPeriod(filters.fromDate, filters.toDate)}</span>
+        <span className="filter-dot">•</span>
+        <span>
+          {filters.deviceIds.length === 0
+            ? 'Все кассы'
+            : filters.deviceIds
+                .map((id) => registerName(data, id))
+                .join(', ')}
+        </span>
+      </div>
+
+      <div className="revenue-equation">
+        <RevenueCard
+          label="Закрытые заказы"
+          value={summary?.completedOrdersAmount ?? 0}
+          detail={(summary?.completedOrdersCount ?? 0) + ' заказов'}
+          tone="closed"
         />
-        <FinanceStat
-          label="Возвраты"
-          value={money(totals.refunds)}
-          detail="по выбранному журналу"
-          warning={totals.refunds > 0}
+        <div className="equation-sign">+</div>
+        <RevenueCard
+          label="Открытые заказы"
+          value={summary?.openOrdersAmount ?? 0}
+          detail={(summary?.openOrdersCount ?? 0) + ' сейчас в работе'}
+          tone="open"
         />
-        <FinanceStat
-          label="Нетто"
-          value={money(totals.net)}
-          detail="продажи минус возвраты"
-        />
-        <FinanceStat
-          label="Открытые смены"
-          value={String(data?.openShifts.length ?? 0)}
-          detail="сейчас работают"
+        <div className="equation-sign">=</div>
+        <RevenueCard
+          label="Ожидаемая выручка"
+          value={summary?.expectedRevenue ?? 0}
+          detail="закрытые + открытые заказы"
+          tone="expected"
+          emphasized
         />
       </div>
 
-      {(data?.openShifts.length ?? 0) > 0 && (
-        <div className="finance-panel finance-open-shifts-panel">
-          <div className="finance-panel-head">
-            <div>
-              <h2>Открытые кассы</h2>
-              <p>Текущее состояние наличности по работающим POS.</p>
-            </div>
-          </div>
-          <div className="open-shift-grid">
-            {data!.openShifts.map((shift) => (
-              <button
-                className="open-shift-card"
-                key={shift.id}
-                onClick={() => changeShift(shift.id)}
-              >
-                <div className="open-shift-card-head">
-                  <strong>{shift.deviceName ?? 'POS'}</strong>
-                  <span className="badge success">Открыта</span>
-                </div>
-                <span>С {formatDate(shift.openedAt)}</span>
-                <div className="open-shift-money">
-                  <small>Ожидается в кассе</small>
-                  <strong>{money(shift.expectedCash)}</strong>
-                </div>
-                <div className="open-shift-mini">
-                  <span>Наличные продажи {money(shift.cashSales)}</span>
-                  <span>Внесено {money(shift.deposits)}</span>
-                  <span>Изъято {money(shift.withdrawals)}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {report && selectedShift && (
-        <ShiftReportPanel
-          report={report}
-          canManageShifts={canManageShifts}
-          onCashMovement={(type) =>
-            setMovement({
-              shiftId: report.shiftId,
-              deviceName: report.deviceName ?? selectedShift.deviceName,
-              type,
-            })
-          }
-          onCloseShift={() => setClosing(true)}
+      <div className="finance-secondary-kpis">
+        <CompactKpi
+          label="Возвраты"
+          value={money(summary?.refundAmount ?? 0)}
+          detail="за выбранный период"
+          warning={(summary?.refundAmount ?? 0) > 0}
         />
-      )}
+        <CompactKpi
+          label="Выручка после возвратов"
+          value={money(summary?.netExpectedRevenue ?? 0)}
+          detail="ожидаемая минус возвраты"
+        />
+        <CompactKpi
+          label="Открытые смены"
+          value={String(summary?.openShiftsCount ?? 0)}
+          detail={(summary?.closedShiftsCount ?? 0) + ' закрыто в периоде'}
+        />
+        <CompactKpi
+          label="Расхождение кассы"
+          value={signedMoney(summary?.cashDifference ?? 0)}
+          detail="сумма по закрытым сменам"
+          warning={Math.abs(summary?.cashDifference ?? 0) >= 0.01}
+        />
+      </div>
 
-      <div className="finance-panel">
-        <div className="finance-panel-head">
+      <div className="finance-panel finance-shifts-panel">
+        <div className="finance-panel-head finance-shifts-head">
           <div>
-            <h2>Журнал оплат</h2>
+            <h2>Кассовые смены</h2>
             <p>
-              {shiftId
-                ? 'Оплаты выбранной смены.'
-                : 'Последние операции по заказам.'}
+              Выберите смену, чтобы открыть её заказы, оплаты,
+              возвраты и кассовые операции.
             </p>
           </div>
-          {loading && <span className="muted">Обновляем…</span>}
+
+          <div className="shift-status-tabs">
+            <button
+              className={statusFilter === 'ALL' ? 'active' : ''}
+              onClick={() => setStatusFilter('ALL')}
+            >
+              Все
+              <span>{data?.shifts.length ?? 0}</span>
+            </button>
+            <button
+              className={statusFilter === 'OPEN' ? 'active' : ''}
+              onClick={() => setStatusFilter('OPEN')}
+            >
+              Открытые
+              <span>
+                {(data?.shifts ?? []).filter((x) => x.status === 'OPEN').length}
+              </span>
+            </button>
+            <button
+              className={statusFilter === 'CLOSED' ? 'active' : ''}
+              onClick={() => setStatusFilter('CLOSED')}
+            >
+              Закрытые
+              <span>
+                {(data?.shifts ?? []).filter((x) => x.status === 'CLOSED').length}
+              </span>
+            </button>
+          </div>
         </div>
 
         <div className="finance-table-wrap">
-          <table className="finance-table">
+          <table className="finance-table shifts-table">
             <thead>
               <tr>
-                <th>Время</th>
-                <th>Заказ</th>
-                <th>Кассир</th>
-                <th>Способ</th>
-                <th>Сумма</th>
-                <th>Возврат</th>
-                <th>Статус</th>
+                <th>Смена</th>
+                <th>Касса</th>
+                <th>Открыта</th>
+                <th>Закрыта</th>
+                <th>Сотрудник</th>
+                <th>Заказы</th>
+                <th>Оборот</th>
+                <th>Ожидается в кассе</th>
+                <th>Расхождение</th>
+                <th />
               </tr>
             </thead>
             <tbody>
-              {(data?.payments ?? []).map((payment) => (
-                <tr key={payment.id}>
-                  <td>{formatDate(payment.createdAt)}</td>
-                  <td><strong>{'#' + payment.orderNumber}</strong></td>
-                  <td>{payment.employeeName}</td>
-                  <td>{methodName(payment.method)}</td>
+              {visibleShifts.map((shift) => (
+                <tr
+                  key={shift.id}
+                  className="shift-table-row"
+                  onClick={() => openShift(shift.id)}
+                >
                   <td>
-                    <strong>{money(payment.amount, payment.currencyCode)}</strong>
-                    {payment.method === 'CASH' && payment.tenderedAmount != null && (
+                    <span
+                      className={
+                        'shift-kind-badge ' +
+                        (shift.status === 'OPEN' ? 'x' : 'z')
+                      }
+                    >
+                      {shift.status === 'OPEN' ? 'X' : 'Z'}
+                    </span>
+                    <span
+                      className={
+                        'badge ' +
+                        (shift.status === 'OPEN' ? 'success' : 'neutral')
+                      }
+                    >
+                      {shift.status === 'OPEN' ? 'Открыта' : 'Закрыта'}
+                    </span>
+                  </td>
+                  <td>
+                    <strong>{shift.deviceName}</strong>
+                  </td>
+                  <td>
+                    <strong>{formatShortDate(shift.openedAt)}</strong>
+                    <small className="cell-subline">
+                      {formatTime(shift.openedAt)}
+                    </small>
+                  </td>
+                  <td>
+                    {shift.closedAt ? (
+                      <>
+                        <strong>{formatShortDate(shift.closedAt)}</strong>
+                        <small className="cell-subline">
+                          {formatTime(shift.closedAt)}
+                        </small>
+                      </>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                  <td>
+                    {shift.openedByEmployeeName ?? '—'}
+                  </td>
+                  <td>
+                    <strong>{shift.ordersCount}</strong>
+                  </td>
+                  <td>
+                    <strong>{money(shift.netSales)}</strong>
+                    {shift.refunds > 0 && (
                       <small className="cell-subline">
-                        {'получено ' + money(payment.tenderedAmount, payment.currencyCode)}
-                        {payment.changeAmount > 0
-                          ? ' · сдача ' + money(payment.changeAmount, payment.currencyCode)
-                          : ''}
+                        {'возвраты ' + money(shift.refunds)}
                       </small>
                     )}
                   </td>
                   <td>
-                    {payment.refundedAmount > 0
-                      ? money(payment.refundedAmount, payment.currencyCode)
-                      : '—'}
+                    <strong>{money(shift.expectedCashAtClose)}</strong>
                   </td>
                   <td>
-                    <span
-                      className={
-                        'badge ' +
-                        (payment.status === 'REFUNDED' ? 'neutral' : 'success')
-                      }
-                    >
-                      {payment.status === 'REFUNDED' ? 'Возвращено' : 'Оплачено'}
-                    </span>
+                    {shift.cashDifference == null ? (
+                      <span className="muted">—</span>
+                    ) : (
+                      <strong
+                        className={differenceClass(shift.cashDifference)}
+                      >
+                        {signedMoney(shift.cashDifference)}
+                      </strong>
+                    )}
+                  </td>
+                  <td className="shift-open-cell">
+                    <span>Открыть ›</span>
                   </td>
                 </tr>
               ))}
-              {!loading && (data?.payments.length ?? 0) === 0 && (
+
+              {!loading && visibleShifts.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="finance-empty-row">Оплат пока нет.</td>
+                  <td colSpan={10} className="finance-empty-row">
+                    За выбранный период смен не найдено.
+                  </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
-
-      <div className="finance-two-column">
-        <div className="finance-panel">
-          <div className="finance-panel-head">
-            <div>
-              <h2>История смен</h2>
-              <p>Последние кассовые смены ресторана.</p>
-            </div>
-          </div>
-          <div className="finance-list">
-            {(data?.shifts ?? []).map((shift) => (
-              <button
-                className={'finance-list-row finance-shift-row ' +
-                  (shift.id === shiftId ? 'selected' : '')}
-                key={shift.id}
-                onClick={() => changeShift(shift.id)}
-              >
-                <div>
-                  <strong>{shift.deviceName}</strong>
-                  <span>
-                    {formatDate(shift.openedAt)}
-                    {shift.openedByEmployeeName
-                      ? ' · ' + shift.openedByEmployeeName
-                      : ''}
-                  </span>
-                </div>
-                <div className="finance-list-right">
-                  <span className={'badge ' + (shift.status === 'OPEN' ? 'success' : 'neutral')}>
-                    {shift.status === 'OPEN' ? 'Открыта' : 'Закрыта'}
-                  </span>
-                  <small>
-                    {'старт ' + money(shift.openingCash)}
-                    {shift.closingCash != null
-                      ? ' · факт ' + money(shift.closingCash)
-                      : ''}
-                  </small>
-                  {shift.cashDifference != null && (
-                    <small className={differenceClass(shift.cashDifference)}>
-                      {'расхождение ' + signedMoney(shift.cashDifference)}
-                    </small>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="finance-panel">
-          <div className="finance-panel-head">
-            <div>
-              <h2>Возвраты</h2>
-              <p>Возвраты по показанным операциям.</p>
-            </div>
-          </div>
-          <div className="finance-list">
-            {(data?.refunds ?? []).map((refund) => (
-              <div className="finance-list-row" key={refund.id}>
-                <div>
-                  <strong>{'Заказ #' + refund.orderNumber + ' · ' + methodName(refund.method)}</strong>
-                  <span>
-                    {(refund.reason || 'Без причины') + ' · ' +
-                      formatDate(refund.createdAt)}
-                  </span>
-                </div>
-                <div className="finance-list-right">
-                  <strong>{'-' + money(refund.amount, refund.currencyCode)}</strong>
-                  <small>{refund.employeeName}</small>
-                </div>
-              </div>
-            ))}
-            {(data?.refunds.length ?? 0) === 0 && (
-              <div className="finance-empty-box">Возвратов нет.</div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {movement && (
-        <CashMovementDialog
-          state={movement}
-          token={token}
-          onClose={() => setMovement(null)}
-          onSaved={async () => {
-            setMovement(null);
-            await refresh(movement.shiftId);
-          }}
-        />
-      )}
-
-      {closing && report && report.status === 'OPEN' && (
-        <CloseShiftDialog
-          report={report}
-          token={token}
-          onClose={() => setClosing(false)}
-          onSaved={async () => {
-            setClosing(false);
-            await refresh(report.shiftId);
-          }}
-        />
-      )}
     </section>
   );
 }
 
-function ShiftReportPanel({
+function ShiftDetailView({
+  data,
+  shift,
   report,
+  loading,
   canManageShifts,
+  onBack,
+  onRefresh,
   onCashMovement,
   onCloseShift,
+  movement,
+  setMovement,
+  closing,
+  setClosing,
+  token,
+  onMutationSaved,
 }: {
+  data: BackOfficeFinance;
+  shift: FinanceShift;
   report: FinanceShiftReport;
+  loading: boolean;
   canManageShifts: boolean;
+  onBack: () => void;
+  onRefresh: () => void;
   onCashMovement: (type: 'DEPOSIT' | 'WITHDRAWAL') => void;
   onCloseShift: () => void;
+  movement: CashMovementState;
+  setMovement: (value: CashMovementState) => void;
+  closing: boolean;
+  setClosing: (value: boolean) => void;
+  token: string;
+  onMutationSaved: () => Promise<void>;
 }) {
+  const orders = data.selectedShiftOrders;
+
   return (
-    <div className="finance-panel shift-report-panel">
-      <div className="finance-panel-head shift-report-head">
+    <section className="finance-shift-detail">
+      <div className="shift-detail-top">
+        <button className="back-link" onClick={onBack}>
+          ‹ К списку смен
+        </button>
+
+        <div className="shift-detail-actions">
+          <button
+            className="secondary-button"
+            onClick={onRefresh}
+            disabled={loading}
+          >
+            {loading ? 'Обновляем…' : 'Обновить'}
+          </button>
+          {shift.status === 'OPEN' && canManageShifts && (
+            <>
+              <button
+                className="secondary-button"
+                onClick={() => onCashMovement('DEPOSIT')}
+              >
+                + Внесение
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => onCashMovement('WITHDRAWAL')}
+              >
+                − Изъятие
+              </button>
+              <button className="danger-button" onClick={onCloseShift}>
+                Закрыть смену
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="shift-detail-heading">
         <div>
-          <div className="shift-report-title-row">
-            <span className={'report-type-badge ' + report.reportType.toLowerCase()}>
+          <div className="shift-title-line">
+            <span
+              className={
+                'report-type-badge ' + report.reportType.toLowerCase()
+              }
+            >
               {report.reportType}-ОТЧЁТ
             </span>
-            <h2>{report.deviceName ?? 'POS'}</h2>
+            <h1>{shift.deviceName}</h1>
+            <span
+              className={
+                'badge ' +
+                (shift.status === 'OPEN' ? 'success' : 'neutral')
+              }
+            >
+              {shift.status === 'OPEN' ? 'Смена открыта' : 'Смена закрыта'}
+            </span>
           </div>
           <p>
-            Открыта {formatDate(report.openedAt)}
+            {'Открыта ' + formatDate(report.openedAt)}
             {report.openedByEmployeeName
               ? ' · ' + report.openedByEmployeeName
               : ''}
-            {report.closedAt
-              ? ' · закрыта ' + formatDate(report.closedAt)
-              : ''}
           </p>
         </div>
-        {report.status === 'OPEN' && canManageShifts && (
-          <div className="shift-report-actions">
-            <button className="secondary-button" onClick={() => onCashMovement('DEPOSIT')}>
-              + Внесение
-            </button>
-            <button className="secondary-button" onClick={() => onCashMovement('WITHDRAWAL')}>
-              − Изъятие
-            </button>
-            <button className="danger-button" onClick={onCloseShift}>
-              Закрыть смену
-            </button>
-          </div>
-        )}
       </div>
 
-      <div className="shift-cash-grid">
+      <div className="shift-overview-strip">
+        <DetailMeta
+          label="Открытие"
+          value={formatDate(report.openedAt)}
+        />
+        <DetailMeta
+          label="Закрытие"
+          value={
+            report.closedAt
+              ? formatDate(report.closedAt)
+              : 'Смена ещё работает'
+          }
+        />
+        <DetailMeta
+          label="Заказы"
+          value={String(orders.length)}
+        />
+        <DetailMeta
+          label="Оплаты"
+          value={String(report.paymentsCount)}
+        />
+      </div>
+
+      <div className="shift-cash-grid shift-detail-cash-grid">
         <CashMetric label="Начальный остаток" value={report.openingCash} />
         <CashMetric label="Наличные продажи" value={report.cashSales} />
         <CashMetric label="Возвраты наличными" value={-report.cashRefunds} />
@@ -401,7 +666,10 @@ function ShiftReportPanel({
           emphasized
         />
         {report.closingCash != null && (
-          <CashMetric label="Фактически посчитано" value={report.closingCash} />
+          <CashMetric
+            label="Фактически посчитано"
+            value={report.closingCash}
+          />
         )}
         {report.cashDifference != null && (
           <CashMetric
@@ -414,45 +682,54 @@ function ShiftReportPanel({
       </div>
 
       {report.closingNote && (
-        <div className="shift-closing-note">
+        <div className="shift-closing-note detail-closing-note">
           <strong>Комментарий при закрытии</strong>
           <span>{report.closingNote}</span>
         </div>
       )}
 
-      <div className="shift-report-columns">
-        <div>
-          <h3>Продажи по способам оплаты</h3>
-          <div className="payment-method-list">
+      <div className="shift-detail-columns">
+        <div className="finance-panel detail-panel">
+          <div className="finance-panel-head">
+            <div>
+              <h2>Оплаты по типам</h2>
+              <p>Итог этой кассовой смены.</p>
+            </div>
+            <strong>{money(report.netSales)}</strong>
+          </div>
+
+          <div className="payment-method-list detail-list">
             {report.payments.map((row) => (
               <div className="payment-method-row" key={row.method}>
                 <div>
                   <strong>{methodName(row.method)}</strong>
                   <small>
-                    {'продажи ' + money(row.gross) +
-                      (row.refunds > 0 ? ' · возвраты ' + money(row.refunds) : '')}
+                    {'Продажи ' + money(row.gross)}
+                    {row.refunds > 0
+                      ? ' · возвраты ' + money(row.refunds)
+                      : ''}
                   </small>
                 </div>
                 <strong>{money(row.net)}</strong>
               </div>
             ))}
             {report.payments.length === 0 && (
-              <div className="finance-empty-box">Оплат в смене пока нет.</div>
+              <div className="finance-empty-box">
+                Оплат в смене пока нет.
+              </div>
             )}
-          </div>
-          <div className="shift-sales-total">
-            <span>Нетто продаж</span>
-            <strong>{money(report.netSales)}</strong>
-            <small>
-              {report.ordersCount + ' заказов · ' +
-                report.paymentsCount + ' оплат'}
-            </small>
           </div>
         </div>
 
-        <div>
-          <h3>Движение наличности</h3>
-          <div className="cash-movement-list">
+        <div className="finance-panel detail-panel">
+          <div className="finance-panel-head">
+            <div>
+              <h2>Движение наличности</h2>
+              <p>Внесения и изъятия по этой смене.</p>
+            </div>
+          </div>
+
+          <div className="cash-movement-list detail-list">
             {report.cashTransactions.map((entry) => (
               <div className="cash-movement-row" key={entry.id}>
                 <div>
@@ -460,7 +737,8 @@ function ShiftReportPanel({
                     {entry.type === 'DEPOSIT' ? 'Внесение' : 'Изъятие'}
                   </strong>
                   <span>
-                    {(entry.reason || 'Без комментария') + ' · ' +
+                    {(entry.reason || 'Без комментария') +
+                      ' · ' +
                       formatDate(entry.createdAt)}
                   </span>
                   <small>{entry.employeeName ?? 'Сотрудник'}</small>
@@ -485,6 +763,215 @@ function ShiftReportPanel({
           </div>
         </div>
       </div>
+
+      <div className="finance-panel shift-orders-panel">
+        <div className="finance-panel-head">
+          <div>
+            <h2>Заказы смены</h2>
+            <p>
+              Здесь показываются только заказы, открытые или оплаченные
+              в выбранной смене.
+            </p>
+          </div>
+          <span className="orders-count-badge">{orders.length}</span>
+        </div>
+
+        <div className="finance-table-wrap">
+          <table className="finance-table shift-orders-table">
+            <thead>
+              <tr>
+                <th>Заказ</th>
+                <th>Статус</th>
+                <th>Стол</th>
+                <th>Сотрудник</th>
+                <th>Открыт</th>
+                <th>Сумма</th>
+                <th>Оплачено в смене</th>
+                <th>Способ</th>
+                <th>Остаток</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map((order) => (
+                <tr key={order.id}>
+                  <td>
+                    <strong>{'#' + order.orderNumber}</strong>
+                    {!order.openedInThisShift && (
+                      <small className="cell-subline">
+                        открыт в другой смене
+                      </small>
+                    )}
+                  </td>
+                  <td>
+                    <span
+                      className={'badge ' + orderStatusTone(order.status)}
+                    >
+                      {orderStatusName(order.status)}
+                    </span>
+                  </td>
+                  <td>
+                    {order.tableName
+                      ? [order.hallName, order.tableName]
+                          .filter(Boolean)
+                          .join(' · ')
+                      : '—'}
+                  </td>
+                  <td>{order.employeeName ?? '—'}</td>
+                  <td>{formatDate(order.createdAt)}</td>
+                  <td><strong>{money(order.total)}</strong></td>
+                  <td>
+                    <strong>{money(order.netPaidInShift)}</strong>
+                    {order.refundedInShift > 0 && (
+                      <small className="cell-subline">
+                        {'возврат ' + money(order.refundedInShift)}
+                      </small>
+                    )}
+                  </td>
+                  <td>
+                    {order.paymentMethods.length === 0
+                      ? '—'
+                      : order.paymentMethods
+                          .map(
+                            (item) =>
+                              methodName(item.method) +
+                              ' ' +
+                              money(item.amount),
+                          )
+                          .join(' + ')}
+                  </td>
+                  <td>
+                    {order.remaining > 0
+                      ? money(order.remaining)
+                      : '—'}
+                  </td>
+                </tr>
+              ))}
+
+              {orders.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="finance-empty-row">
+                    В этой смене заказов пока нет.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {data.refunds.length > 0 && (
+        <div className="finance-panel shift-refunds-panel">
+          <div className="finance-panel-head">
+            <div>
+              <h2>Возвраты смены</h2>
+              <p>Все возвраты, проведённые в этой смене.</p>
+            </div>
+          </div>
+
+          <div className="refund-grid">
+            {data.refunds.map((refund) => (
+              <div className="refund-card" key={refund.id}>
+                <div>
+                  <strong>
+                    {'Заказ #' +
+                      refund.orderNumber +
+                      ' · ' +
+                      methodName(refund.method)}
+                  </strong>
+                  <span>
+                    {(refund.reason || 'Без причины') +
+                      ' · ' +
+                      formatDate(refund.createdAt)}
+                  </span>
+                  <small>{refund.employeeName}</small>
+                </div>
+                <strong>{'−' + money(refund.amount)}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {movement && (
+        <CashMovementDialog
+          state={movement}
+          token={token}
+          onClose={() => setMovement(null)}
+          onSaved={async () => {
+            setMovement(null);
+            await onMutationSaved();
+          }}
+        />
+      )}
+
+      {closing && shift.status === 'OPEN' && (
+        <CloseShiftDialog
+          report={report}
+          token={token}
+          onClose={() => setClosing(false)}
+          onSaved={async () => {
+            setClosing(false);
+            await onMutationSaved();
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+function RevenueCard({
+  label,
+  value,
+  detail,
+  tone,
+  emphasized = false,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  tone: 'closed' | 'open' | 'expected';
+  emphasized?: boolean;
+}) {
+  return (
+    <div
+      className={
+        'revenue-card ' +
+        tone +
+        (emphasized ? ' emphasized' : '')
+      }
+    >
+      <span>{label}</span>
+      <strong>{money(value)}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+function CompactKpi({
+  label,
+  value,
+  detail,
+  warning = false,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  warning?: boolean;
+}) {
+  return (
+    <div className={'compact-kpi ' + (warning ? 'warning' : '')}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+function DetailMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="detail-meta">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -525,22 +1012,39 @@ function CashMovementDialog({
       });
       await onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось выполнить операцию');
+      setError(
+        e instanceof Error
+          ? e.message
+          : 'Не удалось выполнить операцию',
+      );
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
       <form className="modal-card finance-cash-modal" onSubmit={submit}>
         <div className="modal-header">
           <div>
             <div className="eyebrow">КАССОВАЯ ОПЕРАЦИЯ</div>
-            <h2>{state.type === 'DEPOSIT' ? 'Внесение наличных' : 'Изъятие наличных'}</h2>
+            <h2>
+              {state.type === 'DEPOSIT'
+                ? 'Внесение наличных'
+                : 'Изъятие наличных'}
+            </h2>
             <p>{state.deviceName}</p>
           </div>
-          <button type="button" className="close-button" onClick={onClose}>×</button>
+          <button
+            type="button"
+            className="close-button"
+            onClick={onClose}
+          >
+            ×
+          </button>
         </div>
 
         <label>
@@ -570,9 +1074,19 @@ function CashMovementDialog({
         </label>
 
         {error && <div className="error-box">{error}</div>}
+
         <div className="modal-actions">
-          <button type="button" className="secondary-button" onClick={onClose}>Отмена</button>
-          <button className="primary-button" disabled={!valid || saving}>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onClose}
+          >
+            Отмена
+          </button>
+          <button
+            className="primary-button"
+            disabled={!valid || saving}
+          >
             {saving ? 'Сохраняем…' : 'Провести'}
           </button>
         </div>
@@ -600,7 +1114,8 @@ function CloseShiftDialog({
   const actual = Number(closingCash.replace(',', '.'));
   const validActual = Number.isFinite(actual) && actual >= 0;
   const difference = validActual ? actual - report.expectedCash : 0;
-  const requiresReason = validActual && Math.abs(difference) >= 0.01;
+  const requiresReason =
+    validActual && Math.abs(difference) >= 0.01;
   const valid =
     validActual &&
     (!requiresReason || reason.trim().length > 0);
@@ -618,14 +1133,21 @@ function CloseShiftDialog({
       });
       await onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось закрыть смену');
+      setError(
+        e instanceof Error
+          ? e.message
+          : 'Не удалось закрыть смену',
+      );
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
       <form className="modal-card finance-close-modal" onSubmit={submit}>
         <div className="modal-header">
           <div>
@@ -633,7 +1155,13 @@ function CloseShiftDialog({
             <h2>Закрытие смены</h2>
             <p>{report.deviceName ?? 'POS'}</p>
           </div>
-          <button type="button" className="close-button" onClick={onClose}>×</button>
+          <button
+            type="button"
+            className="close-button"
+            onClick={onClose}
+          >
+            ×
+          </button>
         </div>
 
         <div className="close-shift-summary">
@@ -653,8 +1181,11 @@ function CloseShiftDialog({
         </label>
 
         {validActual && (
-          <div className={'close-difference ' +
-            (requiresReason ? 'has-difference' : 'balanced')}
+          <div
+            className={
+              'close-difference ' +
+              (requiresReason ? 'has-difference' : 'balanced')
+            }
           >
             <span>Расхождение</span>
             <strong>{signedMoney(difference)}</strong>
@@ -686,8 +1217,17 @@ function CloseShiftDialog({
         {error && <div className="error-box">{error}</div>}
 
         <div className="modal-actions">
-          <button type="button" className="secondary-button" onClick={onClose}>Отмена</button>
-          <button className="danger-button" disabled={!valid || saving}>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onClose}
+          >
+            Отмена
+          </button>
+          <button
+            className="danger-button"
+            disabled={!valid || saving}
+          >
             {saving ? 'Закрываем…' : 'Закрыть смену'}
           </button>
         </div>
@@ -708,43 +1248,131 @@ function CashMetric({
   emphasized?: boolean;
 }) {
   return (
-    <div className={
-      'cash-metric ' +
-      (warning ? 'warning ' : '') +
-      (emphasized ? 'emphasized' : '')
-    }>
+    <div
+      className={
+        'cash-metric ' +
+        (warning ? 'warning ' : '') +
+        (emphasized ? 'emphasized' : '')
+      }
+    >
       <span>{label}</span>
-      <strong>{value < 0 ? '−' + money(Math.abs(value)) : money(value)}</strong>
+      <strong>
+        {value < 0 ? '−' + money(Math.abs(value)) : money(value)}
+      </strong>
     </div>
   );
 }
 
-function FinanceStat({
-  label,
-  value,
-  detail,
-  warning = false,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  warning?: boolean;
-}) {
+function registerName(
+  data: BackOfficeFinance | null,
+  id: string,
+) {
   return (
-    <div className={'stat-card ' + (warning ? 'stat-warning' : '')}>
-      <span>{label}</span>
-      <div>
-        <strong>{value}</strong>
-        <small>{detail}</small>
-      </div>
-    </div>
+    data?.cashRegisters.find((register) => register.id === id)?.name ??
+    'Касса'
   );
+}
+
+function presetRange(
+  preset: Exclude<PeriodPreset, 'custom'>,
+): { fromDate: string; toDate: string } {
+  const today = startOfLocalDay(new Date());
+
+  if (preset === 'today') {
+    const value = dateInputValue(today);
+    return { fromDate: value, toDate: value };
+  }
+
+  if (preset === 'yesterday') {
+    const yesterday = addDays(today, -1);
+    const value = dateInputValue(yesterday);
+    return { fromDate: value, toDate: value };
+  }
+
+  const days = preset === '7d' ? 6 : 29;
+  return {
+    fromDate: dateInputValue(addDays(today, -days)),
+    toDate: dateInputValue(today),
+  };
+}
+
+function periodBounds(
+  fromDate: string,
+  toDate: string,
+): { from: string; to: string } {
+  const from = new Date(fromDate + 'T00:00:00');
+  const to = new Date(toDate + 'T00:00:00');
+  to.setDate(to.getDate() + 1);
+
+  return {
+    from: from.toISOString(),
+    to: to.toISOString(),
+  };
+}
+
+function humanPeriod(fromDate: string, toDate: string) {
+  if (fromDate === toDate) {
+    return formatInputDateHuman(fromDate);
+  }
+  return (
+    formatInputDateHuman(fromDate) +
+    ' — ' +
+    formatInputDateHuman(toDate)
+  );
+}
+
+function formatInputDateHuman(value: string) {
+  const date = new Date(value + 'T00:00:00');
+  return date.toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function startOfLocalDay(value: Date) {
+  return new Date(
+    value.getFullYear(),
+    value.getMonth(),
+    value.getDate(),
+  );
+}
+
+function addDays(value: Date, days: number) {
+  const copy = new Date(value);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+}
+
+function dateInputValue(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return year + '-' + month + '-' + day;
 }
 
 function methodName(method: string) {
   if (method === 'CASH') return 'Наличные';
   if (method === 'CARD') return 'Карта';
   return 'Другое';
+}
+
+function orderStatusName(status: string) {
+  if (status === 'DRAFT') return 'Черновик';
+  if (status === 'OPEN') return 'Открыт';
+  if (status === 'PARTIALLY_SENT') return 'Частично отправлен';
+  if (status === 'SENT') return 'На кухне';
+  if (status === 'PARTIALLY_PAID') return 'Частично оплачен';
+  if (status === 'PAID') return 'Оплачен';
+  if (status === 'CLOSED') return 'Закрыт';
+  if (status === 'CANCELLED') return 'Отменён';
+  return status;
+}
+
+function orderStatusTone(status: string) {
+  if (status === 'CLOSED' || status === 'PAID') return 'success';
+  if (status === 'CANCELLED') return 'neutral';
+  return 'warning';
 }
 
 function money(value: number, currency = 'AZN') {
@@ -770,6 +1398,26 @@ function formatDate(value: string) {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+}
+
+function formatShortDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+      });
+}
+
+function formatTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleTimeString('ru-RU', {
         hour: '2-digit',
         minute: '2-digit',
       });
