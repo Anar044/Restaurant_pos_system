@@ -294,6 +294,64 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.ToTable("halls", (string)null);
                 });
 
+            modelBuilder.Entity("RestaurantNode.Api.Domain.PreparationPlace", b =>
+                {
+                    b.HasOne("RestaurantNode.Api.Domain.PreparationPlaceType", "PreparationPlaceType")
+                        .WithMany()
+                        .HasForeignKey("PreparationPlaceTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RestaurantNode.Api.Domain.Printer", "Printer")
+                        .WithMany()
+                        .HasForeignKey("PrinterId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("RestaurantNode.Api.Domain.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("PreparationPlaceType");
+                    b.Navigation("Printer");
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.SalesPoint", b =>
+                {
+                    b.HasOne("RestaurantNode.Api.Domain.Hall", "Hall")
+                        .WithMany()
+                        .HasForeignKey("HallId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Hall");
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.PreparationRoute", b =>
+                {
+                    b.HasOne("RestaurantNode.Api.Domain.PreparationPlace", "PreparationPlace")
+                        .WithMany()
+                        .HasForeignKey("PreparationPlaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RestaurantNode.Api.Domain.PreparationPlaceType", "PreparationPlaceType")
+                        .WithMany()
+                        .HasForeignKey("PreparationPlaceTypeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RestaurantNode.Api.Domain.SalesPoint", "SalesPoint")
+                        .WithMany()
+                        .HasForeignKey("SalesPointId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("PreparationPlace");
+                    b.Navigation("PreparationPlaceType");
+                    b.Navigation("SalesPoint");
+                });
+
             modelBuilder.Entity("RestaurantNode.Api.Domain.KitchenStation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1056,6 +1114,133 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.ToTable("printers", (string)null);
                 });
 
+            modelBuilder.Entity("RestaurantNode.Api.Domain.PreparationPlaceType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RestaurantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RestaurantId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("preparation_place_types", (string)null);
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.PreparationPlace", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("PreparationPlaceTypeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PrinterId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RestaurantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("WarehouseId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PreparationPlaceTypeId");
+                    b.HasIndex("PrinterId");
+                    b.HasIndex("WarehouseId");
+
+                    b.HasIndex("RestaurantId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("preparation_places", (string)null);
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.SalesPoint", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("HallId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RestaurantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HallId");
+
+                    b.HasIndex("RestaurantId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("sales_points", (string)null);
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.PreparationRoute", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("PreparationPlaceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PreparationPlaceTypeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RestaurantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SalesPointId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PreparationPlaceId");
+                    b.HasIndex("PreparationPlaceTypeId");
+                    b.HasIndex("SalesPointId");
+
+                    b.HasIndex("RestaurantId", "SalesPointId", "PreparationPlaceTypeId")
+                        .IsUnique();
+
+                    b.ToTable("preparation_routes", (string)null);
+                });
+
             modelBuilder.Entity("RestaurantNode.Api.Domain.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1077,6 +1262,9 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.Property<decimal>("MinStock")
                         .HasPrecision(18, 3)
                         .HasColumnType("numeric(18,3)");
+
+                    b.Property<Guid?>("PreparationPlaceTypeId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1107,6 +1295,8 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.HasIndex("CategoryId");
 
                     b.HasIndex("KitchenStationId");
+
+                    b.HasIndex("PreparationPlaceTypeId");
 
                     b.HasIndex("RestaurantId", "Name");
 
@@ -1608,9 +1798,16 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("KitchenStationId");
 
+                    b.HasOne("RestaurantNode.Api.Domain.PreparationPlaceType", "PreparationPlaceType")
+                        .WithMany()
+                        .HasForeignKey("PreparationPlaceTypeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Category");
 
                     b.Navigation("KitchenStation");
+
+                    b.Navigation("PreparationPlaceType");
                 });
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.ProductPrice", b =>
