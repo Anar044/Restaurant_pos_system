@@ -87,6 +87,11 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
             migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_halls_RestaurantId_Name\";");
 
             migrationBuilder.CreateIndex(
+                name: "IX_halls_RestaurantId",
+                table: "halls",
+                column: "RestaurantId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_halls_GroupId_Name",
                 table: "halls",
                 columns: new[] { "GroupId", "Name" },
@@ -147,6 +152,10 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
             migrationBuilder.DropForeignKey(
                 name: "FK_restaurant_departments_preparation_place_types_PreparationPlaceTypeId",
                 table: "restaurant_departments");
+
+            migrationBuilder.DropIndex(
+                name: "IX_halls_RestaurantId",
+                table: "halls");
 
             migrationBuilder.DropIndex(
                 name: "IX_halls_GroupId_Name",
