@@ -2681,13 +2681,13 @@ public static class OrderEndpoints
         {
             var deviceGroupId = await (
                 from link in db.RestaurantGroupDevices.AsNoTracking()
-                join group in db.RestaurantGroups.AsNoTracking()
-                    on link.GroupId equals group.Id
+                join restaurantGroup in db.RestaurantGroups.AsNoTracking()
+                    on link.GroupId equals restaurantGroup.Id
                 where link.DeviceId == order.OriginDeviceId.Value &&
-                      group.RestaurantId == restaurantId &&
-                      group.IsActive
+                      restaurantGroup.RestaurantId == restaurantId &&
+                      restaurantGroup.IsActive
                 orderby link.IsMainCashRegister descending
-                select (Guid?)group.Id)
+                select (Guid?)restaurantGroup.Id)
                 .FirstOrDefaultAsync(ct);
 
             if (deviceGroupId.HasValue)
