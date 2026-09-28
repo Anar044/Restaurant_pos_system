@@ -191,6 +191,11 @@ function NomenclatureEditor({
   const [error, setError] = useState<string | null>(null);
 
   const recipeEnabled = type === 'DISH' || type === 'PREPARATION' || type === 'MODIFIER';
+  const ingredientCandidates = allItems.filter((candidate) =>
+    candidate.id !== item?.id &&
+    candidate.isActive &&
+    (candidate.type === 'GOODS' || candidate.type === 'PREPARATION')
+  );
 
   async function saveMain(event: FormEvent) {
     event.preventDefault();
@@ -253,7 +258,8 @@ function NomenclatureEditor({
   }
 
   function addRecipeLine() {
-    const first = allItems.find((x) => x.id !== item?.id && x.isActive);
+    const used = new Set(recipe.map((line) => line.ingredientProductId));
+    const first = ingredientCandidates.find((candidate) => !used.has(candidate.id));
     if (!first) return;
     setRecipe((current) => [...current, { ingredientProductId: first.id, quantity: '1' }]);
   }
@@ -373,8 +379,18 @@ function NomenclatureEditor({
               <div>
                 <strong>Состав техкарты</strong>
                 <span>Количество указано на 1 {unitLabel(unit)} готовой позиции.</span>
+                <small>В составе можно использовать товары и заготовки. Циклические техкарты запрещены.</small>
               </div>
-              {canManage && <button type="button" className="secondary-button compact" onClick={addRecipeLine}>+ Ингредиент</button>}
+              {canManage && (
+                <button
+                  type="button"
+                  className="secondary-button compact"
+                  onClick={addRecipeLine}
+                  disabled={recipe.length >= ingredientCandidates.length}
+                >
+                  + Ингредиент
+                </button>
+              )}
             </div>
 
             {recipe.length === 0 ? (
@@ -390,9 +406,19 @@ function NomenclatureEditor({
                         onChange={(e) => setRecipe((current) => current.map((x, i) => i === index ? { ...x, ingredientProductId: e.target.value } : x))}
                         disabled={!canManage}
                       >
-                        {allItems.filter((x) => x.id !== item?.id && x.isActive).map((candidate) => (
-                          <option value={candidate.id} key={candidate.id}>{candidate.name}</option>
-                        ))}
+                        {ingredientCandidates
+                          .filter((candidate) =>
+                            candidate.id === line.ingredientProductId ||
+                            !recipe.some((existing, existingIndex) =>
+                              existingIndex !== index &&
+                              existing.ingredientProductId === candidate.id
+                            )
+                          )
+                          .map((candidate) => (
+                            <option value={candidate.id} key={candidate.id}>
+                              {candidate.name} · {TYPE_LABELS[candidate.type]}
+                            </option>
+                          ))}
                       </select>
                       <input
                         value={line.quantity}
