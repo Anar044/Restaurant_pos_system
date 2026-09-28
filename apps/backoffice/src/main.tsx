@@ -5,16 +5,13 @@ import {
   DEVELOPMENT_RESTAURANT_ID,
   type AuthSession,
   type BackOfficeContext,
-  type Hall,
   getBackOfficeContext,
-  getHalls,
   loginWithPin,
 } from './api';
 import { AdjustmentsPage } from './AdjustmentsPage';
 import { DevicesPage } from './DevicesPage';
 import { EmployeesPage } from './EmployeesPage';
 import { FinancePage } from './FinancePage';
-import { HallsPage } from './HallsPage';
 import { InventoryPage } from './InventoryPage';
 import { ModifiersPage } from './ModifiersPage';
 import { NomenclaturePage } from './NomenclaturePage';
@@ -24,7 +21,7 @@ import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'halls' | 'groups' | 'modifiers' | 'nomenclature' | 'inventory' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance';
+type PageKey = 'overview' | 'groups' | 'modifiers' | 'nomenclature' | 'inventory' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -131,7 +128,6 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (session: AuthSession) => voi
 function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () => void }) {
   const [page, setPage] = useState<PageKey>('overview');
   const [context, setContext] = useState<BackOfficeContext | null>(null);
-  const [halls, setHalls] = useState<Hall[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [restaurantSettingsOpen, setRestaurantSettingsOpen] = useState(true);
@@ -142,12 +138,8 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     setLoading(true);
     setError(null);
     try {
-      const [nextContext, nextHalls] = await Promise.all([
-        getBackOfficeContext(session.token),
-        getHalls(session.token),
-      ]);
+      const nextContext = await getBackOfficeContext(session.token);
       setContext(nextContext);
-      setHalls(nextHalls);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось загрузить данные');
     } finally {
@@ -162,8 +154,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
   const navItems: Array<{ key: PageKey; label: string; icon: string; ready?: boolean }> = [
     { key: 'overview', label: 'Обзор', icon: '⌂', ready: true },
     { key: 'finance', label: 'Кассы и смены', icon: '₼', ready: true },
-    { key: 'groups', label: 'Группы и отделения', icon: '▦', ready: true },
-    { key: 'halls', label: 'Залы и столы', icon: '◫', ready: true },
+    { key: 'groups', label: 'Группы, отделения и залы', icon: '▦', ready: true },
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
     { key: 'nomenclature', label: 'Номенклатура', icon: '▤', ready: true },
     { key: 'modifiers', label: 'Группы модификаторов', icon: '±', ready: true },
@@ -173,7 +164,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'roles', label: 'Роли и права', icon: '◉', ready: true },
   ];
 
-  const restaurantSettingsItems: PageKey[] = ['groups', 'halls', 'devices'];
+  const restaurantSettingsItems: PageKey[] = ['groups', 'devices'];
   const catalogItems: PageKey[] = ['nomenclature', 'modifiers', 'inventory'];
   const employeeItems: PageKey[] = ['employees', 'roles'];
 
@@ -306,13 +297,6 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
               token={session.token}
               restaurantName={context?.restaurant.name ?? 'Ресторан'}
               onOpenFinance={() => setPage('finance')}
-            />
-          ) : page === 'halls' ? (
-            <HallsPage
-              halls={halls}
-              loading={loading}
-              token={session.token}
-              onRefresh={refresh}
             />
           ) : page === 'modifiers' ? (
             <ModifiersPage token={session.token} />
