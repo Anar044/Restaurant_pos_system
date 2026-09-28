@@ -37,6 +37,7 @@ const permissionMeta: Record<string, { label: string; description: string; group
   'employees.manage': { label: 'Сотрудники и роли', description: 'Создавать сотрудников, PIN и права', group: 'BackOffice' },
   'devices.manage': { label: 'Оборудование', description: 'Управлять устройствами и оборудованием', group: 'BackOffice' },
   'pricing.manage': { label: 'Скидки и надбавки', description: 'Создавать правила, задавать процент/сумму и доступные роли', group: 'BackOffice' },
+  'inventory.manage': { label: 'Управление складом', description: 'Создавать склады, складские позиции, приходы и списания', group: 'BackOffice' },
 };
 
 export function EmployeesPage({
