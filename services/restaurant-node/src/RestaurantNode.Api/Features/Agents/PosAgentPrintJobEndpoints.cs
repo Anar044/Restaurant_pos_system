@@ -39,7 +39,7 @@ public static class PosAgentPrintJobEndpoints
             var candidates = await db.PrintJobs
                 .Where(x =>
                     x.RestaurantId == restaurantId &&
-                    x.Type == "KITCHEN_TICKET" &&
+                    (x.Type == "KITCHEN_TICKET" || x.Type == "PRECHECK") &&
                     printerKeys.Contains(x.PrinterKey) &&
                     x.Attempts < MaxAttempts &&
                     x.Status == PrintJobStatus.Pending)
@@ -78,7 +78,7 @@ public static class PosAgentPrintJobEndpoints
                     job.Status = PrintJobStatus.Failed;
                     job.Attempts = MaxAttempts;
                     job.PrintedAt = null;
-                    job.LastError = "Kitchen print suppressed because the order is closed, cancelled, or unavailable.";
+                    job.LastError = "Print suppressed because the order is closed, cancelled, or unavailable.";
                     continue;
                 }
 
@@ -143,7 +143,7 @@ public static class PosAgentPrintJobEndpoints
             var job = await db.PrintJobs.FirstOrDefaultAsync(
                 x => x.Id == jobId &&
                      x.RestaurantId == request.RestaurantId &&
-                     x.Type == "KITCHEN_TICKET",
+                     (x.Type == "KITCHEN_TICKET" || x.Type == "PRECHECK"),
                 ct);
 
             if (job is null)
@@ -174,18 +174,21 @@ public static class PosAgentPrintJobEndpoints
                 job.PrintedAt = printedAt;
                 job.LastError = null;
 
-                var ticketId = TryGetTicketId(job.PayloadJson);
-                if (ticketId.HasValue)
+                if (string.Equals(job.Type, "KITCHEN_TICKET", StringComparison.OrdinalIgnoreCase))
                 {
-                    var ticket = await db.KitchenTickets.FirstOrDefaultAsync(
-                        x => x.Id == ticketId.Value &&
-                             x.RestaurantId == request.RestaurantId,
-                        ct);
-
-                    if (ticket is not null)
+                    var ticketId = TryGetTicketId(job.PayloadJson);
+                    if (ticketId.HasValue)
                     {
-                        ticket.Status = KitchenTicketStatus.Printed;
-                        ticket.PrintedAt = printedAt;
+                        var ticket = await db.KitchenTickets.FirstOrDefaultAsync(
+                            x => x.Id == ticketId.Value &&
+                                 x.RestaurantId == request.RestaurantId,
+                            ct);
+
+                        if (ticket is not null)
+                        {
+                            ticket.Status = KitchenTicketStatus.Printed;
+                            ticket.PrintedAt = printedAt;
+                        }
                     }
                 }
             }
@@ -217,7 +220,7 @@ public static class PosAgentPrintJobEndpoints
         Guid deviceId,
         CancellationToken ct)
     {
-        var rows = await (
+        var departmentRows = await (
             from department in db.RestaurantDepartments.AsNoTracking()
             join printer in db.Printers.AsNoTracking()
                 on department.PrinterId equals (Guid?)printer.Id
@@ -229,7 +232,7 @@ public static class PosAgentPrintJobEndpoints
                   printer.IsActive
             select new
             {
-                department.Id,
+                Key = $"kitchen:{department.Id:N}",
                 PrinterId = printer.Id,
                 PrinterName = printer.Name,
                 printer.ConnectionType,
@@ -238,15 +241,40 @@ public static class PosAgentPrintJobEndpoints
             })
             .ToListAsync(ct);
 
-        return rows.ToDictionary(
-            x => $"kitchen:{x.Id:N}",
-            x => new PrinterRoute(
-                x.PrinterId,
-                x.PrinterName,
-                x.ConnectionType,
-                x.Address,
-                x.Port),
-            StringComparer.OrdinalIgnoreCase);
+        var hallRows = await (
+            from hall in db.Halls.AsNoTracking()
+            join printer in db.Printers.AsNoTracking()
+                on hall.PrecheckPrinterId equals (Guid?)printer.Id
+            where hall.RestaurantId == restaurantId &&
+                  hall.IsActive &&
+                  printer.RestaurantId == restaurantId &&
+                  printer.HostDeviceId == deviceId &&
+                  printer.IsConfigured &&
+                  printer.IsActive
+            select new
+            {
+                Key = $"precheck:{hall.Id:N}",
+                PrinterId = printer.Id,
+                PrinterName = printer.Name,
+                printer.ConnectionType,
+                printer.Address,
+                printer.Port
+            })
+            .ToListAsync(ct);
+
+        var routes = new Dictionary<string, PrinterRoute>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in departmentRows.Concat(hallRows))
+        {
+            routes[row.Key] = new PrinterRoute(
+                row.PrinterId,
+                row.PrinterName,
+                row.ConnectionType,
+                row.Address,
+                row.Port);
+        }
+
+        return routes;
     }
 
     private static Task<bool> DeviceExistsAsync(
@@ -305,7 +333,7 @@ public static class PosAgentPrintJobEndpoints
     {
         var error = value?.Trim();
         if (string.IsNullOrWhiteSpace(error))
-            return "Kitchen print failed without an error message.";
+            return "Print failed without an error message.";
 
         return error.Length <= 1000 ? error : error[..1000];
     }
