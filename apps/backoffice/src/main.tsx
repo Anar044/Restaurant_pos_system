@@ -18,6 +18,7 @@ import { HallsPage } from './HallsPage';
 import { KitchenPage } from './KitchenPage';
 import { MenuPage } from './MenuPage';
 import { ModifiersPage } from './ModifiersPage';
+import { OverviewPage } from './OverviewPage';
 import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
@@ -127,7 +128,7 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (session: AuthSession) => voi
 }
 
 function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () => void }) {
-  const [page, setPage] = useState<PageKey>('halls');
+  const [page, setPage] = useState<PageKey>('overview');
   const [context, setContext] = useState<BackOfficeContext | null>(null);
   const [halls, setHalls] = useState<Hall[]>([]);
   const [loading, setLoading] = useState(true);
@@ -158,7 +159,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
   }, [session.token]);
 
   const navItems: Array<{ key: PageKey; label: string; icon: string; ready?: boolean }> = [
-    { key: 'overview', label: 'Обзор', icon: '⌂' },
+    { key: 'overview', label: 'Обзор', icon: '⌂', ready: true },
     { key: 'finance', label: 'Кассы и смены', icon: '₼', ready: true },
     { key: 'halls', label: 'Залы и столы', icon: '▦', ready: true },
     { key: 'kitchen', label: 'Тип места приготовления', icon: '◫', ready: true },
@@ -298,7 +299,13 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             </div>
           )}
 
-          {page === 'halls' ? (
+          {page === 'overview' ? (
+            <OverviewPage
+              token={session.token}
+              restaurantName={context?.restaurant.name ?? 'Ресторан'}
+              onOpenFinance={() => setPage('finance')}
+            />
+          ) : page === 'halls' ? (
             <HallsPage
               halls={halls}
               loading={loading}
