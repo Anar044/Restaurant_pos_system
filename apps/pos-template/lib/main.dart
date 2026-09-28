@@ -774,48 +774,22 @@ class _HallSelectionPageState extends State<HallSelectionPage> {
   }
 
   Future<void> closeShift() async {
-    final controller = TextEditingController(text: '0.00');
-    final closingCash = await showDialog<double>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Закрытие смены'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: 'Фактические наличные в кассе',
-            suffixText: 'AZN',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = double.tryParse(
-                controller.text.trim().replaceAll(',', '.'),
-              );
-              if (value != null && value >= 0) {
-                Navigator.pop(dialogContext, value);
-              }
-            },
-            child: const Text('Закрыть смену'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-
-    if (closingCash == null || !mounted) return;
-
     try {
+      final report = await widget.api.getShiftReport(widget.shift.id);
+      if (!mounted) return;
+
+      final closing = await showDialog<_CloseShiftRequest>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _CloseShiftDialog(report: report),
+      );
+
+      if (closing == null || !mounted) return;
+
       final result = await widget.api.closeShift(
         widget.shift.id,
-        closingCash: closingCash,
+        closingCash: closing.closingCash,
+        reason: closing.reason,
       );
       if (!mounted) return;
 
@@ -1564,6 +1538,171 @@ class _CashMovementDialogState extends State<_CashMovementDialog> {
   }
 }
 
+class _CloseShiftRequest {
+  const _CloseShiftRequest({
+    required this.closingCash,
+    this.reason,
+  });
+
+  final double closingCash;
+  final String? reason;
+}
+
+class _CloseShiftDialog extends StatefulWidget {
+  const _CloseShiftDialog({required this.report});
+
+  final ShiftReportDto report;
+
+  @override
+  State<_CloseShiftDialog> createState() => _CloseShiftDialogState();
+}
+
+class _CloseShiftDialogState extends State<_CloseShiftDialog> {
+  final cashController = TextEditingController();
+  final reasonController = TextEditingController();
+
+  double? get actual =>
+      double.tryParse(cashController.text.trim().replaceAll(',', '.'));
+
+  double get difference =>
+      (actual ?? widget.report.expectedCash) - widget.report.expectedCash;
+
+  bool get requiresReason =>
+      actual != null && actual! >= 0 && difference.abs() >= 0.01;
+
+  bool get valid =>
+      actual != null &&
+      actual! >= 0 &&
+      (!requiresReason || reasonController.text.trim().isNotEmpty);
+
+  @override
+  void dispose() {
+    cashController.dispose();
+    reasonController.dispose();
+    super.dispose();
+  }
+
+  void submit() {
+    if (!valid) return;
+    Navigator.of(context).pop(
+      _CloseShiftRequest(
+        closingCash: actual!,
+        reason: reasonController.text.trim().isEmpty
+            ? null
+            : reasonController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return AlertDialog(
+      title: const Text('Закрытие смены'),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Text('Ожидается в кассе'),
+                  const Spacer(),
+                  Text(
+                    '${widget.report.expectedCash.toStringAsFixed(2)} AZN',
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: cashController,
+              autofocus: true,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Фактически посчитано в кассе',
+                suffixText: 'AZN',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
+              onSubmitted: (_) => submit(),
+            ),
+            if (actual != null && actual! >= 0) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: requiresReason
+                      ? scheme.errorContainer
+                      : scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    const Text('Расхождение'),
+                    const Spacer(),
+                    Text(
+                      '${difference >= 0 ? '+' : ''}'
+                      '${difference.toStringAsFixed(2)} AZN',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              maxLength: 500,
+              minLines: 2,
+              maxLines: 4,
+              decoration: InputDecoration(
+                labelText: requiresReason
+                    ? 'Причина расхождения *'
+                    : 'Комментарий к закрытию',
+                border: const OutlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            if (requiresReason &&
+                reasonController.text.trim().isEmpty)
+              Text(
+                'При расхождении причина обязательна.',
+                style: TextStyle(
+                  color: scheme.error,
+                  fontSize: 12,
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: valid ? submit : null,
+          child: const Text('Закрыть смену'),
+        ),
+      ],
+    );
+  }
+}
+
 class _ShiftReportDialog extends StatelessWidget {
   const _ShiftReportDialog({
     required this.title,
@@ -1636,6 +1775,14 @@ class _ShiftReportDialog extends StatelessWidget {
                 value: '${report.openingCash.toStringAsFixed(2)} AZN',
               ),
               _ReportRow(
+                label: 'Наличные продажи',
+                value: '${report.cashSales.toStringAsFixed(2)} AZN',
+              ),
+              _ReportRow(
+                label: 'Возвраты наличными',
+                value: '${report.cashRefunds.toStringAsFixed(2)} AZN',
+              ),
+              _ReportRow(
                 label: 'Внесения',
                 value: '${report.deposits.toStringAsFixed(2)} AZN',
               ),
@@ -1658,6 +1805,12 @@ class _ShiftReportDialog extends StatelessWidget {
                   label: 'Разница',
                   value: '${report.cashDifference!.toStringAsFixed(2)} AZN',
                   strong: true,
+                ),
+              if (report.closingNote != null &&
+                  report.closingNote!.trim().isNotEmpty)
+                _ReportRow(
+                  label: 'Комментарий закрытия',
+                  value: report.closingNote!,
                 ),
             ],
           ),
