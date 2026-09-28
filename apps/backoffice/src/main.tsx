@@ -250,7 +250,10 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
           ) : page === 'devices' ? (
             <DevicesPage token={session.token} />
           ) : page === 'finance' ? (
-            <FinancePage token={session.token} />
+            <FinancePage
+              token={session.token}
+              canManageShifts={(session.permissions ?? []).includes('shifts.manage')}
+            />
           ) : (
             <ComingSoon page={navItems.find((x) => x.key === page)?.label ?? 'Раздел'} />
           )}
