@@ -3,11 +3,9 @@ import {
   type BackOfficeInventory,
   type InventoryStockItem,
   type InventoryWarehouse,
-  createStockItem,
   createStockMovement,
   createWarehouse,
   getBackOfficeInventory,
-  updateStockItem,
   updateWarehouse,
 } from './api';
 import './inventory.css';
@@ -15,8 +13,6 @@ import './inventory.css';
 type EditorState =
   | { kind: 'warehouse-create' }
   | { kind: 'warehouse-edit'; warehouse: InventoryWarehouse }
-  | { kind: 'item-create' }
-  | { kind: 'item-edit'; item: InventoryStockItem }
   | { kind: 'movement'; item?: InventoryStockItem }
   | null;
 
@@ -90,7 +86,6 @@ export function InventoryPage({
         const stock = stockFor(item, selectedWarehouseId);
         return item.isActive && item.minStock > 0 && stock <= item.minStock;
       }).length,
-      movements: data?.recentMovements.length ?? 0,
     };
   }, [data, activeWarehouses.length, selectedWarehouseId]);
 
@@ -105,8 +100,8 @@ export function InventoryPage({
           <div className="eyebrow">НОМЕНКЛАТУРА И СКЛАД</div>
           <h1>Склад</h1>
           <p>
-            Складские позиции, остатки, приходы и списания. Техкарты и автоматическое
-            списание по продажам добавим следующим этапом.
+            Остатки и движения формируются по единому справочнику номенклатуры.
+            Создание и настройка позиций выполняются в разделе «Номенклатура».
           </p>
         </div>
         <div className="heading-actions">
@@ -117,9 +112,6 @@ export function InventoryPage({
             <>
               <button className="secondary-button" onClick={() => setEditor({ kind: 'warehouse-create' })}>
                 + Склад
-              </button>
-              <button className="secondary-button" onClick={() => setEditor({ kind: 'item-create' })}>
-                + Позиция
               </button>
               <button className="primary-button" onClick={() => setEditor({ kind: 'movement' })}>
                 + Операция
@@ -138,7 +130,7 @@ export function InventoryPage({
 
       <div className="stats-grid inventory-stats">
         <InventoryStat label="Активные склады" value={stats.warehouses} />
-        <InventoryStat label="Складские позиции" value={stats.activeItems} />
+        <InventoryStat label="Позиции с учётом" value={stats.activeItems} />
         <InventoryStat label="Ниже минимума" value={stats.lowStock} warning={stats.lowStock > 0} />
       </div>
 
@@ -193,8 +185,8 @@ export function InventoryPage({
 
         {visibleItems.length === 0 ? (
           <div className="inventory-empty">
-            <strong>Складских позиций пока нет</strong>
-            <span>Создайте первую позицию, например «Мука», «Кола 0.33» или «Упаковка».</span>
+            <strong>Нет позиций со складским учётом</strong>
+            <span>Откройте «Номенклатура» и включите «Вести складской учёт» у нужных позиций.</span>
           </div>
         ) : (
           <div className="inventory-table-wrap">
@@ -233,14 +225,9 @@ export function InventoryPage({
                       </td>
                       <td className="inventory-actions">
                         {canManage && (
-                          <>
-                            <button className="text-button" onClick={() => setEditor({ kind: 'movement', item })}>
-                              Операция
-                            </button>
-                            <button className="text-button" onClick={() => setEditor({ kind: 'item-edit', item })}>
-                              Настроить
-                            </button>
-                          </>
+                          <button className="text-button" onClick={() => setEditor({ kind: 'movement', item })}>
+                            Операция
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -342,17 +329,6 @@ function InventoryEditor({
     );
   }
 
-  if (editor.kind === 'item-create' || editor.kind === 'item-edit') {
-    return (
-      <StockItemEditor
-        editor={editor}
-        token={token}
-        onClose={onClose}
-        onSaved={onSaved}
-      />
-    );
-  }
-
   return (
     <MovementEditor
       item={editor.item}
@@ -421,109 +397,6 @@ function WarehouseEditor({
         {warehouse && (
           <label className="toggle-row">
             <span><strong>Склад активен</strong><small>Отключённый склад нельзя использовать в новых операциях.</small></span>
-            <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-          </label>
-        )}
-        {error && <div className="error-box">{error}</div>}
-        <div className="modal-actions">
-          <button type="button" className="secondary-button" onClick={onClose}>Отмена</button>
-          <button className="primary-button" disabled={saving || !name.trim()}>
-            {saving ? 'Сохраняем…' : 'Сохранить'}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function StockItemEditor({
-  editor,
-  token,
-  onClose,
-  onSaved,
-}: {
-  editor: { kind: 'item-create' } | { kind: 'item-edit'; item: InventoryStockItem };
-  token: string;
-  onClose: () => void;
-  onSaved: () => Promise<void>;
-}) {
-  const item = editor.kind === 'item-edit' ? editor.item : null;
-  const [name, setName] = useState(item?.name ?? '');
-  const [sku, setSku] = useState(item?.sku ?? '');
-  const [unit, setUnit] = useState(item?.unit ?? 'pcs');
-  const [minStock, setMinStock] = useState(item?.minStock.toString() ?? '0');
-  const [isActive, setIsActive] = useState(item?.isActive ?? true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    const min = Number(minStock.replace(',', '.'));
-    if (!name.trim() || !Number.isFinite(min) || min < 0) {
-      setError('Проверьте название и минимальный остаток.');
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-    try {
-      const input = {
-        name: name.trim(),
-        sku: sku.trim() || null,
-        unit,
-        minStock: min,
-      };
-      if (editor.kind === 'item-create') {
-        await createStockItem(token, input);
-      } else {
-        await updateStockItem(token, editor.item.id, {
-          ...input,
-          isActive,
-        });
-      }
-      await onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось сохранить позицию');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <form className="modal-card" onSubmit={submit}>
-        <div className="modal-header">
-          <div>
-            <div className="eyebrow">СКЛАДСКАЯ НОМЕНКЛАТУРА</div>
-            <h2>{editor.kind === 'item-create' ? 'Новая позиция' : 'Настройки позиции'}</h2>
-          </div>
-          <button type="button" className="close-button" onClick={onClose}>×</button>
-        </div>
-        <label>
-          <span>Название</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={160} autoFocus />
-        </label>
-        <div className="form-grid">
-          <label>
-            <span>SKU / артикул</span>
-            <input value={sku} onChange={(e) => setSku(e.target.value)} maxLength={100} />
-          </label>
-          <label>
-            <span>Единица измерения</span>
-            <select value={unit} onChange={(e) => setUnit(e.target.value)}>
-              {UNIT_OPTIONS.map(([value, label]) => (
-                <option value={value} key={value}>{label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="full-field">
-            <span>Минимальный остаток</span>
-            <input value={minStock} onChange={(e) => setMinStock(e.target.value)} inputMode="decimal" />
-          </label>
-        </div>
-        {item && (
-          <label className="toggle-row">
-            <span><strong>Позиция активна</strong><small>Отключённую позицию нельзя использовать в новых движениях.</small></span>
             <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
           </label>
         )}
@@ -623,7 +496,7 @@ function MovementEditor({
         </label>
 
         <label>
-          <span>Позиция</span>
+          <span>Позиция номенклатуры</span>
           <select value={stockItemId} onChange={(e) => setStockItemId(e.target.value)}>
             <option value="">Выберите позицию</option>
             {data.items.filter((x) => x.isActive).map((stockItem) => (
@@ -664,9 +537,7 @@ function unitLabel(unit: string) {
 }
 
 function formatQuantity(value: number) {
-  return new Intl.NumberFormat('ru-RU', {
-    maximumFractionDigits: 3,
-  }).format(value);
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(value);
 }
 
 function formatDateTime(value: string) {
