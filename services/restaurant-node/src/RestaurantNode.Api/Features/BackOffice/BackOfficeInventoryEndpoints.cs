@@ -95,9 +95,9 @@ public static class BackOfficeInventoryEndpoints
                     id = movement.Id,
                     warehouseId = movement.WarehouseId,
                     warehouseName = warehouseLookup.GetValueOrDefault(movement.WarehouseId) ?? "Склад",
-                    stockItemId = movement.ProductId,
-                    stockItemName = itemLookup.TryGetValue(movement.ProductId, out var stockItem)
-                        ? stockItem.Name
+                    productId = movement.ProductId,
+                    productName = itemLookup.TryGetValue(movement.ProductId, out var product)
+                        ? product.Name
                         : "Номенклатура",
                     unit = itemLookup.TryGetValue(movement.ProductId, out var movementItem)
                         ? movementItem.Unit
@@ -228,7 +228,7 @@ public static class BackOfficeInventoryEndpoints
             var item = await db.Products
                 .AsNoTracking()
                 .FirstOrDefaultAsync(
-                    x => x.Id == request.StockItemId &&
+                    x => x.Id == request.ProductId &&
                          x.RestaurantId == restaurantId &&
                          x.IsActive &&
                          x.TrackStock,
@@ -239,7 +239,7 @@ public static class BackOfficeInventoryEndpoints
             var currentStock = await db.StockMovements
                 .Where(x => x.RestaurantId == restaurantId &&
                             x.WarehouseId == request.WarehouseId &&
-                            x.ProductId == request.StockItemId)
+                            x.ProductId == request.ProductId)
                 .SumAsync(x => (decimal?)x.QuantityDelta, ct) ?? 0m;
 
             var delta = type == "RECEIPT" ? request.Quantity : -request.Quantity;
@@ -255,7 +255,7 @@ public static class BackOfficeInventoryEndpoints
             {
                 RestaurantId = restaurantId,
                 WarehouseId = request.WarehouseId,
-                ProductId = request.StockItemId,
+                ProductId = request.ProductId,
                 EmployeeId = employeeId,
                 Type = type,
                 QuantityDelta = delta,
@@ -277,7 +277,7 @@ public static class BackOfficeInventoryEndpoints
             {
                 id = movement.Id,
                 movement.WarehouseId,
-                stockItemId = movement.ProductId,
+                productId = movement.ProductId,
                 movement.EmployeeId,
                 movement.Type,
                 movement.QuantityDelta,
@@ -337,7 +337,7 @@ public sealed record CreateWarehouseRequest(string Name);
 public sealed record UpdateWarehouseRequest(string Name, bool IsActive);
 public sealed record CreateStockMovementRequest(
     Guid WarehouseId,
-    Guid StockItemId,
+    Guid ProductId,
     string Type,
     decimal Quantity,
     string? Note);
