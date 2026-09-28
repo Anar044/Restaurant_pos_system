@@ -22,7 +22,7 @@ import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'halls' | 'menu' | 'modifiers' | 'adjustments' | 'kitchen' | 'employees' | 'devices' | 'finance';
+type PageKey = 'overview' | 'halls' | 'menu' | 'modifiers' | 'adjustments' | 'kitchen' | 'employees' | 'roles' | 'devices' | 'finance';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -134,6 +134,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
   const [error, setError] = useState<string | null>(null);
   const [restaurantSettingsOpen, setRestaurantSettingsOpen] = useState(true);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [employeesOpen, setEmployeesOpen] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -165,11 +166,13 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'menu', label: 'Меню', icon: '≡', ready: true },
     { key: 'modifiers', label: 'Модификаторы', icon: '±', ready: true },
     { key: 'adjustments', label: 'Скидки и надбавки', icon: '%', ready: true },
-    { key: 'employees', label: 'Сотрудники', icon: '◎', ready: true },
+    { key: 'employees', label: 'Список сотрудников', icon: '◎', ready: true },
+    { key: 'roles', label: 'Роли и права', icon: '◉', ready: true },
   ];
 
   const restaurantSettingsItems: PageKey[] = ['halls', 'kitchen', 'devices'];
   const catalogItems: PageKey[] = ['menu', 'modifiers'];
+  const employeeItems: PageKey[] = ['employees', 'roles'];
 
   function renderNavItem(key: PageKey, nested = false) {
     const item = navItems.find((x) => x.key === key)!;
@@ -245,7 +248,23 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
 
           <div className="nav-section">
             {renderNavItem('adjustments')}
-            {renderNavItem('employees')}
+          </div>
+
+          <div className="nav-section">
+            <button
+              className={`nav-parent ${employeeItems.includes(page) ? 'active-parent' : ''}`}
+              onClick={() => setEmployeesOpen((value) => !value)}
+              aria-expanded={employeesOpen}
+            >
+              <span className="nav-parent-icon">◎</span>
+              <span>Сотрудники</span>
+              <span className={`nav-chevron ${employeesOpen ? 'open' : ''}`}>›</span>
+            </button>
+            {employeesOpen && (
+              <div className="nav-submenu">
+                {employeeItems.map((key) => renderNavItem(key, true))}
+              </div>
+            )}
           </div>
         </nav>
 
@@ -298,7 +317,19 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
           ) : page === 'kitchen' ? (
             <KitchenPage token={session.token} />
           ) : page === 'employees' ? (
-            <EmployeesPage token={session.token} currentEmployeeId={session.employeeId} />
+            <EmployeesPage
+              token={session.token}
+              currentEmployeeId={session.employeeId}
+              initialTab="employees"
+              showTabs={false}
+            />
+          ) : page === 'roles' ? (
+            <EmployeesPage
+              token={session.token}
+              currentEmployeeId={session.employeeId}
+              initialTab="roles"
+              showTabs={false}
+            />
           ) : page === 'devices' ? (
             <DevicesPage token={session.token} />
           ) : page === 'finance' ? (
