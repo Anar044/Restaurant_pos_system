@@ -71,6 +71,20 @@ public static class BackOfficeGroupEndpoints
                         ? null
                         : db.Printers.Where(p => p.Id == x.PrecheckPrinterId).Select(p => p.Name).FirstOrDefault(),
                     tableCount = db.DiningTables.Count(t => t.HallId == x.Id && t.RestaurantId == restaurantId),
+                    tables = db.DiningTables
+                        .Where(t => t.HallId == x.Id && t.RestaurantId == restaurantId)
+                        .OrderBy(t => t.SortOrder)
+                        .ThenBy(t => t.Name)
+                        .Select(t => new
+                        {
+                            id = t.Id,
+                            hallId = t.HallId,
+                            name = t.Name,
+                            seats = t.Seats,
+                            sortOrder = t.SortOrder,
+                            isActive = t.IsActive
+                        })
+                        .ToArray(),
                     isActive = x.IsActive
                 })
                 .ToListAsync(ct);
