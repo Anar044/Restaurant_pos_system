@@ -1,0 +1,79 @@
+.nomenclature-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.nomenclature-toolbar input { width: min(320px, 100%); }
+.nomenclature-type-tabs { display: flex; flex-wrap: wrap; gap: 7px; }
+.nomenclature-type-tabs button,
+.nomenclature-editor-tabs button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  background: white;
+  color: #475467;
+  font-weight: 700;
+}
+.nomenclature-type-tabs button.active,
+.nomenclature-editor-tabs button.active {
+  border-color: #6172f3;
+  background: #eef2ff;
+  color: #3730a3;
+}
+.nomenclature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+.nomenclature-card {
+  min-height: 150px;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  border: 1px solid #eaecf0;
+  border-radius: 14px;
+  background: white;
+  color: #101828;
+  text-align: left;
+}
+.nomenclature-card:hover { border-color: #c7d7fe; box-shadow: 0 8px 22px rgba(16,24,40,.05); }
+.nomenclature-card-head { width: 100%; display: flex; gap: 6px; justify-content: space-between; }
+.nomenclature-card > strong { margin-top: 14px; font-size: 15px; }
+.nomenclature-card > span { margin-top: 4px; color: #667085; font-size: 11px; }
+.nomenclature-card-meta { width: 100%; margin-top: auto; padding-top: 13px; display: flex; justify-content: space-between; gap: 8px; color: #98a2b3; }
+.nomenclature-modal { width: min(760px, 100%); }
+.nomenclature-editor-tabs { display: flex; gap: 7px; margin-bottom: 18px; }
+.recipe-editor { min-height: 260px; }
+.recipe-editor-head { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.recipe-editor-head strong,
+.recipe-editor-head span { display: block; }
+.recipe-editor-head span { margin-top: 4px; color: #98a2b3; font-size: 11px; }
+.recipe-lines { display: grid; gap: 8px; }
+.recipe-line {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 110px 50px auto;
+  align-items: center;
+  gap: 8px;
+}
+.recipe-line input,
+.recipe-line select { margin: 0; }
+.recipe-line > span { color: #667085; font-size: 12px; }
+.recipe-empty {
+  min-height: 170px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed #d0d5dd;
+  border-radius: 12px;
+  color: #98a2b3;
+  font-size: 12px;
+}
+@media (max-width: 700px) {
+  .nomenclature-toolbar { align-items: stretch; flex-direction: column; }
+  .nomenclature-toolbar input { width: 100%; }
+  .recipe-line { grid-template-columns: 1fr 90px 45px; }
+  .recipe-line .text-button { grid-column: 1 / -1; justify-self: end; }
+}
