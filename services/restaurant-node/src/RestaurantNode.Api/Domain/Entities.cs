@@ -78,6 +78,10 @@ public sealed class Hall : Entity
 {
     public Guid RestaurantId { get; set; }
     public Restaurant? Restaurant { get; set; }
+    public Guid GroupId { get; set; }
+    public RestaurantGroup? Group { get; set; }
+    public Guid? PrecheckPrinterId { get; set; }
+    public Printer? PrecheckPrinter { get; set; }
     public required string Name { get; set; }
     public int SortOrder { get; set; }
     public bool IsActive { get; set; } = true;
@@ -125,24 +129,12 @@ public sealed class RestaurantDepartment : Entity
     public Guid GroupId { get; set; }
     public RestaurantGroup? Group { get; set; }
     public required string Name { get; set; }
-    public Guid? HallId { get; set; }
-    public Hall? Hall { get; set; }
+    public Guid? PreparationPlaceTypeId { get; set; }
+    public PreparationPlaceType? PreparationPlaceType { get; set; }
     public Guid? WarehouseId { get; set; }
     public Warehouse? Warehouse { get; set; }
     public Guid? PrinterId { get; set; }
     public Printer? Printer { get; set; }
-    public bool IsActive { get; set; } = true;
-}
-
-public sealed class GroupPreparationMap : Entity
-{
-    public Guid RestaurantId { get; set; }
-    public Guid GroupId { get; set; }
-    public RestaurantGroup? Group { get; set; }
-    public Guid PreparationPlaceTypeId { get; set; }
-    public PreparationPlaceType? PreparationPlaceType { get; set; }
-    public Guid DepartmentId { get; set; }
-    public RestaurantDepartment? Department { get; set; }
     public bool IsActive { get; set; } = true;
 }
 
