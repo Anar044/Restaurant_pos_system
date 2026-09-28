@@ -1661,6 +1661,174 @@ public static class OrderEndpoints
             });
         }).RequireAuthorization("orders.write");
 
+        group.MapPost("/{id:guid}/precheck", async (
+            Guid id,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            var order = await db.Orders
+                .AsNoTracking()
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+
+            if (order is null)
+                return Results.NotFound(new { message = "Order not found." });
+
+            if (order.Status is OrderStatus.Closed or OrderStatus.Cancelled)
+                return Results.Conflict(new { message = "Closed or cancelled orders cannot print a precheck." });
+
+            if (!order.TableId.HasValue)
+                return Results.Conflict(new { message = "A precheck requires an order table and hall." });
+
+            var activeItems = order.Items
+                .Where(x => x.Status != OrderItemStatus.Voided)
+                .OrderBy(x => x.CreatedAt)
+                .ToList();
+
+            if (activeItems.Count == 0)
+                return Results.Conflict(new { message = "The order has no items to print." });
+
+            var place = await (
+                from table in db.DiningTables.AsNoTracking()
+                join hall in db.Halls.AsNoTracking() on table.HallId equals hall.Id
+                where table.Id == order.TableId.Value &&
+                      table.RestaurantId == restaurantId &&
+                      hall.RestaurantId == restaurantId
+                select new
+                {
+                    HallId = hall.Id,
+                    HallName = hall.Name,
+                    TableName = table.Name,
+                    hall.PrecheckPrinterId
+                })
+                .FirstOrDefaultAsync(ct);
+
+            if (place is null)
+                return Results.Conflict(new { message = "Order hall or table was not found." });
+
+            if (!place.PrecheckPrinterId.HasValue)
+                return Results.Conflict(new
+                {
+                    message = $"Hall '{place.HallName}' has no precheck printer assigned. Configure it in BackOffice > Groups > Halls."
+                });
+
+            var printer = await db.Printers
+                .AsNoTracking()
+                .Where(x =>
+                    x.Id == place.PrecheckPrinterId.Value &&
+                    x.RestaurantId == restaurantId &&
+                    x.IsConfigured &&
+                    x.IsActive)
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Name,
+                    x.HostDeviceId
+                })
+                .FirstOrDefaultAsync(ct);
+
+            if (printer is null)
+                return Results.Conflict(new { message = "The hall precheck printer is unavailable." });
+
+            if (!printer.HostDeviceId.HasValue)
+                return Results.Conflict(new
+                {
+                    message = $"Precheck printer '{printer.Name}' is not attached to a POS Agent."
+                });
+
+            var restaurant = await db.Restaurants
+                .AsNoTracking()
+                .Where(x => x.Id == restaurantId)
+                .Select(x => new { x.Name, x.CurrencyCode })
+                .FirstOrDefaultAsync(ct);
+
+            var cashierName = await db.Employees
+                .AsNoTracking()
+                .Where(x => x.Id == employeeId && x.RestaurantId == restaurantId)
+                .Select(x => x.Name)
+                .FirstOrDefaultAsync(ct) ?? "Employee";
+
+            var now = DateTimeOffset.UtcNow;
+            var payload = new
+            {
+                restaurantName = restaurant?.Name ?? "Restaurant",
+                orderNumber = order.DisplayNumber,
+                hallName = place.HallName,
+                tableName = place.TableName,
+                cashierName,
+                guestCount = order.GuestCount,
+                currencyCode = restaurant?.CurrencyCode ?? "AZN",
+                subtotal = order.Subtotal,
+                discountTotal = order.DiscountTotal,
+                surchargeTotal = order.SurchargeTotal,
+                total = order.Total,
+                paymentMethod = (string?)null,
+                paidAmount = (decimal?)null,
+                cashReceived = (decimal?)null,
+                changeAmount = (decimal?)null,
+                completedAt = (DateTimeOffset?)null,
+                isCopy = false,
+                payments = (object?)null,
+                items = activeItems.Select(item => new
+                {
+                    name = item.Modifiers.Count == 0
+                        ? item.ProductNameSnapshot
+                        : item.ProductNameSnapshot + " [" + string.Join(
+                            ", ",
+                            item.Modifiers.Select(modifier =>
+                                modifier.Quantity == 1m
+                                    ? modifier.ModifierNameSnapshot
+                                    : $"{modifier.ModifierNameSnapshot} x{modifier.Quantity:0.###}")) + "]",
+                    quantity = item.Quantity,
+                    unitPrice = item.Quantity == 0m ? item.UnitPrice : item.LineTotal / item.Quantity,
+                    lineTotal = item.LineTotal
+                }).ToArray()
+            };
+
+            var job = new PrintJob
+            {
+                RestaurantId = restaurantId,
+                PrinterKey = $"precheck:{place.HallId:N}",
+                Type = "PRECHECK",
+                PayloadJson = JsonSerializer.Serialize(payload),
+                Status = PrintJobStatus.Pending,
+                CreatedAt = now
+            };
+
+            db.PrintJobs.Add(job);
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "PRECHECK_QUEUED",
+                "Order",
+                order.Id,
+                new
+                {
+                    order.Id,
+                    order.DisplayNumber,
+                    hallId = place.HallId,
+                    place.HallName,
+                    place.TableName,
+                    printerId = printer.Id,
+                    printerName = printer.Name,
+                    printJobId = job.Id
+                }));
+
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new
+            {
+                jobId = job.Id,
+                printerId = printer.Id,
+                printerName = printer.Name,
+                status = "QUEUED"
+            });
+        }).RequireAuthorization("orders.read");
+
         group.MapPost("/{id:guid}/send", async (Guid id, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
             if (!TryClaims(user, out var restaurantId, out var employeeId)) return Results.Unauthorized();
