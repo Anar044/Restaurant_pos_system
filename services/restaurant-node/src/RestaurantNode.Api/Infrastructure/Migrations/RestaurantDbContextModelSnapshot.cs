@@ -448,6 +448,8 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DepartmentId");
+
                     b.HasIndex("RestaurantId", "DepartmentId", "CreatedAt");
 
                     b.ToTable("kitchen_tickets", (string)null);
