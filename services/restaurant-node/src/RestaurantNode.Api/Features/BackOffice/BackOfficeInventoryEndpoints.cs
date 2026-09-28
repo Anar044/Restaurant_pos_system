@@ -29,9 +29,9 @@ public static class BackOfficeInventoryEndpoints
                 .ThenBy(x => x.Name)
                 .ToListAsync(ct);
 
-            var items = await db.StockItems
+            var items = await db.Products
                 .AsNoTracking()
-                .Where(x => x.RestaurantId == restaurantId)
+                .Where(x => x.RestaurantId == restaurantId && x.TrackStock)
                 .OrderByDescending(x => x.IsActive)
                 .ThenBy(x => x.Name)
                 .ToListAsync(ct);
@@ -46,17 +46,17 @@ public static class BackOfficeInventoryEndpoints
             var balances = await db.StockMovements
                 .AsNoTracking()
                 .Where(x => x.RestaurantId == restaurantId)
-                .GroupBy(x => new { x.WarehouseId, x.StockItemId })
+                .GroupBy(x => new { x.WarehouseId, x.ProductId })
                 .Select(group => new
                 {
                     group.Key.WarehouseId,
-                    group.Key.StockItemId,
+                    group.Key.ProductId,
                     Quantity = group.Sum(x => x.QuantityDelta)
                 })
                 .ToListAsync(ct);
 
             var balanceLookup = balances.ToDictionary(
-                x => (x.WarehouseId, x.StockItemId),
+                x => (x.WarehouseId, x.ProductId),
                 x => x.Quantity);
 
             var warehouseLookup = warehouses.ToDictionary(x => x.Id, x => x.Name);
@@ -76,10 +76,11 @@ public static class BackOfficeInventoryEndpoints
                     id = item.Id,
                     name = item.Name,
                     sku = item.Sku,
+                    type = item.Type,
                     unit = item.Unit,
                     minStock = item.MinStock,
                     isActive = item.IsActive,
-                    createdAt = item.CreatedAt,
+                    createdAt = DateTimeOffset.MinValue,
                     totalStock = warehouses.Sum(warehouse =>
                         balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))),
                     warehouseBalances = warehouses.Select(warehouse => new
@@ -94,11 +95,11 @@ public static class BackOfficeInventoryEndpoints
                     id = movement.Id,
                     warehouseId = movement.WarehouseId,
                     warehouseName = warehouseLookup.GetValueOrDefault(movement.WarehouseId) ?? "Склад",
-                    stockItemId = movement.StockItemId,
-                    stockItemName = itemLookup.TryGetValue(movement.StockItemId, out var stockItem)
+                    stockItemId = movement.ProductId,
+                    stockItemName = itemLookup.TryGetValue(movement.ProductId, out var stockItem)
                         ? stockItem.Name
                         : "Номенклатура",
-                    unit = itemLookup.TryGetValue(movement.StockItemId, out var movementItem)
+                    unit = itemLookup.TryGetValue(movement.ProductId, out var movementItem)
                         ? movementItem.Unit
                         : string.Empty,
                     employeeId = movement.EmployeeId,
@@ -198,130 +199,6 @@ public static class BackOfficeInventoryEndpoints
             });
         }).RequireAuthorization(Permissions.InventoryManage);
 
-        group.MapPost("/items", async (
-            CreateStockItemRequest request,
-            ClaimsPrincipal user,
-            RestaurantDbContext db,
-            CancellationToken ct) =>
-        {
-            if (!TryGetRestaurantId(user, out var restaurantId))
-                return Results.Unauthorized();
-
-            var name = NormalizeRequired(request.Name, 160);
-            var unit = NormalizeRequired(request.Unit, 20);
-            var sku = NormalizeOptional(request.Sku, 100);
-
-            if (name is null)
-                return Results.BadRequest(new { message = "Название складской позиции обязательно." });
-            if (unit is null)
-                return Results.BadRequest(new { message = "Единица измерения обязательна." });
-            if (request.MinStock < 0)
-                return Results.BadRequest(new { message = "Минимальный остаток не может быть отрицательным." });
-
-            if (!string.IsNullOrWhiteSpace(sku))
-            {
-                var duplicateSku = await db.StockItems.AnyAsync(
-                    x => x.RestaurantId == restaurantId && x.Sku == sku,
-                    ct);
-                if (duplicateSku)
-                    return Results.Conflict(new { message = "Позиция с таким SKU уже существует." });
-            }
-
-            var item = new StockItem
-            {
-                RestaurantId = restaurantId,
-                Name = name,
-                Sku = sku,
-                Unit = unit,
-                MinStock = request.MinStock,
-                IsActive = true
-            };
-
-            db.StockItems.Add(item);
-            AddAudit(db, user, restaurantId, "STOCK_ITEM_CREATED", "StockItem", item.Id, new
-            {
-                item.Name,
-                item.Sku,
-                item.Unit,
-                item.MinStock,
-                item.IsActive
-            });
-            await db.SaveChangesAsync(ct);
-
-            return Results.Created($"/api/v1/backoffice/inventory/items/{item.Id}", new
-            {
-                id = item.Id,
-                item.Name,
-                item.Sku,
-                item.Unit,
-                item.MinStock,
-                item.IsActive,
-                item.CreatedAt
-            });
-        }).RequireAuthorization(Permissions.InventoryManage);
-
-        group.MapPut("/items/{itemId:guid}", async (
-            Guid itemId,
-            UpdateStockItemRequest request,
-            ClaimsPrincipal user,
-            RestaurantDbContext db,
-            CancellationToken ct) =>
-        {
-            if (!TryGetRestaurantId(user, out var restaurantId))
-                return Results.Unauthorized();
-
-            var item = await db.StockItems.FirstOrDefaultAsync(
-                x => x.Id == itemId && x.RestaurantId == restaurantId,
-                ct);
-            if (item is null)
-                return Results.NotFound();
-
-            var name = NormalizeRequired(request.Name, 160);
-            var unit = NormalizeRequired(request.Unit, 20);
-            var sku = NormalizeOptional(request.Sku, 100);
-
-            if (name is null || unit is null)
-                return Results.BadRequest(new { message = "Название и единица измерения обязательны." });
-            if (request.MinStock < 0)
-                return Results.BadRequest(new { message = "Минимальный остаток не может быть отрицательным." });
-
-            if (!string.IsNullOrWhiteSpace(sku))
-            {
-                var duplicateSku = await db.StockItems.AnyAsync(
-                    x => x.RestaurantId == restaurantId && x.Id != itemId && x.Sku == sku,
-                    ct);
-                if (duplicateSku)
-                    return Results.Conflict(new { message = "Позиция с таким SKU уже существует." });
-            }
-
-            item.Name = name;
-            item.Sku = sku;
-            item.Unit = unit;
-            item.MinStock = request.MinStock;
-            item.IsActive = request.IsActive;
-
-            AddAudit(db, user, restaurantId, "STOCK_ITEM_UPDATED", "StockItem", item.Id, new
-            {
-                item.Name,
-                item.Sku,
-                item.Unit,
-                item.MinStock,
-                item.IsActive
-            });
-            await db.SaveChangesAsync(ct);
-
-            return Results.Ok(new
-            {
-                id = item.Id,
-                item.Name,
-                item.Sku,
-                item.Unit,
-                item.MinStock,
-                item.IsActive,
-                item.CreatedAt
-            });
-        }).RequireAuthorization(Permissions.InventoryManage);
-
         group.MapPost("/movements", async (
             CreateStockMovementRequest request,
             ClaimsPrincipal user,
@@ -348,20 +225,21 @@ public static class BackOfficeInventoryEndpoints
             if (!warehouseExists)
                 return Results.BadRequest(new { message = "Активный склад не найден." });
 
-            var item = await db.StockItems
+            var item = await db.Products
                 .AsNoTracking()
                 .FirstOrDefaultAsync(
                     x => x.Id == request.StockItemId &&
                          x.RestaurantId == restaurantId &&
-                         x.IsActive,
+                         x.IsActive &&
+                         x.TrackStock,
                     ct);
             if (item is null)
-                return Results.BadRequest(new { message = "Активная складская позиция не найдена." });
+                return Results.BadRequest(new { message = "Позиция номенклатуры не найдена или складской учёт отключён." });
 
             var currentStock = await db.StockMovements
                 .Where(x => x.RestaurantId == restaurantId &&
                             x.WarehouseId == request.WarehouseId &&
-                            x.StockItemId == request.StockItemId)
+                            x.ProductId == request.StockItemId)
                 .SumAsync(x => (decimal?)x.QuantityDelta, ct) ?? 0m;
 
             var delta = type == "RECEIPT" ? request.Quantity : -request.Quantity;
@@ -377,7 +255,7 @@ public static class BackOfficeInventoryEndpoints
             {
                 RestaurantId = restaurantId,
                 WarehouseId = request.WarehouseId,
-                StockItemId = request.StockItemId,
+                ProductId = request.StockItemId,
                 EmployeeId = employeeId,
                 Type = type,
                 QuantityDelta = delta,
@@ -385,10 +263,10 @@ public static class BackOfficeInventoryEndpoints
             };
 
             db.StockMovements.Add(movement);
-            AddAudit(db, user, restaurantId, "STOCK_MOVEMENT_CREATED", "StockMovement", movement.Id, new
+            AddAudit(db, user, restaurantId, "STOCK_MOVEMENT_CREATED", "Product", movement.ProductId, new
             {
                 movement.WarehouseId,
-                movement.StockItemId,
+                movement.ProductId,
                 movement.Type,
                 movement.QuantityDelta,
                 movement.Note
@@ -399,7 +277,7 @@ public static class BackOfficeInventoryEndpoints
             {
                 id = movement.Id,
                 movement.WarehouseId,
-                movement.StockItemId,
+                stockItemId = movement.ProductId,
                 movement.EmployeeId,
                 movement.Type,
                 movement.QuantityDelta,
@@ -457,8 +335,6 @@ public static class BackOfficeInventoryEndpoints
 
 public sealed record CreateWarehouseRequest(string Name);
 public sealed record UpdateWarehouseRequest(string Name, bool IsActive);
-public sealed record CreateStockItemRequest(string Name, string? Sku, string Unit, decimal MinStock);
-public sealed record UpdateStockItemRequest(string Name, string? Sku, string Unit, decimal MinStock, bool IsActive);
 public sealed record CreateStockMovementRequest(
     Guid WarehouseId,
     Guid StockItemId,
