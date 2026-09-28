@@ -14,6 +14,10 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<Hall> Halls => Set<Hall>();
     public DbSet<DiningTable> DiningTables => Set<DiningTable>();
     public DbSet<Category> Categories => Set<Category>();
+    public DbSet<RestaurantGroup> RestaurantGroups => Set<RestaurantGroup>();
+    public DbSet<RestaurantGroupDevice> RestaurantGroupDevices => Set<RestaurantGroupDevice>();
+    public DbSet<RestaurantDepartment> RestaurantDepartments => Set<RestaurantDepartment>();
+    public DbSet<GroupPreparationMap> GroupPreparationMaps => Set<GroupPreparationMap>();
     public DbSet<PreparationPlaceType> PreparationPlaceTypes => Set<PreparationPlaceType>();
     public DbSet<PreparationPlace> PreparationPlaces => Set<PreparationPlace>();
     public DbSet<SalesPoint> SalesPoints => Set<SalesPoint>();
@@ -57,6 +61,10 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Hall>().ToTable("halls");
         modelBuilder.Entity<DiningTable>().ToTable("dining_tables");
         modelBuilder.Entity<Category>().ToTable("categories");
+        modelBuilder.Entity<RestaurantGroup>().ToTable("restaurant_groups");
+        modelBuilder.Entity<RestaurantGroupDevice>().ToTable("restaurant_group_devices");
+        modelBuilder.Entity<RestaurantDepartment>().ToTable("restaurant_departments");
+        modelBuilder.Entity<GroupPreparationMap>().ToTable("group_preparation_maps");
         modelBuilder.Entity<PreparationPlaceType>().ToTable("preparation_place_types");
         modelBuilder.Entity<PreparationPlace>().ToTable("preparation_places");
         modelBuilder.Entity<SalesPoint>().ToTable("sales_points");
@@ -158,6 +166,12 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Hall>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<DiningTable>().HasIndex(x => new { x.HallId, x.Name }).IsUnique();
         modelBuilder.Entity<Category>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<RestaurantGroup>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<RestaurantGroupDevice>().HasKey(x => new { x.GroupId, x.DeviceId });
+        modelBuilder.Entity<RestaurantGroupDevice>().HasIndex(x => x.DeviceId);
+        modelBuilder.Entity<RestaurantDepartment>().HasIndex(x => new { x.GroupId, x.Name }).IsUnique();
+        modelBuilder.Entity<GroupPreparationMap>().HasIndex(x => new { x.GroupId, x.PreparationPlaceTypeId }).IsUnique();
+        modelBuilder.Entity<GroupPreparationMap>().HasIndex(x => x.DepartmentId);
         modelBuilder.Entity<PreparationPlaceType>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<PreparationPlace>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<SalesPoint>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
@@ -275,6 +289,60 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .WithMany()
             .HasForeignKey(x => x.ReceiptPrinterId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<RestaurantGroupDevice>()
+            .HasOne(x => x.Group)
+            .WithMany()
+            .HasForeignKey(x => x.GroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RestaurantGroupDevice>()
+            .HasOne(x => x.Device)
+            .WithMany()
+            .HasForeignKey(x => x.DeviceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RestaurantDepartment>()
+            .HasOne(x => x.Group)
+            .WithMany()
+            .HasForeignKey(x => x.GroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RestaurantDepartment>()
+            .HasOne(x => x.Hall)
+            .WithMany()
+            .HasForeignKey(x => x.HallId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<RestaurantDepartment>()
+            .HasOne(x => x.Warehouse)
+            .WithMany()
+            .HasForeignKey(x => x.WarehouseId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<RestaurantDepartment>()
+            .HasOne(x => x.Printer)
+            .WithMany()
+            .HasForeignKey(x => x.PrinterId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<GroupPreparationMap>()
+            .HasOne(x => x.Group)
+            .WithMany()
+            .HasForeignKey(x => x.GroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<GroupPreparationMap>()
+            .HasOne(x => x.PreparationPlaceType)
+            .WithMany()
+            .HasForeignKey(x => x.PreparationPlaceTypeId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<GroupPreparationMap>()
+            .HasOne(x => x.Department)
+            .WithMany()
+            .HasForeignKey(x => x.DepartmentId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<PreparationPlace>()
             .HasOne(x => x.PreparationPlaceType)
