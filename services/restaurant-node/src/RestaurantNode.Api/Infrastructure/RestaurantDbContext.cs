@@ -14,6 +14,10 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<Hall> Halls => Set<Hall>();
     public DbSet<DiningTable> DiningTables => Set<DiningTable>();
     public DbSet<Category> Categories => Set<Category>();
+    public DbSet<PreparationPlaceType> PreparationPlaceTypes => Set<PreparationPlaceType>();
+    public DbSet<PreparationPlace> PreparationPlaces => Set<PreparationPlace>();
+    public DbSet<SalesPoint> SalesPoints => Set<SalesPoint>();
+    public DbSet<PreparationRoute> PreparationRoutes => Set<PreparationRoute>();
     public DbSet<KitchenStation> KitchenStations => Set<KitchenStation>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<RecipeLine> RecipeLines => Set<RecipeLine>();
@@ -53,6 +57,10 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Hall>().ToTable("halls");
         modelBuilder.Entity<DiningTable>().ToTable("dining_tables");
         modelBuilder.Entity<Category>().ToTable("categories");
+        modelBuilder.Entity<PreparationPlaceType>().ToTable("preparation_place_types");
+        modelBuilder.Entity<PreparationPlace>().ToTable("preparation_places");
+        modelBuilder.Entity<SalesPoint>().ToTable("sales_points");
+        modelBuilder.Entity<PreparationRoute>().ToTable("preparation_routes");
         modelBuilder.Entity<KitchenStation>().ToTable("kitchen_stations");
         modelBuilder.Entity<Product>().ToTable("products");
         modelBuilder.Entity<RecipeLine>().ToTable("recipe_lines");
@@ -150,6 +158,10 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Hall>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<DiningTable>().HasIndex(x => new { x.HallId, x.Name }).IsUnique();
         modelBuilder.Entity<Category>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<PreparationPlaceType>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<PreparationPlace>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<SalesPoint>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<PreparationRoute>().HasIndex(x => new { x.RestaurantId, x.SalesPointId, x.PreparationPlaceTypeId }).IsUnique();
         modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Name });
         modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Sku });
         modelBuilder.Entity<RecipeLine>().HasIndex(x => new { x.ProductId, x.IngredientProductId }).IsUnique();
@@ -262,6 +274,54 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .HasOne(x => x.ReceiptPrinter)
             .WithMany()
             .HasForeignKey(x => x.ReceiptPrinterId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<PreparationPlace>()
+            .HasOne(x => x.PreparationPlaceType)
+            .WithMany()
+            .HasForeignKey(x => x.PreparationPlaceTypeId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PreparationPlace>()
+            .HasOne(x => x.Printer)
+            .WithMany()
+            .HasForeignKey(x => x.PrinterId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<PreparationPlace>()
+            .HasOne(x => x.Warehouse)
+            .WithMany()
+            .HasForeignKey(x => x.WarehouseId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<SalesPoint>()
+            .HasOne(x => x.Hall)
+            .WithMany()
+            .HasForeignKey(x => x.HallId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<PreparationRoute>()
+            .HasOne(x => x.SalesPoint)
+            .WithMany()
+            .HasForeignKey(x => x.SalesPointId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PreparationRoute>()
+            .HasOne(x => x.PreparationPlaceType)
+            .WithMany()
+            .HasForeignKey(x => x.PreparationPlaceTypeId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PreparationRoute>()
+            .HasOne(x => x.PreparationPlace)
+            .WithMany()
+            .HasForeignKey(x => x.PreparationPlaceId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Product>()
+            .HasOne(x => x.PreparationPlaceType)
+            .WithMany()
+            .HasForeignKey(x => x.PreparationPlaceTypeId)
             .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<KitchenStation>()
