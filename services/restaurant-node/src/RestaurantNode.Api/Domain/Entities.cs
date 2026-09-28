@@ -115,14 +115,29 @@ public sealed class KitchenStation : Entity
 public sealed class Product : Entity
 {
     public Guid RestaurantId { get; set; }
-    public Guid CategoryId { get; set; }
+    public Guid? CategoryId { get; set; }
     public Category? Category { get; set; }
     public Guid? KitchenStationId { get; set; }
     public KitchenStation? KitchenStation { get; set; }
     public required string Name { get; set; }
     public string? Sku { get; set; }
+    public string Type { get; set; } = "DISH";
+    public string Unit { get; set; } = "pcs";
+    public decimal MinStock { get; set; }
+    public bool TrackStock { get; set; }
+    public bool IsSellable { get; set; } = true;
     public bool IsActive { get; set; } = true;
     public int SortOrder { get; set; }
+}
+
+public sealed class RecipeLine : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public Guid ProductId { get; set; }
+    public Product? Product { get; set; }
+    public Guid IngredientProductId { get; set; }
+    public Product? IngredientProduct { get; set; }
+    public decimal Quantity { get; set; }
 }
 
 public sealed class ProductPrice : Entity
@@ -225,24 +240,13 @@ public sealed class Warehouse : Entity
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
-public sealed class StockItem : Entity
-{
-    public Guid RestaurantId { get; set; }
-    public required string Name { get; set; }
-    public string? Sku { get; set; }
-    public string Unit { get; set; } = "pcs";
-    public decimal MinStock { get; set; }
-    public bool IsActive { get; set; } = true;
-    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-}
-
 public sealed class StockMovement : Entity
 {
     public Guid RestaurantId { get; set; }
     public Guid WarehouseId { get; set; }
     public Warehouse? Warehouse { get; set; }
-    public Guid StockItemId { get; set; }
-    public StockItem? StockItem { get; set; }
+    public Guid ProductId { get; set; }
+    public Product? Product { get; set; }
     public Guid EmployeeId { get; set; }
     public string Type { get; set; } = "RECEIPT";
     public decimal QuantityDelta { get; set; }
