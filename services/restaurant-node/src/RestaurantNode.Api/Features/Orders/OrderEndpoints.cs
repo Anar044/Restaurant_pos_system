@@ -1700,7 +1700,7 @@ public static class OrderEndpoints
                 {
                     return Results.Conflict(new
                     {
-                        message = $"Product '{item.ProductNameSnapshot}' has no preparation type or group cooking route."
+                        message = $"Product '{item.ProductNameSnapshot}' has no preparation type or department configured for this group."
                     });
                 }
             }
@@ -2706,11 +2706,11 @@ public static class OrderEndpoints
 
             if (hallId.HasValue)
             {
-                var hallGroupId = await db.RestaurantDepartments
+                var hallGroupId = await db.Halls
                     .AsNoTracking()
                     .Where(x =>
                         x.RestaurantId == restaurantId &&
-                        x.HallId == hallId.Value &&
+                        x.Id == hallId.Value &&
                         x.IsActive)
                     .Select(x => (Guid?)x.GroupId)
                     .FirstOrDefaultAsync(ct);
@@ -2753,35 +2753,21 @@ public static class OrderEndpoints
             .Distinct()
             .ToArray();
 
-        var maps = await db.GroupPreparationMaps
-            .AsNoTracking()
-            .Where(x =>
-                x.RestaurantId == restaurantId &&
-                x.GroupId == groupId &&
-                x.IsActive &&
-                typeIds.Contains(x.PreparationPlaceTypeId))
-            .ToDictionaryAsync(x => x.PreparationPlaceTypeId, ct);
-
-        var departmentIds = maps.Values
-            .Select(x => x.DepartmentId)
-            .Distinct()
-            .ToArray();
-
         var departments = await db.RestaurantDepartments
             .AsNoTracking()
             .Where(x =>
                 x.RestaurantId == restaurantId &&
                 x.GroupId == groupId &&
                 x.IsActive &&
-                departmentIds.Contains(x.Id))
-            .ToDictionaryAsync(x => x.Id, ct);
+                x.PreparationPlaceTypeId.HasValue &&
+                typeIds.Contains(x.PreparationPlaceTypeId.Value))
+            .ToDictionaryAsync(x => x.PreparationPlaceTypeId!.Value, ct);
 
         var result = new Dictionary<Guid, PreparationDepartmentRoute>();
         foreach (var product in products)
         {
             if (!product.PreparationPlaceTypeId.HasValue ||
-                !maps.TryGetValue(product.PreparationPlaceTypeId.Value, out var map) ||
-                !departments.TryGetValue(map.DepartmentId, out var department))
+                !departments.TryGetValue(product.PreparationPlaceTypeId.Value, out var department))
             {
                 continue;
             }
