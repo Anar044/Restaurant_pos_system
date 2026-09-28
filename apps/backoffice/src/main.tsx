@@ -17,7 +17,6 @@ import { FinancePage } from './FinancePage';
 import { HallsPage } from './HallsPage';
 import { KitchenPage } from './KitchenPage';
 import { InventoryPage } from './InventoryPage';
-import { MenuPage } from './MenuPage';
 import { ModifiersPage } from './ModifiersPage';
 import { NomenclaturePage } from './NomenclaturePage';
 import { OverviewPage } from './OverviewPage';
@@ -25,7 +24,7 @@ import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'halls' | 'menu' | 'modifiers' | 'nomenclature' | 'inventory' | 'adjustments' | 'kitchen' | 'employees' | 'roles' | 'devices' | 'finance';
+type PageKey = 'overview' | 'halls' | 'modifiers' | 'nomenclature' | 'inventory' | 'adjustments' | 'kitchen' | 'employees' | 'roles' | 'devices' | 'finance';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -167,8 +166,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'kitchen', label: 'Тип места приготовления', icon: '◫', ready: true },
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
     { key: 'nomenclature', label: 'Номенклатура', icon: '▤', ready: true },
-    { key: 'menu', label: 'Меню', icon: '≡', ready: true },
-    { key: 'modifiers', label: 'Модификаторы', icon: '±', ready: true },
+    { key: 'modifiers', label: 'Группы модификаторов', icon: '±', ready: true },
     { key: 'inventory', label: 'Склад', icon: '▥', ready: true },
     { key: 'adjustments', label: 'Скидки и надбавки', icon: '%', ready: true },
     { key: 'employees', label: 'Список сотрудников', icon: '◎', ready: true },
@@ -176,7 +174,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
   ];
 
   const restaurantSettingsItems: PageKey[] = ['halls', 'kitchen', 'devices'];
-  const catalogItems: PageKey[] = ['nomenclature', 'menu', 'modifiers', 'inventory'];
+  const catalogItems: PageKey[] = ['nomenclature', 'modifiers', 'inventory'];
   const employeeItems: PageKey[] = ['employees', 'roles'];
 
   function renderNavItem(key: PageKey, nested = false) {
@@ -316,8 +314,6 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
               token={session.token}
               onRefresh={refresh}
             />
-          ) : page === 'menu' ? (
-            <MenuPage token={session.token} />
           ) : page === 'modifiers' ? (
             <ModifiersPage token={session.token} />
           ) : page === 'nomenclature' ? (
