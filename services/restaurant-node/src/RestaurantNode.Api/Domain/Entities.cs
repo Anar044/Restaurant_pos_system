@@ -177,6 +177,7 @@ public sealed class OrderAdjustmentPreset : Entity
     public OrderAdjustmentScope Scope { get; set; } = OrderAdjustmentScope.Order;
     public OrderAdjustmentApplicationMode ApplicationMode { get; set; } = OrderAdjustmentApplicationMode.Manual;
     public OrderAdjustmentTimeBasis TimeBasis { get; set; } = OrderAdjustmentTimeBasis.ItemAddedAt;
+    public OrderAdjustmentTargetMode TargetMode { get; set; } = OrderAdjustmentTargetMode.AllItems;
     public decimal Value { get; set; }
     public int Priority { get; set; } = 100;
     public bool CanStack { get; set; } = true;
@@ -293,6 +294,7 @@ public sealed class OrderAdjustment : Entity
     public string? PresetNameSnapshot { get; set; }
     public OrderAdjustmentApplicationMode ApplicationModeSnapshot { get; set; } = OrderAdjustmentApplicationMode.Manual;
     public OrderAdjustmentTimeBasis TimeBasisSnapshot { get; set; } = OrderAdjustmentTimeBasis.ItemAddedAt;
+    public OrderAdjustmentTargetMode TargetModeSnapshot { get; set; } = OrderAdjustmentTargetMode.AllItems;
     public int PrioritySnapshot { get; set; } = 100;
     public bool CanStackSnapshot { get; set; } = true;
     public int WeekdayMaskSnapshot { get; set; } = 127;
@@ -301,6 +303,7 @@ public sealed class OrderAdjustment : Entity
     public string TimeZoneIdSnapshot { get; set; } = "Asia/Baku";
     public Guid[] ProductIdsSnapshot { get; set; } = [];
     public Guid[] CategoryIdsSnapshot { get; set; } = [];
+    public Guid[] OrderItemIdsSnapshot { get; set; } = [];
     public int? GuestNumber { get; set; }
     public decimal Value { get; set; }
     public decimal CalculatedAmount { get; set; }
