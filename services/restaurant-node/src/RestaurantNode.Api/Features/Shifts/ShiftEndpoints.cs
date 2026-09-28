@@ -217,6 +217,23 @@ public static class ShiftEndpoints
                     entry.Amount,
                     entry.Reason
                 }));
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                type == CashTransactionType.Deposit
+                    ? "CASH_DEPOSIT"
+                    : "CASH_WITHDRAWAL",
+                "CashTransaction",
+                entry.Id,
+                new
+                {
+                    entry.Id,
+                    shiftId = shift.Id,
+                    shift.DeviceId,
+                    type = EnumText(type),
+                    entry.Amount,
+                    entry.Reason,
+                    entry.CreatedAt
+                }));
 
             await db.SaveChangesAsync(ct);
 
