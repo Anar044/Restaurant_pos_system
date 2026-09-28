@@ -78,173 +78,6 @@ export type ProductPrice = {
   validTo: string | null;
 };
 
-export type KitchenStation = {
-  id: string;
-  name: string;
-  isActive: boolean;
-};
-
-export type MenuProduct = {
-  id: string;
-  categoryId: string;
-  kitchenStationId: string | null;
-  kitchenStationName: string | null;
-  name: string;
-  sku: string | null;
-  sortOrder: number;
-  isActive: boolean;
-  currentPrice: ProductPrice | null;
-  priceHistory: ProductPrice[];
-};
-
-export type MenuCategory = {
-  id: string;
-  name: string;
-  sortOrder: number;
-  isActive: boolean;
-  products: MenuProduct[];
-};
-
-export type BackOfficeMenu = {
-  currencyCode: string;
-  kitchenStations: KitchenStation[];
-  categories: MenuCategory[];
-};
-
-export type BackOfficeModifier = {
-  id: string;
-  name: string;
-  priceDelta: number;
-  isActive: boolean;
-  groupIds: string[];
-};
-
-export type BackOfficeModifierGroupItem = {
-  id: string;
-  name: string;
-  priceDelta: number;
-  isActive: boolean;
-  sortOrder: number;
-};
-
-export type BackOfficeModifierGroup = {
-  id: string;
-  name: string;
-  minSelections: number;
-  maxSelections: number;
-  isRequired: boolean;
-  isActive: boolean;
-  modifiers: BackOfficeModifierGroupItem[];
-  productIds: string[];
-};
-
-export type ModifierProduct = {
-  id: string;
-  name: string;
-  isActive: boolean;
-  groupIds: string[];
-};
-
-export type BackOfficeModifiers = {
-  currencyCode: string;
-  modifiers: BackOfficeModifier[];
-  groups: BackOfficeModifierGroup[];
-  products: ModifierProduct[];
-};
-
-export type CreateModifierGroupInput = {
-  name: string;
-  minSelections: number;
-  maxSelections: number;
-  isRequired: boolean;
-};
-
-export type UpdateModifierGroupInput = CreateModifierGroupInput & {
-  isActive: boolean;
-};
-
-export type CreateCategoryInput = {
-  name: string;
-  sortOrder: number;
-};
-
-export type UpdateCategoryInput = CreateCategoryInput & {
-  isActive: boolean;
-};
-
-export type CreateProductInput = {
-  categoryId: string;
-  kitchenStationId: string | null;
-  name: string;
-  sku: string | null;
-  sortOrder: number;
-  price: number;
-};
-
-export type UpdateProductInput = {
-  categoryId: string;
-  kitchenStationId: string | null;
-  name: string;
-  sku: string | null;
-  sortOrder: number;
-  isActive: boolean;
-};
-
-export type KitchenProductSummary = {
-  id: string;
-  name: string;
-  sku: string | null;
-  isActive: boolean;
-  categoryId: string;
-  categoryName: string | null;
-};
-
-export type BackOfficeKitchenStation = KitchenStation & {
-  printerId: string | null;
-  printerName: string | null;
-  warehouseId: string | null;
-  warehouseName: string | null;
-  activeProductCount: number;
-  totalProductCount: number;
-  products: KitchenProductSummary[];
-};
-
-export type KitchenPrinterOption = {
-  id: string;
-  name: string;
-  connectionType: string;
-  address: string;
-  port: number | null;
-  hostDeviceId: string;
-  hostDeviceName: string;
-  lastSeenAt: string | null;
-};
-
-export type KitchenWarehouseOption = {
-  id: string;
-  name: string;
-};
-
-export type BackOfficeKitchen = {
-  stations: BackOfficeKitchenStation[];
-  unassignedProducts: KitchenProductSummary[];
-  availablePrinters: KitchenPrinterOption[];
-  availableWarehouses: KitchenWarehouseOption[];
-};
-
-export type CreateKitchenStationInput = {
-  name: string;
-  printerId: string | null;
-  warehouseId: string | null;
-};
-
-export type UpdateKitchenStationInput = {
-  name: string;
-  isActive: boolean;
-  printerId: string | null;
-  warehouseId: string | null;
-};
-
 export type EmployeeRole = {
   id: string;
   name: string;
@@ -308,16 +141,8 @@ export type EquipmentPrinter = {
   isActive: boolean;
   lastSeenAt: string | null;
   isOnline: boolean;
-  kitchenStationCount: number;
+  departmentCount: number;
   posDeviceCount: number;
-};
-
-export type EquipmentKitchenStation = {
-  id: string;
-  name: string;
-  isActive: boolean;
-  printerId: string | null;
-  printerName: string | null;
 };
 
 export type BackOfficeEquipment = {
@@ -325,7 +150,6 @@ export type BackOfficeEquipment = {
   printerConnectionTypes: string[];
   devices: EquipmentDevice[];
   printers: EquipmentPrinter[];
-  kitchenStations: EquipmentKitchenStation[];
 };
 
 export type CreatePrinterInput = {
@@ -675,53 +499,6 @@ export type PreparationPlaceTypeOption = {
   isActive: boolean;
 };
 
-export type PreparationPlaceOption = {
-  id: string;
-  name: string;
-  preparationPlaceTypeId: string;
-  preparationPlaceTypeName: string | null;
-  printerId: string | null;
-  printerName: string | null;
-  warehouseId: string | null;
-  warehouseName: string | null;
-  isActive: boolean;
-};
-
-export type SalesPointOption = {
-  id: string;
-  name: string;
-  type: 'HALL' | 'DELIVERY' | 'PICKUP' | 'KIOSK' | 'OTHER';
-  hallId: string | null;
-  hallName: string | null;
-  isActive: boolean;
-};
-
-export type PreparationRouteOption = {
-  id: string;
-  salesPointId: string;
-  salesPointName: string;
-  preparationPlaceTypeId: string;
-  preparationPlaceTypeName: string;
-  preparationPlaceId: string;
-  preparationPlaceName: string;
-  isActive: boolean;
-};
-
-export type RoutingLookupOption = {
-  id: string;
-  name: string;
-};
-
-export type BackOfficeRouting = {
-  types: PreparationPlaceTypeOption[];
-  places: PreparationPlaceOption[];
-  salesPoints: SalesPointOption[];
-  routes: PreparationRouteOption[];
-  printers: RoutingLookupOption[];
-  warehouses: RoutingLookupOption[];
-  halls: RoutingLookupOption[];
-};
-
 export type NomenclatureRecipeLine = {
   id: string;
   ingredientProductId: string;
@@ -834,17 +611,6 @@ export type CreateWarehouseInput = {
 
 export type UpdateWarehouseInput = {
   name: string;
-  isActive: boolean;
-};
-
-export type CreateStockItemInput = {
-  name: string;
-  sku: string | null;
-  unit: string;
-  minStock: number;
-};
-
-export type UpdateStockItemInput = CreateStockItemInput & {
   isActive: boolean;
 };
 
@@ -981,63 +747,6 @@ export async function updateTable(
   }, token);
 }
 
-export async function getBackOfficeMenu(token: string): Promise<BackOfficeMenu> {
-  return request<BackOfficeMenu>('/api/v1/backoffice/menu', {}, token);
-}
-
-export async function createCategory(
-  token: string,
-  input: CreateCategoryInput,
-): Promise<Omit<MenuCategory, 'products'>> {
-  return request('/api/v1/backoffice/menu/categories', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function updateCategory(
-  token: string,
-  categoryId: string,
-  input: UpdateCategoryInput,
-): Promise<Omit<MenuCategory, 'products'>> {
-  return request(`/api/v1/backoffice/menu/categories/${categoryId}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function createProduct(
-  token: string,
-  input: CreateProductInput,
-): Promise<{ id: string }> {
-  return request('/api/v1/backoffice/menu/products', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function updateProduct(
-  token: string,
-  productId: string,
-  input: UpdateProductInput,
-): Promise<{ id: string }> {
-  return request(`/api/v1/backoffice/menu/products/${productId}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function updateProductPrice(
-  token: string,
-  productId: string,
-  amount: number,
-): Promise<ProductPrice> {
-  return request(`/api/v1/backoffice/menu/products/${productId}/price`, {
-    method: 'PUT',
-    body: JSON.stringify({ amount }),
-  }, token);
-}
-
 export async function getBackOfficeModifiers(token: string): Promise<BackOfficeModifiers> {
   return request<BackOfficeModifiers>('/api/v1/backoffice/modifiers', {}, token);
 }
@@ -1082,31 +791,6 @@ export async function setProductModifierGroups(
   return request(`/api/v1/backoffice/modifiers/products/${productId}/groups`, {
     method: 'PUT',
     body: JSON.stringify({ groupIds }),
-  }, token);
-}
-
-export async function getBackOfficeKitchen(token: string): Promise<BackOfficeKitchen> {
-  return request<BackOfficeKitchen>('/api/v1/backoffice/kitchen', {}, token);
-}
-
-export async function createKitchenStation(
-  token: string,
-  input: CreateKitchenStationInput,
-): Promise<BackOfficeKitchenStation> {
-  return request('/api/v1/backoffice/kitchen/stations', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function updateKitchenStation(
-  token: string,
-  stationId: string,
-  input: UpdateKitchenStationInput,
-): Promise<KitchenStation> {
-  return request(`/api/v1/backoffice/kitchen/stations/${stationId}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
   }, token);
 }
 
@@ -1199,17 +883,6 @@ export async function updateDevice(
   return request(`/api/v1/backoffice/devices/terminals/${deviceId}`, {
     method: 'PUT',
     body: JSON.stringify(input),
-  }, token);
-}
-
-export async function assignKitchenPrinter(
-  token: string,
-  stationId: string,
-  printerId: string | null,
-): Promise<{ id: string; printerId: string | null }> {
-  return request(`/api/v1/backoffice/devices/kitchen-stations/${stationId}/printer`, {
-    method: 'PUT',
-    body: JSON.stringify({ printerId }),
   }, token);
 }
 
@@ -1342,91 +1015,6 @@ export async function setGroupCookingMap(
   }, token);
 }
 
-export async function getBackOfficeRouting(token: string): Promise<BackOfficeRouting> {
-  return request<BackOfficeRouting>('/api/v1/backoffice/routing', {}, token);
-}
-
-export async function createPreparationPlaceType(token: string, name: string): Promise<{ id: string }> {
-  return request('/api/v1/backoffice/routing/types', {
-    method: 'POST',
-    body: JSON.stringify({ name }),
-  }, token);
-}
-
-export async function updatePreparationPlaceType(
-  token: string,
-  id: string,
-  input: { name: string; isActive: boolean },
-): Promise<{ id: string }> {
-  return request(`/api/v1/backoffice/routing/types/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function createPreparationPlace(
-  token: string,
-  input: { name: string; preparationPlaceTypeId: string; printerId: string | null; warehouseId: string | null; isActive?: boolean },
-): Promise<{ id: string }> {
-  return request('/api/v1/backoffice/routing/places', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function updatePreparationPlace(
-  token: string,
-  id: string,
-  input: { name: string; preparationPlaceTypeId: string; printerId: string | null; warehouseId: string | null; isActive: boolean },
-): Promise<{ id: string }> {
-  return request(`/api/v1/backoffice/routing/places/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function createSalesPoint(
-  token: string,
-  input: { name: string; type: SalesPointOption['type']; hallId: string | null; isActive?: boolean },
-): Promise<{ id: string }> {
-  return request('/api/v1/backoffice/routing/sales-points', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function updateSalesPoint(
-  token: string,
-  id: string,
-  input: { name: string; type: SalesPointOption['type']; hallId: string | null; isActive: boolean },
-): Promise<{ id: string }> {
-  return request(`/api/v1/backoffice/routing/sales-points/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function createPreparationRoute(
-  token: string,
-  input: { salesPointId: string; preparationPlaceTypeId: string; preparationPlaceId: string; isActive?: boolean },
-): Promise<{ id: string }> {
-  return request('/api/v1/backoffice/routing/routes', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function updatePreparationRoute(
-  token: string,
-  id: string,
-  input: { salesPointId: string; preparationPlaceTypeId: string; preparationPlaceId: string; isActive: boolean },
-): Promise<{ id: string }> {
-  return request(`/api/v1/backoffice/routing/routes/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  }, token);
-}
-
 export async function getBackOfficeNomenclature(token: string): Promise<BackOfficeNomenclature> {
   return request<BackOfficeNomenclature>('/api/v1/backoffice/nomenclature', {}, token);
 }
@@ -1487,27 +1075,6 @@ export async function updateWarehouse(
   input: UpdateWarehouseInput,
 ): Promise<InventoryWarehouse> {
   return request<InventoryWarehouse>(`/api/v1/backoffice/inventory/warehouses/${warehouseId}`, {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function createStockItem(
-  token: string,
-  input: CreateStockItemInput,
-): Promise<InventoryStockItem> {
-  return request<InventoryStockItem>('/api/v1/backoffice/inventory/items', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function updateStockItem(
-  token: string,
-  itemId: string,
-  input: UpdateStockItemInput,
-): Promise<InventoryStockItem> {
-  return request<InventoryStockItem>(`/api/v1/backoffice/inventory/items/${itemId}`, {
     method: 'PUT',
     body: JSON.stringify(input),
   }, token);
