@@ -37,6 +37,11 @@ public static class BackOfficeKitchenEndpoints
                         .Where(printer => printer.Id == station.PrinterId)
                         .Select(printer => printer.Name)
                         .FirstOrDefault(),
+                    warehouseId = station.WarehouseId,
+                    warehouseName = db.Warehouses
+                        .Where(warehouse => warehouse.Id == station.WarehouseId)
+                        .Select(warehouse => warehouse.Name)
+                        .FirstOrDefault(),
                     activeProductCount = db.Products.Count(product =>
                         product.RestaurantId == restaurantId &&
                         product.KitchenStationId == station.Id &&
@@ -116,11 +121,23 @@ public static class BackOfficeKitchenEndpoints
                 })
                 .ToListAsync(ct);
 
+            var availableWarehouses = await db.Warehouses
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && x.IsActive)
+                .OrderBy(x => x.Name)
+                .Select(x => new
+                {
+                    id = x.Id,
+                    name = x.Name
+                })
+                .ToListAsync(ct);
+
             return Results.Ok(new
             {
                 stations,
                 unassignedProducts,
-                availablePrinters
+                availablePrinters,
+                availableWarehouses
             });
         });
 
@@ -151,11 +168,20 @@ public static class BackOfficeKitchenEndpoints
             if (printerError is not null)
                 return printerError;
 
+            var warehouseError = await ValidateWarehouseAsync(
+                db,
+                restaurantId,
+                request.WarehouseId,
+                ct);
+            if (warehouseError is not null)
+                return warehouseError;
+
             var station = new KitchenStation
             {
                 RestaurantId = restaurantId,
                 Name = name,
                 PrinterId = request.PrinterId,
+                WarehouseId = request.WarehouseId,
                 IsActive = true
             };
 
@@ -164,6 +190,7 @@ public static class BackOfficeKitchenEndpoints
             {
                 station.Name,
                 station.PrinterId,
+                station.WarehouseId,
                 station.IsActive
             });
             await db.SaveChangesAsync(ct);
@@ -173,6 +200,7 @@ public static class BackOfficeKitchenEndpoints
                 id = station.Id,
                 name = station.Name,
                 printerId = station.PrinterId,
+                warehouseId = station.WarehouseId,
                 isActive = station.IsActive,
                 activeProductCount = 0,
                 totalProductCount = 0
@@ -213,6 +241,14 @@ public static class BackOfficeKitchenEndpoints
             if (printerError is not null)
                 return printerError;
 
+            var warehouseError = await ValidateWarehouseAsync(
+                db,
+                restaurantId,
+                request.WarehouseId,
+                ct);
+            if (warehouseError is not null)
+                return warehouseError;
+
             if (station.IsActive && !request.IsActive)
             {
                 var activeProducts = await db.Products
@@ -238,12 +274,14 @@ public static class BackOfficeKitchenEndpoints
 
             station.Name = name;
             station.PrinterId = request.PrinterId;
+            station.WarehouseId = request.WarehouseId;
             station.IsActive = request.IsActive;
 
             AddAudit(db, user, restaurantId, "KITCHEN_STATION_UPDATED", "KitchenStation", station.Id, new
             {
                 station.Name,
                 station.PrinterId,
+                station.WarehouseId,
                 station.IsActive
             });
             await db.SaveChangesAsync(ct);
@@ -255,12 +293,21 @@ public static class BackOfficeKitchenEndpoints
                     .FirstOrDefaultAsync(ct)
                 : null;
 
+            var warehouseName = station.WarehouseId.HasValue
+                ? await db.Warehouses.AsNoTracking()
+                    .Where(x => x.Id == station.WarehouseId.Value)
+                    .Select(x => x.Name)
+                    .FirstOrDefaultAsync(ct)
+                : null;
+
             return Results.Ok(new
             {
                 id = station.Id,
                 name = station.Name,
                 printerId = station.PrinterId,
                 printerName,
+                warehouseId = station.WarehouseId,
+                warehouseName,
                 isActive = station.IsActive
             });
         }).RequireAuthorization(Permissions.KitchenManage);
@@ -307,6 +354,28 @@ public static class BackOfficeKitchenEndpoints
         return hostDeviceExists
             ? null
             : Results.BadRequest(new { message = "The POS device hosting this kitchen printer is unavailable." });
+    }
+
+    private static async Task<IResult?> ValidateWarehouseAsync(
+        RestaurantDbContext db,
+        Guid restaurantId,
+        Guid? warehouseId,
+        CancellationToken ct)
+    {
+        if (!warehouseId.HasValue)
+            return null;
+
+        var exists = await db.Warehouses
+            .AsNoTracking()
+            .AnyAsync(x =>
+                x.Id == warehouseId.Value &&
+                x.RestaurantId == restaurantId &&
+                x.IsActive,
+                ct);
+
+        return exists
+            ? null
+            : Results.BadRequest(new { message = "Активный склад списания не найден." });
     }
 
     private static bool TryGetRestaurantId(ClaimsPrincipal user, out Guid restaurantId) =>
