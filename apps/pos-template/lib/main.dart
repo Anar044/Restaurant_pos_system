@@ -4243,11 +4243,181 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
     return result;
   }
 
+  Future<List<String>?> _requestSelectedOrderItems(
+    AdjustmentPresetDto preset,
+    int? guestNumber,
+  ) async {
+    if (!preset.requiresPosItemSelection) {
+      return const <String>[];
+    }
+
+    final eligibleIds = preset.eligibleOrderItemIds.toSet();
+    final candidates = currentOrder.items
+        .where(
+          (item) =>
+              item.status != 'VOIDED' &&
+              eligibleIds.contains(item.id) &&
+              (guestNumber == null || item.guestNumber == guestNumber),
+        )
+        .toList();
+
+    OrderAdjustmentDto? existing;
+    for (final adjustment in currentOrder.adjustments) {
+      if (adjustment.presetId == preset.id &&
+          adjustment.guestNumber == guestNumber) {
+        existing = adjustment;
+        break;
+      }
+    }
+
+    final candidateIds = candidates.map((item) => item.id).toSet();
+    final selected = <String>{
+      ...?existing?.orderItemIds,
+    }..retainAll(candidateIds);
+
+    if (candidates.isEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.info_outline),
+          title: const Text('Нет подходящих позиций'),
+          content: const Text(
+            'Сейчас в заказе нет позиций, которые подходят '
+            'под условия этого правила.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Понятно'),
+            ),
+          ],
+        ),
+      );
+      return null;
+    }
+
+    return showDialog<List<String>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          icon: const Icon(Icons.checklist_outlined),
+          title: const Text('Выберите позиции'),
+          content: SizedBox(
+            width: 620,
+            height: 430,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '${preset.name} · ${preset.valueLabel}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  guestNumber == null
+                      ? 'Можно выбрать одну или несколько строк заказа.'
+                      : 'Показаны только позиции Гостя $guestNumber.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        setDialogState(() {
+                          selected
+                            ..clear()
+                            ..addAll(candidateIds);
+                        });
+                      },
+                      child: const Text('Выбрать все'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setDialogState(selected.clear);
+                      },
+                      child: const Text('Снять все'),
+                    ),
+                    const Spacer(),
+                    Text(
+                      'Выбрано: ${selected.length}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: candidates.length,
+                    separatorBuilder: (_, __) =>
+                        const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final item = candidates[index];
+                      final checked = selected.contains(item.id);
+                      return CheckboxListTile(
+                        value: checked,
+                        controlAffinity:
+                            ListTileControlAffinity.leading,
+                        title: Text(
+                          item.productName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Гость ${item.guestNumber} · '
+                          '${item.quantity.toStringAsFixed(0)} × '
+                          '${item.unitPrice.toStringAsFixed(2)} = '
+                          '${item.lineTotal.toStringAsFixed(2)} AZN',
+                        ),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            if (value == true) {
+                              selected.add(item.id);
+                            } else {
+                              selected.remove(item.id);
+                            }
+                          });
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(
+                        selected.toList(),
+                      ),
+              child: const Text('Продолжить'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _applyDiscount(
     AdjustmentPresetDto preset,
     int? guestNumber,
   ) async {
     if (busy) return;
+
+    final orderItemIds =
+        await _requestSelectedOrderItems(preset, guestNumber);
+    if (!mounted || orderItemIds == null) return;
 
     final comment = await _requestAdjustmentComment(preset);
     if (!mounted || comment == null) return;
@@ -4263,6 +4433,7 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
         presetId: preset.id,
         guestNumber: guestNumber,
         comment: comment,
+        orderItemIds: orderItemIds,
       );
       if (!mounted) return;
       setState(() => currentOrder = updated);
@@ -4278,6 +4449,10 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
   ) async {
     if (busy) return;
 
+    final orderItemIds =
+        await _requestSelectedOrderItems(preset, null);
+    if (!mounted || orderItemIds == null) return;
+
     final comment = await _requestAdjustmentComment(preset);
     if (!mounted || comment == null) return;
 
@@ -4291,6 +4466,7 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
         orderId: currentOrder.id,
         presetId: preset.id,
         comment: comment,
+        orderItemIds: orderItemIds,
       );
       if (!mounted) return;
       setState(() => currentOrder = updated);
@@ -4341,6 +4517,8 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
       'приоритет ${adjustment.priority}',
       adjustment.canStack ? 'совмещается' : 'не совмещать',
       adjustment.isAutomatic ? 'авто' : 'вручную',
+      if (adjustment.usesSelectedOrderItems)
+        'позиций: ${adjustment.orderItemIds.length}',
       if (adjustment.guestNumber != null)
         'Гость ${adjustment.guestNumber}',
     ];
@@ -4468,6 +4646,7 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
                       ),
                       label: Text(
                         '${preset.name} · ${preset.valueLabel}'
+                        '${preset.requiresPosItemSelection ? ' · выбрать позиции' : ''}'
                         '${preset.requireComment ? ' · комментарий' : ''}',
                       ),
                       onPressed:
