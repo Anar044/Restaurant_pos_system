@@ -153,41 +153,6 @@ public sealed class PreparationPlaceType : Entity
     public bool IsActive { get; set; } = true;
 }
 
-public sealed class PreparationPlace : Entity
-{
-    public Guid RestaurantId { get; set; }
-    public Guid PreparationPlaceTypeId { get; set; }
-    public PreparationPlaceType? PreparationPlaceType { get; set; }
-    public required string Name { get; set; }
-    public Guid? PrinterId { get; set; }
-    public Printer? Printer { get; set; }
-    public Guid? WarehouseId { get; set; }
-    public Warehouse? Warehouse { get; set; }
-    public bool IsActive { get; set; } = true;
-}
-
-public sealed class SalesPoint : Entity
-{
-    public Guid RestaurantId { get; set; }
-    public required string Name { get; set; }
-    public string Type { get; set; } = "HALL";
-    public Guid? HallId { get; set; }
-    public Hall? Hall { get; set; }
-    public bool IsActive { get; set; } = true;
-}
-
-public sealed class PreparationRoute : Entity
-{
-    public Guid RestaurantId { get; set; }
-    public Guid SalesPointId { get; set; }
-    public SalesPoint? SalesPoint { get; set; }
-    public Guid PreparationPlaceTypeId { get; set; }
-    public PreparationPlaceType? PreparationPlaceType { get; set; }
-    public Guid PreparationPlaceId { get; set; }
-    public PreparationPlace? PreparationPlace { get; set; }
-    public bool IsActive { get; set; } = true;
-}
-
 public sealed class KitchenStation : Entity
 {
     public Guid RestaurantId { get; set; }
