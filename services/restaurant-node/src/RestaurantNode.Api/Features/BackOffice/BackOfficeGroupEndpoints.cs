@@ -74,7 +74,7 @@ public static class BackOfficeGroupEndpoints
             });
         });
 
-        group.MapPost("", async (NameRequest request, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
+        group.MapPost("", async (GroupNameRequest request, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
             if (!TryRestaurantId(user, out var restaurantId)) return Results.Unauthorized();
             var name=Normalize(request.Name); if(name is null) return Results.BadRequest(new {message="Название группы обязательно."});
@@ -85,7 +85,7 @@ public static class BackOfficeGroupEndpoints
             return Results.Created($"/api/v1/backoffice/groups/{entity.Id}",new{id=entity.Id});
         }).RequireAuthorization(Permissions.KitchenManage);
 
-        group.MapPut("/{id:guid}", async (Guid id, UpdateNameRequest request, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
+        group.MapPut("/{id:guid}", async (Guid id, GroupUpdateNameRequest request, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
             if (!TryRestaurantId(user, out var restaurantId)) return Results.Unauthorized();
             var entity=await db.RestaurantGroups.FirstOrDefaultAsync(x=>x.Id==id && x.RestaurantId==restaurantId,ct);
@@ -168,6 +168,8 @@ public static class BackOfficeGroupEndpoints
     private static bool TryRestaurantId(ClaimsPrincipal user,out Guid restaurantId)=>Guid.TryParse(user.FindFirstValue("restaurant_id"),out restaurantId);
 }
 
+public sealed record GroupNameRequest(string Name);
+public sealed record GroupUpdateNameRequest(string Name, bool IsActive);
 public sealed record SetGroupDevicesRequest(Guid[]? DeviceIds, Guid? MainCashRegisterId);
 public sealed record UpsertDepartmentRequest(string Name, Guid? HallId, Guid? WarehouseId, Guid? PrinterId, bool IsActive=true);
 public sealed record SetCookingMapRequest(Guid DepartmentId);
