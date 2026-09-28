@@ -2111,7 +2111,11 @@ class _OrderPageState extends State<OrderPage> {
       }
 
       var current =
-          order ?? await widget.api.createOrder(tableId: widget.table.id);
+          order ??
+          await widget.api.createOrder(
+            tableId: widget.table.id,
+            shiftId: widget.shift.id,
+          );
       current = await widget.api.addItem(
         current.id,
         freshProduct.id,
@@ -2699,7 +2703,11 @@ class _OrderPageState extends State<OrderPage> {
 
     try {
       var current =
-          order ?? await widget.api.createOrder(tableId: widget.table.id);
+          order ??
+          await widget.api.createOrder(
+            tableId: widget.table.id,
+            shiftId: widget.shift.id,
+          );
       current = await widget.api.addGuest(current.id);
 
       if (!mounted) return;
