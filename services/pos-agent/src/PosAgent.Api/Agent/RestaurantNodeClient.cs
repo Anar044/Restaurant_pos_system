@@ -11,7 +11,7 @@ public sealed record AgentReceiptPrinterResponse(
     int? Port);
 
 
-public sealed record AgentKitchenPrinterResponse(
+public sealed record AgentPrinterResponse(
     Guid Id,
     string Name,
     string ConnectionType,
@@ -24,7 +24,7 @@ public sealed record AgentPrintJobResponse(
     string PayloadJson,
     int Attempts,
     DateTimeOffset CreatedAt,
-    AgentKitchenPrinterResponse Printer);
+    AgentPrinterResponse Printer);
 
 public sealed record AgentPrintJobsResponse(
     IReadOnlyList<AgentPrintJobResponse> Jobs);
