@@ -24,6 +24,28 @@ public static class BackOfficeNomenclatureEndpoints
             if (!TryGetRestaurantId(user, out var restaurantId))
                 return Results.Unauthorized();
 
+            var now = DateTimeOffset.UtcNow;
+            var restaurant = await db.Restaurants
+                .AsNoTracking()
+                .Where(x => x.Id == restaurantId)
+                .Select(x => new { x.CurrencyCode })
+                .FirstAsync(ct);
+
+            var categories = await db.Categories
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId)
+                .OrderBy(x => x.SortOrder)
+                .ThenBy(x => x.Name)
+                .Select(x => new { id = x.Id, name = x.Name, isActive = x.IsActive })
+                .ToListAsync(ct);
+
+            var preparationPlaces = await db.KitchenStations
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId)
+                .OrderBy(x => x.Name)
+                .Select(x => new { id = x.Id, name = x.Name, isActive = x.IsActive })
+                .ToListAsync(ct);
+
             var items = await db.Products
                 .AsNoTracking()
                 .Where(x => x.RestaurantId == restaurantId)
@@ -46,6 +68,15 @@ public static class BackOfficeNomenclatureEndpoints
                     isSellable = x.IsSellable,
                     isActive = x.IsActive,
                     sortOrder = x.SortOrder,
+                    currentPrice = db.ProductPrices
+                        .Where(price =>
+                            price.RestaurantId == restaurantId &&
+                            price.ProductId == x.Id &&
+                            price.ValidFrom <= now &&
+                            (price.ValidTo == null || price.ValidTo > now))
+                        .OrderByDescending(price => price.ValidFrom)
+                        .Select(price => (decimal?)price.Amount)
+                        .FirstOrDefault(),
                     recipe = db.RecipeLines
                         .Where(line => line.ProductId == x.Id)
                         .OrderBy(line => line.IngredientProduct!.Name)
@@ -64,6 +95,9 @@ public static class BackOfficeNomenclatureEndpoints
             return Results.Ok(new
             {
                 supportedTypes = SupportedTypes,
+                currencyCode = restaurant.CurrencyCode,
+                categories,
+                preparationPlaces,
                 items
             });
         });
@@ -98,6 +132,24 @@ public static class BackOfficeNomenclatureEndpoints
             };
 
             db.Products.Add(item);
+
+            if (request.IsSellable)
+            {
+                if (request.Price is null || request.Price < 0)
+                    return Results.BadRequest(new { message = "Для продаваемой позиции нужно указать цену." });
+
+                db.ProductPrices.Add(new ProductPrice
+                {
+                    RestaurantId = restaurantId,
+                    ProductId = item.Id,
+                    Amount = request.Price.Value,
+                    CurrencyCode = await db.Restaurants
+                        .Where(x => x.Id == restaurantId)
+                        .Select(x => x.CurrencyCode)
+                        .FirstAsync(ct),
+                    ValidFrom = DateTimeOffset.UtcNow
+                });
+            }
             AddAudit(db, user, restaurantId, "NOMENCLATURE_ITEM_CREATED", "Product", item.Id, item);
             await db.SaveChangesAsync(ct);
 
@@ -136,6 +188,46 @@ public static class BackOfficeNomenclatureEndpoints
             item.IsActive = request.IsActive;
             item.SortOrder = request.SortOrder;
 
+            if (request.IsSellable)
+            {
+                if (request.Price is null || request.Price < 0)
+                    return Results.BadRequest(new { message = "Для продаваемой позиции нужно указать цену." });
+
+                var now = DateTimeOffset.UtcNow;
+                var restaurant = await db.Restaurants
+                    .AsNoTracking()
+                    .Where(x => x.Id == restaurantId)
+                    .Select(x => new { x.CurrencyCode })
+                    .FirstAsync(ct);
+
+                var activePrices = await db.ProductPrices
+                    .Where(x =>
+                        x.RestaurantId == restaurantId &&
+                        x.ProductId == itemId &&
+                        x.ValidFrom <= now &&
+                        (x.ValidTo == null || x.ValidTo > now))
+                    .ToListAsync(ct);
+
+                var currentPrice = activePrices
+                    .OrderByDescending(x => x.ValidFrom)
+                    .FirstOrDefault();
+
+                if (currentPrice is null || currentPrice.Amount != request.Price.Value)
+                {
+                    foreach (var price in activePrices)
+                        price.ValidTo = now;
+
+                    db.ProductPrices.Add(new ProductPrice
+                    {
+                        RestaurantId = restaurantId,
+                        ProductId = itemId,
+                        Amount = request.Price.Value,
+                        CurrencyCode = restaurant.CurrencyCode,
+                        ValidFrom = now
+                    });
+                }
+            }
+
             AddAudit(db, user, restaurantId, "NOMENCLATURE_ITEM_UPDATED", "Product", item.Id, new
             {
                 item.Name,
@@ -168,8 +260,8 @@ public static class BackOfficeNomenclatureEndpoints
             if (product is null)
                 return Results.NotFound();
 
-            if (product.Type is not ("DISH" or "PREPARATION"))
-                return Results.BadRequest(new { message = "Техкарта доступна только для блюда или заготовки." });
+            if (product.Type is not ("DISH" or "PREPARATION" or "MODIFIER"))
+                return Results.BadRequest(new { message = "Техкарта доступна для блюда, заготовки или модификатора." });
 
             if (request.Lines.Count != request.Lines.Select(x => x.IngredientProductId).Distinct().Count())
                 return Results.BadRequest(new { message = "Один ингредиент нельзя добавлять в техкарту дважды." });
@@ -339,7 +431,8 @@ public sealed record UpsertNomenclatureItemRequest(
     bool IsActive,
     int SortOrder,
     Guid? CategoryId,
-    Guid? KitchenStationId);
+    Guid? KitchenStationId,
+    decimal? Price);
 
 public sealed record RecipeLineRequest(Guid IngredientProductId, decimal Quantity);
 public sealed record UpdateRecipeRequest(List<RecipeLineRequest> Lines);
