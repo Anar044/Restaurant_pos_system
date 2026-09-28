@@ -199,6 +199,7 @@ function AdjustmentEditor({
   const [scope, setScope] = useState<'ORDER' | 'GUEST' | 'BOTH'>(existing?.scope ?? 'ORDER');
   const [applicationMode, setApplicationMode] = useState<'MANUAL' | 'AUTOMATIC'>(existing?.applicationMode ?? 'MANUAL');
   const [timeBasis, setTimeBasis] = useState<'ORDER_OPENED_AT' | 'ITEM_ADDED_AT'>(existing?.timeBasis ?? 'ITEM_ADDED_AT');
+  const [targetMode, setTargetMode] = useState<'ALL_ITEMS' | 'PRESET_SELECTION' | 'POS_SELECTION'>(existing?.targetMode ?? 'ALL_ITEMS');
   const [value, setValue] = useState(existing?.value.toString() ?? '');
   const [priority, setPriority] = useState(existing?.priority.toString() ?? '100');
   const [canStack, setCanStack] = useState(existing?.canStack ?? true);
@@ -208,11 +209,24 @@ function AdjustmentEditor({
   const [endTime, setEndTime] = useState(minuteToTime(existing?.endMinute) ?? '16:00');
   const [productIds, setProductIds] = useState<string[]>(existing?.productIds ?? []);
   const [categoryIds, setCategoryIds] = useState<string[]>(existing?.categoryIds ?? []);
+  const [productSearch, setProductSearch] = useState('');
+  const [productCategoryFilter, setProductCategoryFilter] = useState('ALL');
   const [requireComment, setRequireComment] = useState(existing?.requireComment ?? false);
   const [isActive, setIsActive] = useState(existing?.isActive ?? true);
   const [roleIds, setRoleIds] = useState<string[]>(existing?.roleIds ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const filteredProducts = data.products.filter((product) => {
+    const matchesCategory =
+      productCategoryFilter === 'ALL' ||
+      product.categoryId === productCategoryFilter;
+    const query = productSearch.trim().toLocaleLowerCase();
+    const matchesSearch =
+      query.length === 0 ||
+      product.name.toLocaleLowerCase().includes(query);
+    return matchesCategory && matchesSearch;
+  });
 
   function toggle(list: string[], id: string, setter: (value: string[]) => void) {
     setter(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
@@ -232,6 +246,13 @@ function AdjustmentEditor({
     if (mode === 'PERCENT' && numericValue > 100) return setError('Процент не может быть больше 100%.');
     if (!Number.isInteger(numericPriority) || numericPriority < 0 || numericPriority > 9999) return setError('Приоритет должен быть целым числом от 0 до 9999.');
     if (weekdayMask === 0) return setError('Выберите хотя бы один день недели.');
+    if (
+      targetMode === 'PRESET_SELECTION' &&
+      productIds.length === 0 &&
+      categoryIds.length === 0
+    ) {
+      return setError('Выберите хотя бы одну категорию или блюдо.');
+    }
 
     const input: UpsertAdjustmentPresetInput = {
       name: name.trim(),
@@ -240,6 +261,7 @@ function AdjustmentEditor({
       scope: applicationMode === 'AUTOMATIC' || type === 'SERVICE_CHARGE' ? 'ORDER' : scope,
       applicationMode,
       timeBasis,
+      targetMode,
       value: numericValue,
       priority: numericPriority,
       canStack,
@@ -249,8 +271,8 @@ function AdjustmentEditor({
       requireComment: applicationMode === 'MANUAL' ? requireComment : false,
       isActive,
       roleIds: applicationMode === 'MANUAL' ? roleIds : [],
-      productIds,
-      categoryIds,
+      productIds: targetMode === 'PRESET_SELECTION' ? productIds : [],
+      categoryIds: targetMode === 'PRESET_SELECTION' ? categoryIds : [],
     };
 
     setSaving(true);
@@ -291,7 +313,13 @@ function AdjustmentEditor({
             <label><span>Тип</span><select value={type} onChange={(e) => setType(e.target.value as 'DISCOUNT' | 'SERVICE_CHARGE')}><option value="DISCOUNT">Скидка</option><option value="SERVICE_CHARGE">Надбавка / сервис</option></select></label>
             <label><span>Расчёт</span><select value={mode} onChange={(e) => setMode(e.target.value as 'PERCENT' | 'FIXED')}><option value="PERCENT">Процент</option><option value="FIXED">Фиксированная сумма</option></select></label>
             <label><span>{mode === 'PERCENT' ? 'Процент' : 'Сумма'}</span><input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" /></label>
-            <label><span>Применение</span><select value={applicationMode} onChange={(e) => setApplicationMode(e.target.value as 'MANUAL' | 'AUTOMATIC')}><option value="MANUAL">Вручную на POS</option><option value="AUTOMATIC">Автоматически</option></select></label>
+            <label><span>Применение</span><select value={applicationMode} onChange={(e) => {
+              const next = e.target.value as 'MANUAL' | 'AUTOMATIC';
+              setApplicationMode(next);
+              if (next === 'AUTOMATIC' && targetMode === 'POS_SELECTION') {
+                setTargetMode('ALL_ITEMS');
+              }
+            }}><option value="MANUAL">Вручную на POS</option><option value="AUTOMATIC">Автоматически</option></select></label>
             <label><span>Область</span><select value={applicationMode === 'AUTOMATIC' || type === 'SERVICE_CHARGE' ? 'ORDER' : scope} disabled={applicationMode === 'AUTOMATIC' || type === 'SERVICE_CHARGE'} onChange={(e) => setScope(e.target.value as 'ORDER' | 'GUEST' | 'BOTH')}><option value="ORDER">Весь заказ</option><option value="GUEST">Выбранный гость</option><option value="BOTH">Заказ или гость</option></select></label>
             <label><span>Приоритет</span><input type="number" min="0" max="9999" value={priority} onChange={(e) => setPriority(e.target.value)} /></label>
           </div>
@@ -300,31 +328,138 @@ function AdjustmentEditor({
 
         <div className="pricing-section">
           <h3>2. На что действует</h3>
-          <p className="pricing-help">Если ничего не выбрано — правило действует на все блюда. Блюда и категории объединяются.</p>
-          <div className="pricing-target-columns">
-            <div>
-              <strong>Категории</strong>
-              <div className="pricing-check-list">
-                {data.categories.map((category) => (
-                  <label key={category.id} className="adjustment-role-option">
-                    <input type="checkbox" checked={categoryIds.includes(category.id)} onChange={() => toggle(categoryIds, category.id, setCategoryIds)} />
-                    <span>{category.name}{!category.isActive && <small>Неактивна</small>}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div>
-              <strong>Блюда</strong>
-              <div className="pricing-check-list">
-                {data.products.map((product) => (
-                  <label key={product.id} className="adjustment-role-option">
-                    <input type="checkbox" checked={productIds.includes(product.id)} onChange={() => toggle(productIds, product.id, setProductIds)} />
-                    <span>{product.name}{!product.isActive && <small>Неактивно</small>}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+          <div className="pricing-target-mode-list">
+            <label className={`pricing-target-mode ${targetMode === 'ALL_ITEMS' ? 'selected' : ''}`}>
+              <input
+                type="radio"
+                name="targetMode"
+                checked={targetMode === 'ALL_ITEMS'}
+                onChange={() => setTargetMode('ALL_ITEMS')}
+              />
+              <span>
+                <strong>Все блюда</strong>
+                <small>Правило применяется ко всем подходящим позициям заказа.</small>
+              </span>
+            </label>
+
+            <label className={`pricing-target-mode ${targetMode === 'PRESET_SELECTION' ? 'selected' : ''}`}>
+              <input
+                type="radio"
+                name="targetMode"
+                checked={targetMode === 'PRESET_SELECTION'}
+                onChange={() => setTargetMode('PRESET_SELECTION')}
+              />
+              <span>
+                <strong>Заданные категории / блюда</strong>
+                <small>Владелец заранее определяет, на какие позиции действует правило.</small>
+              </span>
+            </label>
+
+            <label className={`pricing-target-mode ${targetMode === 'POS_SELECTION' ? 'selected' : ''} ${applicationMode === 'AUTOMATIC' ? 'disabled' : ''}`}>
+              <input
+                type="radio"
+                name="targetMode"
+                checked={targetMode === 'POS_SELECTION'}
+                disabled={applicationMode === 'AUTOMATIC'}
+                onChange={() => setTargetMode('POS_SELECTION')}
+              />
+              <span>
+                <strong>Кассир выбирает позиции на POS</strong>
+                <small>
+                  Кассир выбирает одно или несколько конкретных блюд из текущего заказа.
+                  Автоматические правила этот режим не используют.
+                </small>
+              </span>
+            </label>
           </div>
+
+          {targetMode === 'PRESET_SELECTION' && (
+            <>
+              <p className="pricing-help">
+                Категории и блюда объединяются. Для большого меню используйте поиск и фильтр.
+              </p>
+              <div className="pricing-target-columns">
+                <div>
+                  <strong>Категории</strong>
+                  <div className="pricing-check-list">
+                    {data.categories.map((category) => (
+                      <label key={category.id} className="adjustment-role-option">
+                        <input
+                          type="checkbox"
+                          checked={categoryIds.includes(category.id)}
+                          onChange={() => toggle(categoryIds, category.id, setCategoryIds)}
+                        />
+                        <span>
+                          {category.name}
+                          {!category.isActive && <small>Неактивна</small>}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="pricing-product-heading">
+                    <strong>Блюда</strong>
+                    <span>Выбрано: {productIds.length}</span>
+                  </div>
+                  <div className="pricing-product-tools">
+                    <input
+                      value={productSearch}
+                      onChange={(e) => setProductSearch(e.target.value)}
+                      placeholder="Поиск блюда…"
+                    />
+                    <select
+                      value={productCategoryFilter}
+                      onChange={(e) => setProductCategoryFilter(e.target.value)}
+                    >
+                      <option value="ALL">Все категории</option>
+                      {data.categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="pricing-check-list">
+                    {filteredProducts.length === 0 ? (
+                      <div className="pricing-no-results">Ничего не найдено.</div>
+                    ) : (
+                      filteredProducts.map((product) => (
+                        <label key={product.id} className="adjustment-role-option">
+                          <input
+                            type="checkbox"
+                            checked={productIds.includes(product.id)}
+                            onChange={() => toggle(productIds, product.id, setProductIds)}
+                          />
+                          <span>
+                            {product.name}
+                            {!product.isActive && <small>Неактивно</small>}
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+              {productIds.length === 0 && categoryIds.length === 0 && (
+                <div className="adjustment-warning">
+                  Выберите хотя бы одну категорию или блюдо.
+                </div>
+              )}
+            </>
+          )}
+
+          {targetMode === 'POS_SELECTION' && (
+            <div className="adjustment-security-note pricing-pos-selection-note">
+              <strong>Выбор будет сделан на кассе</strong>
+              <span>
+                При применении правила POS покажет только позиции текущего заказа.
+                В заказ сохраняются конкретные строки, поэтому новые одинаковые блюда,
+                добавленные позже, автоматически под скидку не попадут.
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="pricing-section">
@@ -391,9 +526,16 @@ function timeToMinute(value: string) {
 }
 
 function targetLabel(preset: BackOfficeAdjustmentPreset, data: BackOfficeAdjustments) {
-  const categoryNames = data.categories.filter((x) => preset.categoryIds.includes(x.id)).map((x) => x.name);
-  const productNames = data.products.filter((x) => preset.productIds.includes(x.id)).map((x) => x.name);
-  if (categoryNames.length === 0 && productNames.length === 0) return 'все блюда';
+  if (preset.targetMode === 'ALL_ITEMS') return 'все блюда';
+  if (preset.targetMode === 'POS_SELECTION') return 'кассир выбирает позиции на POS';
+
+  const categoryNames = data.categories
+    .filter((x) => preset.categoryIds.includes(x.id))
+    .map((x) => x.name);
+  const productNames = data.products
+    .filter((x) => preset.productIds.includes(x.id))
+    .map((x) => x.name);
+
   return [...categoryNames.map((x) => `кат. ${x}`), ...productNames].join(', ');
 }
 
