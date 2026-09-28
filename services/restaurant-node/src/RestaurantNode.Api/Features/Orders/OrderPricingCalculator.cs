@@ -13,6 +13,15 @@ internal sealed record OrderPricingSnapshot(
 
 internal static class OrderPricingCalculator
 {
+    private sealed class ItemState
+    {
+        public required OrderItem Item { get; init; }
+        public decimal Original { get; init; }
+        public decimal Net { get; set; }
+        public bool Touched { get; set; }
+        public bool Locked { get; set; }
+    }
+
     public static OrderPricingSnapshot Recalculate(Order order)
     {
         var snapshot = Calculate(order, updateAdjustmentAmounts: true);
@@ -31,110 +40,142 @@ internal static class OrderPricingCalculator
         bool updateAdjustmentAmounts)
     {
         var guestCount = Math.Max(1, order.GuestCount);
+
+        var states = order.Items
+            .Where(x => x.Status != OrderItemStatus.Voided)
+            .Select(x => new ItemState
+            {
+                Item = x,
+                Original = Money(x.LineTotal),
+                Net = Money(x.LineTotal)
+            })
+            .ToArray();
+
         var guestSubtotals = Enumerable.Range(1, guestCount)
             .ToDictionary(guest => guest, _ => 0m);
-
-        foreach (var item in order.Items.Where(x => x.Status != OrderItemStatus.Voided))
-        {
-            if (item.GuestNumber >= 1 && item.GuestNumber <= guestCount)
-                guestSubtotals[item.GuestNumber] += Money(item.LineTotal);
-        }
-
-        foreach (var guest in guestSubtotals.Keys.ToArray())
-            guestSubtotals[guest] = Money(guestSubtotals[guest]);
-
-        var guestNet = guestSubtotals.ToDictionary(x => x.Key, x => x.Value);
         var guestDiscounts = Enumerable.Range(1, guestCount)
             .ToDictionary(guest => guest, _ => 0m);
+
+        foreach (var state in states)
+        {
+            if (state.Item.GuestNumber >= 1 &&
+                state.Item.GuestNumber <= guestCount)
+            {
+                guestSubtotals[state.Item.GuestNumber] = Money(
+                    guestSubtotals[state.Item.GuestNumber] + state.Original);
+            }
+        }
 
         decimal discountTotal = 0m;
         decimal surchargeTotal = 0m;
 
-        var guestDiscountAdjustments = order.Adjustments
-            .Where(x =>
-                x.Type == OrderAdjustmentType.Discount &&
-                x.GuestNumber.HasValue)
-            .OrderBy(x => x.CreatedAt)
+        var adjustments = order.Adjustments
+            .OrderBy(x => x.PrioritySnapshot)
+            .ThenBy(x => x.CreatedAt)
             .ThenBy(x => x.Id)
             .ToArray();
 
-        foreach (var adjustment in guestDiscountAdjustments)
+        foreach (var adjustment in adjustments)
         {
-            var guest = adjustment.GuestNumber!.Value;
-            if (!guestNet.ContainsKey(guest))
+            var eligible = states
+                .Where(state =>
+                    state.Net > 0m &&
+                    !state.Locked &&
+                    PricingRuleEngine.AdjustmentMatchesItem(
+                        adjustment,
+                        order,
+                        state.Item) &&
+                    (adjustment.CanStackSnapshot || !state.Touched))
+                .ToArray();
+
+            var baseAmount = Money(eligible.Sum(x => x.Net));
+            if (baseAmount <= 0m)
             {
-                SetCalculatedAmount(adjustment, 0m, updateAdjustmentAmounts);
+                SetCalculatedAmount(
+                    adjustment,
+                    0m,
+                    updateAdjustmentAmounts);
                 continue;
             }
 
-            var amount = CalculateDiscount(
-                guestNet[guest],
-                adjustment.Mode,
-                adjustment.Value);
+            var amount = adjustment.Type == OrderAdjustmentType.Discount
+                ? CalculateDiscount(
+                    baseAmount,
+                    adjustment.Mode,
+                    adjustment.Value)
+                : CalculateSurcharge(
+                    baseAmount,
+                    adjustment.Mode,
+                    adjustment.Value);
 
-            guestNet[guest] = Money(Math.Max(0m, guestNet[guest] - amount));
-            guestDiscounts[guest] = Money(guestDiscounts[guest] + amount);
-            discountTotal = Money(discountTotal + amount);
-            SetCalculatedAmount(adjustment, amount, updateAdjustmentAmounts);
-        }
-
-        var orderDiscountAdjustments = order.Adjustments
-            .Where(x =>
-                x.Type == OrderAdjustmentType.Discount &&
-                !x.GuestNumber.HasValue)
-            .OrderBy(x => x.CreatedAt)
-            .ThenBy(x => x.Id)
-            .ToArray();
-
-        foreach (var adjustment in orderDiscountAdjustments)
-        {
-            var baseAmount = Money(guestNet.Values.Sum());
-            var amount = CalculateDiscount(
-                baseAmount,
-                adjustment.Mode,
-                adjustment.Value);
-
-            var allocation = Allocate(amount, guestNet);
-            foreach (var guest in guestNet.Keys.ToArray())
+            if (amount <= 0m)
             {
-                var part = allocation.GetValueOrDefault(guest);
-                guestNet[guest] = Money(Math.Max(0m, guestNet[guest] - part));
-                guestDiscounts[guest] = Money(guestDiscounts[guest] + part);
+                SetCalculatedAmount(
+                    adjustment,
+                    0m,
+                    updateAdjustmentAmounts);
+                continue;
             }
 
-            discountTotal = Money(discountTotal + amount);
-            SetCalculatedAmount(adjustment, amount, updateAdjustmentAmounts);
-        }
+            var bases = eligible.ToDictionary(
+                x => x.Item.Id,
+                x => x.Net);
+            var allocation = Allocate(amount, bases);
 
-        var guestTotals = guestNet.ToDictionary(x => x.Key, x => x.Value);
-        var serviceBase = Money(guestNet.Values.Sum());
-
-        var serviceAdjustments = order.Adjustments
-            .Where(x => x.Type == OrderAdjustmentType.ServiceCharge)
-            .OrderBy(x => x.CreatedAt)
-            .ThenBy(x => x.Id)
-            .ToArray();
-
-        foreach (var adjustment in serviceAdjustments)
-        {
-            var amount = CalculateSurcharge(
-                serviceBase,
-                adjustment.Mode,
-                adjustment.Value);
-
-            var allocation = Allocate(amount, guestNet);
-            foreach (var guest in guestTotals.Keys.ToArray())
+            foreach (var state in eligible)
             {
-                guestTotals[guest] = Money(
-                    guestTotals[guest] + allocation.GetValueOrDefault(guest));
+                var part = allocation.GetValueOrDefault(state.Item.Id);
+                if (part <= 0m)
+                    continue;
+
+                if (adjustment.Type == OrderAdjustmentType.Discount)
+                {
+                    state.Net = Money(
+                        Math.Max(0m, state.Net - part));
+
+                    if (state.Item.GuestNumber >= 1 &&
+                        state.Item.GuestNumber <= guestCount)
+                    {
+                        guestDiscounts[state.Item.GuestNumber] = Money(
+                            guestDiscounts[state.Item.GuestNumber] + part);
+                    }
+                }
+                else
+                {
+                    state.Net = Money(state.Net + part);
+                }
+
+                state.Touched = true;
+                if (!adjustment.CanStackSnapshot)
+                    state.Locked = true;
             }
 
-            surchargeTotal = Money(surchargeTotal + amount);
-            SetCalculatedAmount(adjustment, amount, updateAdjustmentAmounts);
+            if (adjustment.Type == OrderAdjustmentType.Discount)
+                discountTotal = Money(discountTotal + amount);
+            else
+                surchargeTotal = Money(surchargeTotal + amount);
+
+            SetCalculatedAmount(
+                adjustment,
+                amount,
+                updateAdjustmentAmounts);
         }
 
-        var subtotal = Money(guestSubtotals.Values.Sum());
-        var total = Money(Math.Max(0m, subtotal - discountTotal + surchargeTotal));
+        var guestTotals = Enumerable.Range(1, guestCount)
+            .ToDictionary(guest => guest, _ => 0m);
+
+        foreach (var state in states)
+        {
+            if (state.Item.GuestNumber >= 1 &&
+                state.Item.GuestNumber <= guestCount)
+            {
+                guestTotals[state.Item.GuestNumber] = Money(
+                    guestTotals[state.Item.GuestNumber] + state.Net);
+            }
+        }
+
+        var subtotal = Money(states.Sum(x => x.Original));
+        var total = Money(states.Sum(x => x.Net));
 
         return new OrderPricingSnapshot(
             subtotal,
@@ -158,7 +199,9 @@ internal static class OrderPricingCalculator
             ? baseAmount * Math.Clamp(value, 0m, 100m) / 100m
             : value;
 
-        return Money(Math.Min(baseAmount, Math.Max(0m, amount)));
+        return Money(Math.Min(
+            baseAmount,
+            Math.Max(0m, amount)));
     }
 
     private static decimal CalculateSurcharge(
@@ -176,9 +219,9 @@ internal static class OrderPricingCalculator
         return Money(Math.Max(0m, amount));
     }
 
-    private static Dictionary<int, decimal> Allocate(
+    private static Dictionary<Guid, decimal> Allocate(
         decimal target,
-        IReadOnlyDictionary<int, decimal> bases)
+        IReadOnlyDictionary<Guid, decimal> bases)
     {
         var result = bases.Keys.ToDictionary(key => key, _ => 0m);
         target = Money(Math.Max(0m, target));
@@ -189,8 +232,12 @@ internal static class OrderPricingCalculator
             .ToArray();
 
         var baseTotal = positive.Sum(pair => pair.Value);
-        if (target <= 0m || baseTotal <= 0m || positive.Length == 0)
+        if (target <= 0m ||
+            baseTotal <= 0m ||
+            positive.Length == 0)
+        {
             return result;
+        }
 
         var allocated = 0m;
         for (var index = 0; index < positive.Length; index++)
