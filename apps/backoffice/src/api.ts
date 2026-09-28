@@ -44,6 +44,9 @@ export type DiningTable = {
 
 export type Hall = {
   id: string;
+  groupId?: string;
+  precheckPrinterId?: string | null;
+  precheckPrinterName?: string | null;
   name: string;
   sortOrder: number;
   isActive: boolean;
@@ -53,6 +56,8 @@ export type Hall = {
 export type CreateHallInput = {
   name: string;
   sortOrder: number;
+  groupId?: string;
+  precheckPrinterId?: string | null;
 };
 
 export type UpdateHallInput = CreateHallInput & {
@@ -494,8 +499,8 @@ export type GroupDepartmentOption = {
   id: string;
   groupId: string;
   name: string;
-  hallId: string | null;
-  hallName: string | null;
+  preparationPlaceTypeId: string | null;
+  preparationPlaceTypeName: string | null;
   warehouseId: string | null;
   warehouseName: string | null;
   printerId: string | null;
@@ -503,11 +508,14 @@ export type GroupDepartmentOption = {
   isActive: boolean;
 };
 
-export type GroupCookingMapOption = {
+export type GroupHallOption = {
   id: string;
   groupId: string;
-  preparationPlaceTypeId: string;
-  departmentId: string;
+  name: string;
+  sortOrder: number;
+  precheckPrinterId: string | null;
+  precheckPrinterName: string | null;
+  tableCount: number;
   isActive: boolean;
 };
 
@@ -526,10 +534,9 @@ export type GroupLookupOption = {
 export type BackOfficeGroups = {
   groups: RestaurantGroupOption[];
   departments: GroupDepartmentOption[];
+  halls: GroupHallOption[];
   types: PreparationPlaceTypeOption[];
-  maps: GroupCookingMapOption[];
   devices: GroupDeviceOption[];
-  halls: GroupLookupOption[];
   warehouses: GroupLookupOption[];
   printers: GroupLookupOption[];
 };
@@ -1011,7 +1018,7 @@ export async function setRestaurantGroupDevices(
 export async function createRestaurantDepartment(
   token: string,
   groupId: string,
-  input: { name: string; hallId: string | null; warehouseId: string | null; printerId: string | null; isActive?: boolean },
+  input: { name: string; preparationPlaceTypeId: string | null; warehouseId: string | null; printerId: string | null; isActive?: boolean },
 ): Promise<{ id: string }> {
   return request(`/api/v1/backoffice/groups/${groupId}/departments`, {
     method: 'POST',
@@ -1023,7 +1030,7 @@ export async function updateRestaurantDepartment(
   token: string,
   groupId: string,
   id: string,
-  input: { name: string; hallId: string | null; warehouseId: string | null; printerId: string | null; isActive: boolean },
+  input: { name: string; preparationPlaceTypeId: string | null; warehouseId: string | null; printerId: string | null; isActive: boolean },
 ): Promise<{ id: string }> {
   return request(`/api/v1/backoffice/groups/${groupId}/departments/${id}`, {
     method: 'PUT',
@@ -1038,17 +1045,29 @@ export async function createGroupPreparationType(token: string, name: string): P
   }, token);
 }
 
-export async function setGroupCookingMap(
+export async function createGroupHall(
   token: string,
   groupId: string,
-  typeId: string,
-  departmentId: string,
+  input: { name: string; sortOrder: number; precheckPrinterId: string | null },
 ): Promise<{ id: string }> {
-  return request(`/api/v1/backoffice/groups/${groupId}/map/${typeId}`, {
-    method: 'PUT',
-    body: JSON.stringify({ departmentId }),
+  return request(`/api/v1/backoffice/groups/${groupId}/halls`, {
+    method: 'POST',
+    body: JSON.stringify(input),
   }, token);
 }
+
+export async function updateGroupHall(
+  token: string,
+  groupId: string,
+  hallId: string,
+  input: { name: string; sortOrder: number; precheckPrinterId: string | null; isActive: boolean },
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/groups/${groupId}/halls/${hallId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
 
 export async function getBackOfficeNomenclature(token: string): Promise<BackOfficeNomenclature> {
   return request<BackOfficeNomenclature>('/api/v1/backoffice/nomenclature', {}, token);
