@@ -16,6 +16,7 @@ import { EmployeesPage } from './EmployeesPage';
 import { FinancePage } from './FinancePage';
 import { HallsPage } from './HallsPage';
 import { KitchenPage } from './KitchenPage';
+import { InventoryPage } from './InventoryPage';
 import { MenuPage } from './MenuPage';
 import { ModifiersPage } from './ModifiersPage';
 import { OverviewPage } from './OverviewPage';
@@ -23,7 +24,7 @@ import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'halls' | 'menu' | 'modifiers' | 'adjustments' | 'kitchen' | 'employees' | 'roles' | 'devices' | 'finance';
+type PageKey = 'overview' | 'halls' | 'menu' | 'modifiers' | 'inventory' | 'adjustments' | 'kitchen' | 'employees' | 'roles' | 'devices' | 'finance';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -166,13 +167,14 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
     { key: 'menu', label: 'Меню', icon: '≡', ready: true },
     { key: 'modifiers', label: 'Модификаторы', icon: '±', ready: true },
+    { key: 'inventory', label: 'Склад', icon: '▥', ready: true },
     { key: 'adjustments', label: 'Скидки и надбавки', icon: '%', ready: true },
     { key: 'employees', label: 'Список сотрудников', icon: '◎', ready: true },
     { key: 'roles', label: 'Роли и права', icon: '◉', ready: true },
   ];
 
   const restaurantSettingsItems: PageKey[] = ['halls', 'kitchen', 'devices'];
-  const catalogItems: PageKey[] = ['menu', 'modifiers'];
+  const catalogItems: PageKey[] = ['menu', 'modifiers', 'inventory'];
   const employeeItems: PageKey[] = ['employees', 'roles'];
 
   function renderNavItem(key: PageKey, nested = false) {
@@ -316,6 +318,11 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             <MenuPage token={session.token} />
           ) : page === 'modifiers' ? (
             <ModifiersPage token={session.token} />
+          ) : page === 'inventory' ? (
+            <InventoryPage
+              token={session.token}
+              canManage={(session.permissions ?? []).includes('inventory.manage')}
+            />
           ) : page === 'adjustments' ? (
             <AdjustmentsPage
               token={session.token}
