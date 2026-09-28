@@ -226,6 +226,9 @@ public sealed class Shift : Entity
     public ShiftStatus Status { get; set; } = ShiftStatus.Open;
     public decimal OpeningCash { get; set; }
     public decimal? ClosingCash { get; set; }
+    public decimal? ExpectedCashAtClose { get; set; }
+    public decimal? CashDifference { get; set; }
+    public string? ClosingNote { get; set; }
     public DateTimeOffset OpenedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ClosedAt { get; set; }
 }
