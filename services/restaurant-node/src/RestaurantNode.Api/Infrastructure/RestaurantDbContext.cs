@@ -16,13 +16,13 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<KitchenStation> KitchenStations => Set<KitchenStation>();
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<RecipeLine> RecipeLines => Set<RecipeLine>();
     public DbSet<ProductPrice> ProductPrices => Set<ProductPrice>();
     public DbSet<ModifierGroup> ModifierGroups => Set<ModifierGroup>();
     public DbSet<Modifier> Modifiers => Set<Modifier>();
     public DbSet<ProductModifierGroup> ProductModifierGroups => Set<ProductModifierGroup>();
     public DbSet<ModifierGroupModifier> ModifierGroupModifiers => Set<ModifierGroupModifier>();
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
-    public DbSet<StockItem> StockItems => Set<StockItem>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
     public DbSet<Shift> Shifts => Set<Shift>();
     public DbSet<Order> Orders => Set<Order>();
@@ -56,13 +56,13 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Category>().ToTable("categories");
         modelBuilder.Entity<KitchenStation>().ToTable("kitchen_stations");
         modelBuilder.Entity<Product>().ToTable("products");
+        modelBuilder.Entity<RecipeLine>().ToTable("recipe_lines");
         modelBuilder.Entity<ProductPrice>().ToTable("product_prices");
         modelBuilder.Entity<ModifierGroup>().ToTable("modifier_groups");
         modelBuilder.Entity<Modifier>().ToTable("modifiers");
         modelBuilder.Entity<ProductModifierGroup>().ToTable("product_modifier_groups");
         modelBuilder.Entity<ModifierGroupModifier>().ToTable("modifier_group_modifiers");
         modelBuilder.Entity<Warehouse>().ToTable("warehouses");
-        modelBuilder.Entity<StockItem>().ToTable("stock_items");
         modelBuilder.Entity<StockMovement>().ToTable("stock_movements");
         modelBuilder.Entity<Shift>().ToTable("shifts");
         modelBuilder.Entity<Order>().ToTable("orders");
@@ -108,9 +108,10 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<KitchenTicket>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<PrintJob>().Property(x => x.Status).HasConversion<string>();
 
+        modelBuilder.Entity<Product>().Property(x => x.MinStock).HasPrecision(18, 3);
+        modelBuilder.Entity<RecipeLine>().Property(x => x.Quantity).HasPrecision(18, 3);
         modelBuilder.Entity<ProductPrice>().Property(x => x.Amount).HasPrecision(18, 4);
         modelBuilder.Entity<Modifier>().Property(x => x.PriceDelta).HasPrecision(18, 4);
-        modelBuilder.Entity<StockItem>().Property(x => x.MinStock).HasPrecision(18, 3);
         modelBuilder.Entity<StockMovement>().Property(x => x.QuantityDelta).HasPrecision(18, 3);
         modelBuilder.Entity<Shift>().Property(x => x.OpeningCash).HasPrecision(18, 4);
         modelBuilder.Entity<Shift>().Property(x => x.ClosingCash).HasPrecision(18, 4);
@@ -153,11 +154,12 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<DiningTable>().HasIndex(x => new { x.HallId, x.Name }).IsUnique();
         modelBuilder.Entity<Category>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Name });
+        modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Sku }).IsUnique();
+        modelBuilder.Entity<RecipeLine>().HasIndex(x => new { x.ProductId, x.IngredientProductId }).IsUnique();
+        modelBuilder.Entity<RecipeLine>().HasIndex(x => x.IngredientProductId);
         modelBuilder.Entity<ProductPrice>().HasIndex(x => new { x.ProductId, x.ValidFrom });
         modelBuilder.Entity<Warehouse>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
-        modelBuilder.Entity<StockItem>().HasIndex(x => new { x.RestaurantId, x.Name });
-        modelBuilder.Entity<StockItem>().HasIndex(x => new { x.RestaurantId, x.Sku }).IsUnique();
-        modelBuilder.Entity<StockMovement>().HasIndex(x => new { x.RestaurantId, x.WarehouseId, x.StockItemId, x.CreatedAt });
+        modelBuilder.Entity<StockMovement>().HasIndex(x => new { x.RestaurantId, x.WarehouseId, x.ProductId, x.CreatedAt });
         modelBuilder.Entity<Shift>().HasIndex(x => new { x.RestaurantId, x.DeviceId, x.Status, x.OpenedAt });
         modelBuilder.Entity<Shift>()
             .HasIndex(x => new { x.RestaurantId, x.DeviceId })
@@ -230,9 +232,21 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<StockMovement>()
-            .HasOne(x => x.StockItem)
+            .HasOne(x => x.Product)
             .WithMany()
-            .HasForeignKey(x => x.StockItemId)
+            .HasForeignKey(x => x.ProductId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<RecipeLine>()
+            .HasOne(x => x.Product)
+            .WithMany()
+            .HasForeignKey(x => x.ProductId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RecipeLine>()
+            .HasOne(x => x.IngredientProduct)
+            .WithMany()
+            .HasForeignKey(x => x.IngredientProductId)
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<Restaurant>()
