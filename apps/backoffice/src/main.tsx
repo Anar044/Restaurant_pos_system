@@ -65,6 +65,8 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (session: AuthSession) => voi
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [restaurantSettingsOpen, setRestaurantSettingsOpen] = useState(true);
+  const [catalogOpen, setCatalogOpen] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -166,15 +168,23 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'employees', label: 'Сотрудники', icon: '◎', ready: true },
   ];
 
-  const navGroups: Array<{
-    label?: string;
-    items: PageKey[];
-  }> = [
-    { items: ['overview', 'finance'] },
-    { label: 'Настройки ресторана', items: ['halls', 'kitchen', 'devices'] },
-    { label: 'Номенклатура и склад', items: ['menu', 'modifiers'] },
-    { items: ['adjustments', 'employees'] },
-  ];
+  const restaurantSettingsItems: PageKey[] = ['halls', 'kitchen', 'devices'];
+  const catalogItems: PageKey[] = ['menu', 'modifiers'];
+
+  function renderNavItem(key: PageKey, nested = false) {
+    const item = navItems.find((x) => x.key === key)!;
+    return (
+      <button
+        key={item.key}
+        className={`nav-item ${nested ? 'nested' : ''} ${page === item.key ? 'active' : ''}`}
+        onClick={() => setPage(item.key)}
+      >
+        <span className="nav-icon">{item.icon}</span>
+        <span>{item.label}</span>
+        {!item.ready && <small>скоро</small>}
+      </button>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -194,27 +204,49 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
         </div>
 
         <nav>
-          {navGroups.map((group, index) => (
-            <div className="nav-group" key={group.label ?? `group-${index}`}>
-              {group.label && <div className="nav-group-title">{group.label}</div>}
-              <div className="nav-group-items">
-                {group.items.map((key) => {
-                  const item = navItems.find((x) => x.key === key)!;
-                  return (
-                    <button
-                      key={item.key}
-                      className={`nav-item ${page === item.key ? 'active' : ''}`}
-                      onClick={() => setPage(item.key)}
-                    >
-                      <span className="nav-icon">{item.icon}</span>
-                      <span>{item.label}</span>
-                      {!item.ready && <small>скоро</small>}
-                    </button>
-                  );
-                })}
+          <div className="nav-section">
+            {renderNavItem('overview')}
+            {renderNavItem('finance')}
+          </div>
+
+          <div className="nav-section">
+            <button
+              className={`nav-parent ${restaurantSettingsItems.includes(page) ? 'active-parent' : ''}`}
+              onClick={() => setRestaurantSettingsOpen((value) => !value)}
+              aria-expanded={restaurantSettingsOpen}
+            >
+              <span className="nav-parent-icon">⚙</span>
+              <span>Настройки ресторана</span>
+              <span className={`nav-chevron ${restaurantSettingsOpen ? 'open' : ''}`}>›</span>
+            </button>
+            {restaurantSettingsOpen && (
+              <div className="nav-submenu">
+                {restaurantSettingsItems.map((key) => renderNavItem(key, true))}
               </div>
-            </div>
-          ))}
+            )}
+          </div>
+
+          <div className="nav-section">
+            <button
+              className={`nav-parent ${catalogItems.includes(page) ? 'active-parent' : ''}`}
+              onClick={() => setCatalogOpen((value) => !value)}
+              aria-expanded={catalogOpen}
+            >
+              <span className="nav-parent-icon">▤</span>
+              <span>Номенклатура и склад</span>
+              <span className={`nav-chevron ${catalogOpen ? 'open' : ''}`}>›</span>
+            </button>
+            {catalogOpen && (
+              <div className="nav-submenu">
+                {catalogItems.map((key) => renderNavItem(key, true))}
+              </div>
+            )}
+          </div>
+
+          <div className="nav-section">
+            {renderNavItem('adjustments')}
+            {renderNavItem('employees')}
+          </div>
         </nav>
 
         <div className="sidebar-footer">
