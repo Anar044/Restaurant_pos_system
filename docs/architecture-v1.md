@@ -41,6 +41,7 @@ For V1, Restaurant Node itself is a required local dependency. Device-independen
 9. Financial adjustments are centrally configured in BackOffice. POS clients may only apply active presets authorized for the employee role; they never define arbitrary discount/surcharge values.
 10. Pricing rules are evaluated server-side per order item. Rules may target products/categories, use restaurant-local schedules, choose order-open or item-added time, run manually or automatically, and execute by explicit priority.
 11. Applied pricing rules keep immutable calculation snapshots so later BackOffice changes do not silently alter an already-applied order rule.
+12. Manual pricing rules may target exact order-line IDs selected by the cashier. Selection is validated server-side against the current order, guest and schedule; product identity alone is never used for this mode.
 
 ## First vertical slice
 
