@@ -39,7 +39,7 @@ public static class BackOfficeDeviceEndpoints
                 .ThenBy(x => x.Name)
                 .ToListAsync(ct);
 
-            var stations = await db.KitchenStations
+            var departments = await db.RestaurantDepartments
                 .AsNoTracking()
                 .Where(x => x.RestaurantId == restaurantId)
                 .OrderByDescending(x => x.IsActive)
@@ -74,18 +74,8 @@ public static class BackOfficeDeviceEndpoints
                     isActive = printer.IsActive,
                     lastSeenAt = printer.LastSeenAt,
                     isOnline = printer.ConnectionType == PrinterConnectionType.Network || IsOnline(printer.LastSeenAt),
-                    kitchenStationCount = stations.Count(x => x.PrinterId == printer.Id),
+                    departmentCount = departments.Count(x => x.PrinterId == printer.Id),
                     posDeviceCount = devices.Count(x => x.Type == DeviceType.Pos && x.ReceiptPrinterId == printer.Id)
-                }),
-                kitchenStations = stations.Select(station => new
-                {
-                    id = station.Id,
-                    name = station.Name,
-                    isActive = station.IsActive,
-                    printerId = station.PrinterId,
-                    printerName = station.PrinterId.HasValue && printerNames.TryGetValue(station.PrinterId.Value, out var printerName)
-                        ? printerName
-                        : null
                 })
             });
         });
@@ -162,7 +152,7 @@ public static class BackOfficeDeviceEndpoints
 
             if (printer.IsActive && !request.IsActive)
             {
-                var stationNames = await db.KitchenStations
+                var departmentNames = await db.RestaurantDepartments
                     .AsNoTracking()
                     .Where(x => x.RestaurantId == restaurantId && x.PrinterId == printerId && x.IsActive)
                     .Select(x => x.Name)
@@ -178,12 +168,12 @@ public static class BackOfficeDeviceEndpoints
                     .Take(5)
                     .ToListAsync(ct);
 
-                if (stationNames.Count > 0 || deviceNames.Count > 0)
+                if (departmentNames.Count > 0 || deviceNames.Count > 0)
                 {
                     return Results.Conflict(new
                     {
-                        message = "The printer cannot be deactivated while active kitchen stations or POS devices use it. Remove those assignments first.",
-                        kitchenStations = stationNames,
+                        message = "The printer cannot be deactivated while active departments or POS devices use it. Remove those assignments first.",
+                        departments = departmentNames,
                         devices = deviceNames
                     });
                 }
@@ -301,44 +291,6 @@ public static class BackOfficeDeviceEndpoints
             return Results.Ok(new { id = device.Id });
         }).RequireAuthorization(Permissions.DevicesManage);
 
-        group.MapPut("/kitchen-stations/{stationId:guid}/printer", async (
-            Guid stationId,
-            SetKitchenPrinterRequest request,
-            ClaimsPrincipal user,
-            RestaurantDbContext db,
-            CancellationToken ct) =>
-        {
-            if (!TryGetRestaurantId(user, out var restaurantId))
-                return Results.Unauthorized();
-
-            var station = await db.KitchenStations.FirstOrDefaultAsync(
-                x => x.Id == stationId && x.RestaurantId == restaurantId,
-                ct);
-            if (station is null)
-                return Results.NotFound();
-
-            if (request.PrinterId.HasValue)
-            {
-                var printerExists = await db.Printers.AnyAsync(
-                    x => x.Id == request.PrinterId.Value &&
-                         x.RestaurantId == restaurantId &&
-                         x.IsConfigured &&
-                         x.IsActive,
-                    ct);
-                if (!printerExists)
-                    return Results.BadRequest(new { message = "Active configured printer was not found." });
-            }
-
-            station.PrinterId = request.PrinterId;
-            AddAudit(db, user, restaurantId, "KITCHEN_PRINTER_ASSIGNED", "KitchenStation", station.Id, new
-            {
-                station.Name,
-                station.PrinterId
-            });
-            await db.SaveChangesAsync(ct);
-
-            return Results.Ok(new { id = station.Id, printerId = station.PrinterId });
-        }).RequireAuthorization(Permissions.DevicesManage);
 
         return app;
     }
@@ -468,4 +420,3 @@ public sealed record CreatePrinterRequest(string Name, string ConnectionType, st
 public sealed record UpdatePrinterRequest(string Name, string ConnectionType, string Address, int? Port, bool IsActive);
 public sealed record CreateDeviceRequest(string Name, string Type, Guid? ReceiptPrinterId);
 public sealed record UpdateDeviceRequest(string Name, string Type, Guid? ReceiptPrinterId, bool IsActive);
-public sealed record SetKitchenPrinterRequest(Guid? PrinterId);
