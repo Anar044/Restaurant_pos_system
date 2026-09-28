@@ -154,7 +154,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<DiningTable>().HasIndex(x => new { x.HallId, x.Name }).IsUnique();
         modelBuilder.Entity<Category>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Name });
-        modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Sku }).IsUnique();
+        modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Sku });
         modelBuilder.Entity<RecipeLine>().HasIndex(x => new { x.ProductId, x.IngredientProductId }).IsUnique();
         modelBuilder.Entity<RecipeLine>().HasIndex(x => x.IngredientProductId);
         modelBuilder.Entity<ProductPrice>().HasIndex(x => new { x.ProductId, x.ValidFrom });
