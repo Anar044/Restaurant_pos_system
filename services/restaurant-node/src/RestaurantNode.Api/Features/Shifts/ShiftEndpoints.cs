@@ -351,9 +351,19 @@ public static class ShiftEndpoints
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
 
+            var closedByEmployeeName = await db.Employees
+                .AsNoTracking()
+                .Where(x =>
+                    x.Id == employeeId &&
+                    x.RestaurantId == restaurantId)
+                .Select(x => x.Name)
+                .FirstOrDefaultAsync(ct);
+
             var closedReport = report with
             {
+                ReportType = "Z",
                 Status = EnumText(shift.Status),
+                ClosedByEmployeeName = closedByEmployeeName,
                 ClosedAt = shift.ClosedAt,
                 ClosingCash = shift.ClosingCash,
                 CashDifference = difference,
