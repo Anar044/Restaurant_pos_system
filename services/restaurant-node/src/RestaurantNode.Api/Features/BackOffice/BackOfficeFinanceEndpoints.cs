@@ -566,7 +566,7 @@ public static class BackOfficeFinanceEndpoints
                     })
                     .ToArray();
 
-                refunds = await (
+                var refundRows = await (
                     from refund in db.PaymentRefunds.AsNoTracking()
                     join payment in db.Payments.AsNoTracking()
                         on refund.PaymentId equals payment.Id
@@ -577,7 +577,7 @@ public static class BackOfficeFinanceEndpoints
                     where refund.RestaurantId == restaurantId &&
                           refund.ShiftId == shiftId.Value
                     orderby refund.CreatedAt descending
-                    select (object)new
+                    select new
                     {
                         refund.Id,
                         refund.PaymentId,
@@ -585,16 +585,33 @@ public static class BackOfficeFinanceEndpoints
                         orderNumber = order.DisplayNumber,
                         refund.ShiftId,
                         employeeName = employee.Name,
-                        method = payment.Method
-                            .ToString()
-                            .ToUpperInvariant(),
+                        payment.Method,
                         refund.Amount,
                         payment.CurrencyCode,
                         refund.Reason,
                         refund.CreatedAt
                     })
                     .Take(limit)
-                    .ToArrayAsync(ct);
+                    .ToListAsync(ct);
+
+                refunds = refundRows
+                    .Select(row => (object)new
+                    {
+                        row.Id,
+                        row.PaymentId,
+                        row.OrderId,
+                        row.orderNumber,
+                        row.ShiftId,
+                        row.employeeName,
+                        method = row.Method
+                            .ToString()
+                            .ToUpperInvariant(),
+                        row.Amount,
+                        row.CurrencyCode,
+                        row.Reason,
+                        row.CreatedAt
+                    })
+                    .ToArray();
             }
 
             return Results.Ok(new
