@@ -156,14 +156,24 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
 
   const navItems: Array<{ key: PageKey; label: string; icon: string; ready?: boolean }> = [
     { key: 'overview', label: 'Обзор', icon: '⌂' },
+    { key: 'finance', label: 'Кассы и смены', icon: '₼', ready: true },
     { key: 'halls', label: 'Залы и столы', icon: '▦', ready: true },
+    { key: 'kitchen', label: 'Тип места приготовления', icon: '◫', ready: true },
+    { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
     { key: 'menu', label: 'Меню', icon: '≡', ready: true },
     { key: 'modifiers', label: 'Модификаторы', icon: '±', ready: true },
     { key: 'adjustments', label: 'Скидки и надбавки', icon: '%', ready: true },
-    { key: 'kitchen', label: 'Кухня', icon: '◫', ready: true },
     { key: 'employees', label: 'Сотрудники', icon: '◎', ready: true },
-    { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
-    { key: 'finance', label: 'Касса и смены', icon: '₼', ready: true },
+  ];
+
+  const navGroups: Array<{
+    label?: string;
+    items: PageKey[];
+  }> = [
+    { items: ['overview', 'finance'] },
+    { label: 'Настройки ресторана', items: ['halls', 'kitchen', 'devices'] },
+    { label: 'Номенклатура и склад', items: ['menu', 'modifiers'] },
+    { items: ['adjustments', 'employees'] },
   ];
 
   return (
@@ -184,16 +194,26 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
         </div>
 
         <nav>
-          {navItems.map((item) => (
-            <button
-              key={item.key}
-              className={`nav-item ${page === item.key ? 'active' : ''}`}
-              onClick={() => setPage(item.key)}
-            >
-              <span className="nav-icon">{item.icon}</span>
-              <span>{item.label}</span>
-              {!item.ready && <small>скоро</small>}
-            </button>
+          {navGroups.map((group, index) => (
+            <div className="nav-group" key={group.label ?? `group-${index}`}>
+              {group.label && <div className="nav-group-title">{group.label}</div>}
+              <div className="nav-group-items">
+                {group.items.map((key) => {
+                  const item = navItems.find((x) => x.key === key)!;
+                  return (
+                    <button
+                      key={item.key}
+                      className={`nav-item ${page === item.key ? 'active' : ''}`}
+                      onClick={() => setPage(item.key)}
+                    >
+                      <span className="nav-icon">{item.icon}</span>
+                      <span>{item.label}</span>
+                      {!item.ready && <small>скоро</small>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </nav>
 
