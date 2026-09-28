@@ -420,37 +420,6 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.Navigation("PreparationPlaceType");
                 });
 
-            modelBuilder.Entity("RestaurantNode.Api.Domain.KitchenStation", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("PrinterId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("WarehouseId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("RestaurantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PrinterId");
-
-                    b.HasIndex("WarehouseId");
-
-                    b.ToTable("kitchen_stations", (string)null);
-                });
-
             modelBuilder.Entity("RestaurantNode.Api.Domain.KitchenTicket", b =>
                 {
                     b.Property<Guid>("Id")
@@ -460,7 +429,7 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("KitchenStationId")
+                    b.Property<Guid>("DepartmentId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("OrderId")
@@ -477,6 +446,8 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("RestaurantId", "DepartmentId", "CreatedAt");
 
                     b.ToTable("kitchen_tickets", (string)null);
                 });
@@ -509,6 +480,17 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("modifier_groups", (string)null);
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.KitchenTicket", b =>
+                {
+                    b.HasOne("RestaurantNode.Api.Domain.RestaurantDepartment", "Department")
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Department");
                 });
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.ModifierGroupModifier", b =>
@@ -1221,9 +1203,6 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.Property<bool>("IsSellable")
                         .HasColumnType("boolean");
 
-                    b.Property<Guid?>("KitchenStationId")
-                        .HasColumnType("uuid");
-
                     b.Property<decimal>("MinStock")
                         .HasPrecision(18, 3)
                         .HasColumnType("numeric(18,3)");
@@ -1258,8 +1237,6 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CategoryId");
-
-                    b.HasIndex("KitchenStationId");
 
                     b.HasIndex("PreparationPlaceTypeId");
 
@@ -1604,23 +1581,6 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.Navigation("Restaurant");
                 });
 
-            modelBuilder.Entity("RestaurantNode.Api.Domain.KitchenStation", b =>
-                {
-                    b.HasOne("RestaurantNode.Api.Domain.Printer", "Printer")
-                        .WithMany()
-                        .HasForeignKey("PrinterId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("RestaurantNode.Api.Domain.Warehouse", "Warehouse")
-                        .WithMany()
-                        .HasForeignKey("WarehouseId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Printer");
-
-                    b.Navigation("Warehouse");
-                });
-
             modelBuilder.Entity("RestaurantNode.Api.Domain.Order", b =>
                 {
                     b.HasOne("RestaurantNode.Api.Domain.DiningTable", "Table")
@@ -1759,18 +1719,12 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("CategoryId");
 
-                    b.HasOne("RestaurantNode.Api.Domain.KitchenStation", "KitchenStation")
-                        .WithMany()
-                        .HasForeignKey("KitchenStationId");
-
                     b.HasOne("RestaurantNode.Api.Domain.PreparationPlaceType", "PreparationPlaceType")
                         .WithMany()
                         .HasForeignKey("PreparationPlaceTypeId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Category");
-
-                    b.Navigation("KitchenStation");
 
                     b.Navigation("PreparationPlaceType");
                 });
