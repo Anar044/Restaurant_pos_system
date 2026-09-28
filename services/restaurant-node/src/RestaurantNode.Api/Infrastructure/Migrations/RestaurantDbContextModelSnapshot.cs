@@ -98,6 +98,25 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.ToTable("cash_transactions", (string)null);
                 });
 
+            modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
+                {
+                    b.HasOne("RestaurantNode.Api.Domain.StockItem", "StockItem")
+                        .WithMany()
+                        .HasForeignKey("StockItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RestaurantNode.Api.Domain.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("StockItem");
+
+                    b.Navigation("Warehouse");
+                });
+
             modelBuilder.Entity("RestaurantNode.Api.Domain.Category", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1182,6 +1201,116 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.HasIndex("RestaurantId");
 
                     b.ToTable("roles", (string)null);
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.StockItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal>("MinStock")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RestaurantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Sku")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RestaurantId", "Name");
+
+                    b.HasIndex("RestaurantId", "Sku")
+                        .IsUnique();
+
+                    b.ToTable("stock_items", (string)null);
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EmployeeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("QuantityDelta")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<Guid>("RestaurantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("StockItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StockItemId");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.HasIndex("RestaurantId", "WarehouseId", "StockItemId", "CreatedAt");
+
+                    b.ToTable("stock_movements", (string)null);
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.Warehouse", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RestaurantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RestaurantId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("warehouses", (string)null);
                 });
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.Shift", b =>
