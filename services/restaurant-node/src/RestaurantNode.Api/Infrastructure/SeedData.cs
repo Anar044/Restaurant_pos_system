@@ -80,51 +80,39 @@ public static class SeedData
             PinHash = pinHasher.Hash(RestaurantId, pin)
         };
 
-        var hall = new Hall { RestaurantId = RestaurantId, Name = "Main Hall", SortOrder = 1 };
-        var tables = Enumerable.Range(1, 8)
-            .Select(i => new DiningTable { RestaurantId = RestaurantId, HallId = hall.Id, Name = i.ToString(), Seats = 4, SortOrder = i })
-            .ToList();
-
         var group = new RestaurantGroup
         {
             Id = RestaurantId,
             RestaurantId = RestaurantId,
             Name = "Основная группа"
         };
-        var hotType = new PreparationPlaceType { RestaurantId = RestaurantId, Name = "Hot Kitchen" };
-        var barType = new PreparationPlaceType { RestaurantId = RestaurantId, Name = "Bar" };
-        var hallDepartment = new RestaurantDepartment
+
+        var hall = new Hall
         {
             RestaurantId = RestaurantId,
             GroupId = group.Id,
             Name = "Main Hall",
-            HallId = hall.Id
+            SortOrder = 1
         };
+        var tables = Enumerable.Range(1, 8)
+            .Select(i => new DiningTable { RestaurantId = RestaurantId, HallId = hall.Id, Name = i.ToString(), Seats = 4, SortOrder = i })
+            .ToList();
+
+        var hotType = new PreparationPlaceType { RestaurantId = RestaurantId, Name = "Hot Kitchen" };
+        var barType = new PreparationPlaceType { RestaurantId = RestaurantId, Name = "Bar" };
         var hotDepartment = new RestaurantDepartment
         {
             RestaurantId = RestaurantId,
             GroupId = group.Id,
-            Name = "Hot Kitchen"
+            Name = "Hot Kitchen",
+            PreparationPlaceTypeId = hotType.Id
         };
         var barDepartment = new RestaurantDepartment
         {
             RestaurantId = RestaurantId,
             GroupId = group.Id,
-            Name = "Bar"
-        };
-        var hotMap = new GroupPreparationMap
-        {
-            RestaurantId = RestaurantId,
-            GroupId = group.Id,
-            PreparationPlaceTypeId = hotType.Id,
-            DepartmentId = hotDepartment.Id
-        };
-        var barMap = new GroupPreparationMap
-        {
-            RestaurantId = RestaurantId,
-            GroupId = group.Id,
-            PreparationPlaceTypeId = barType.Id,
-            DepartmentId = barDepartment.Id
+            Name = "Bar",
+            PreparationPlaceTypeId = barType.Id
         };
         var foodCategory = new Category { RestaurantId = RestaurantId, Name = "Food", SortOrder = 1 };
         var drinksCategory = new Category { RestaurantId = RestaurantId, Name = "Drinks", SortOrder = 2 };
@@ -143,11 +131,8 @@ public static class SeedData
             group,
             hotType,
             barType,
-            hallDepartment,
             hotDepartment,
             barDepartment,
-            hotMap,
-            barMap,
             foodCategory,
             drinksCategory);
         db.AddRange(tables);
