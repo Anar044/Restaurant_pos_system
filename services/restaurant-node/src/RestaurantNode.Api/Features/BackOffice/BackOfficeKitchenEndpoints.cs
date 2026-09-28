@@ -412,5 +412,13 @@ public static class BackOfficeKitchenEndpoints
     }
 }
 
-public sealed record CreateKitchenStationRequest(string Name, Guid? PrinterId = null);
-public sealed record UpdateKitchenStationRequest(string Name, bool IsActive, Guid? PrinterId = null);
+public sealed record CreateKitchenStationRequest(
+    string Name,
+    Guid? PrinterId = null,
+    Guid? WarehouseId = null);
+
+public sealed record UpdateKitchenStationRequest(
+    string Name,
+    bool IsActive,
+    Guid? PrinterId = null,
+    Guid? WarehouseId = null);
