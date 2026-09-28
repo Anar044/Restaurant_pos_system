@@ -617,6 +617,58 @@ export type UpsertAdjustmentPresetInput = {
   categoryIds: string[];
 };
 
+export type RestaurantGroupOption = {
+  id: string;
+  name: string;
+  isActive: boolean;
+  deviceIds: string[];
+  mainCashRegisterId: string | null;
+};
+
+export type GroupDepartmentOption = {
+  id: string;
+  groupId: string;
+  name: string;
+  hallId: string | null;
+  hallName: string | null;
+  warehouseId: string | null;
+  warehouseName: string | null;
+  printerId: string | null;
+  printerName: string | null;
+  isActive: boolean;
+};
+
+export type GroupCookingMapOption = {
+  id: string;
+  groupId: string;
+  preparationPlaceTypeId: string;
+  departmentId: string;
+  isActive: boolean;
+};
+
+export type GroupDeviceOption = {
+  id: string;
+  name: string;
+  type: string;
+  isActive: boolean;
+};
+
+export type GroupLookupOption = {
+  id: string;
+  name: string;
+};
+
+export type BackOfficeGroups = {
+  groups: RestaurantGroupOption[];
+  departments: GroupDepartmentOption[];
+  types: PreparationPlaceTypeOption[];
+  maps: GroupCookingMapOption[];
+  devices: GroupDeviceOption[];
+  halls: GroupLookupOption[];
+  warehouses: GroupLookupOption[];
+  printers: GroupLookupOption[];
+};
+
 export type PreparationPlaceTypeOption = {
   id: string;
   name: string;
@@ -1213,6 +1265,81 @@ export async function updateAdjustmentPreset(
     },
     token,
   );
+}
+
+export async function getBackOfficeGroups(token: string): Promise<BackOfficeGroups> {
+  return request<BackOfficeGroups>('/api/v1/backoffice/groups', {}, token);
+}
+
+export async function createRestaurantGroup(token: string, name: string): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/groups', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  }, token);
+}
+
+export async function updateRestaurantGroup(
+  token: string,
+  id: string,
+  input: { name: string; isActive: boolean },
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/groups/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function setRestaurantGroupDevices(
+  token: string,
+  groupId: string,
+  input: { deviceIds: string[]; mainCashRegisterId: string | null },
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/groups/${groupId}/devices`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createRestaurantDepartment(
+  token: string,
+  groupId: string,
+  input: { name: string; hallId: string | null; warehouseId: string | null; printerId: string | null; isActive?: boolean },
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/groups/${groupId}/departments`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateRestaurantDepartment(
+  token: string,
+  groupId: string,
+  id: string,
+  input: { name: string; hallId: string | null; warehouseId: string | null; printerId: string | null; isActive: boolean },
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/groups/${groupId}/departments/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createGroupPreparationType(token: string, name: string): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/groups/types', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  }, token);
+}
+
+export async function setGroupCookingMap(
+  token: string,
+  groupId: string,
+  typeId: string,
+  departmentId: string,
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/groups/${groupId}/map/${typeId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ departmentId }),
+  }, token);
 }
 
 export async function getBackOfficeRouting(token: string): Promise<BackOfficeRouting> {
