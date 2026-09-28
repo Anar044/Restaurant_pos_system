@@ -109,6 +109,8 @@ public sealed class KitchenStation : Entity
     public required string Name { get; set; }
     public Guid? PrinterId { get; set; }
     public Printer? Printer { get; set; }
+    public Guid? WarehouseId { get; set; }
+    public Warehouse? Warehouse { get; set; }
     public bool IsActive { get; set; } = true;
 }
 
