@@ -197,8 +197,20 @@ function NomenclatureEditor({
     const min = Number(minStock.replace(',', '.'));
     const numericPrice = Number(price.replace(',', '.'));
     if (!name.trim() || !Number.isFinite(min) || min < 0) return;
-    if (isSellable && (!Number.isFinite(numericPrice) || numericPrice < 0)) {
-      setError('Укажите корректную цену продажи.');
+    if (
+      isSellable &&
+      (
+        !Number.isFinite(numericPrice) ||
+        numericPrice < -1000000 ||
+        numericPrice > 1000000 ||
+        (type !== 'MODIFIER' && numericPrice < 0)
+      )
+    ) {
+      setError(
+        type === 'MODIFIER'
+          ? 'Укажите изменение цены от -1000000 до 1000000.'
+          : 'Укажите корректную неотрицательную цену продажи.',
+      );
       return;
     }
 
@@ -299,15 +311,19 @@ function NomenclatureEditor({
           <div className="nomenclature-sale-tab">
             <label className="toggle-row">
               <span>
-                <strong>Продаётся</strong>
-                <small>Активная позиция будет доступна POS для продажи или выбора как модификатор.</small>
+                <strong>{type === 'MODIFIER' ? 'Доступен на POS' : 'Продаётся'}</strong>
+                <small>
+                  {type === 'MODIFIER'
+                    ? 'Модификатор можно будет включать в группы и выбирать на POS.'
+                    : 'Активная позиция будет доступна POS для продажи.'}
+                </small>
               </span>
               <input type="checkbox" checked={isSellable} onChange={(e) => setIsSellable(e.target.checked)} disabled={!canManage} />
             </label>
 
             <div className="form-grid">
               <label>
-                <span>Цена продажи</span>
+                <span>{type === 'MODIFIER' ? 'Изменение цены' : 'Цена продажи'}</span>
                 <input
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
@@ -317,19 +333,21 @@ function NomenclatureEditor({
                 <small className="field-help">{currencyCode}</small>
               </label>
 
-              <label>
-                <span>Категория продажи</span>
-                <select
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
-                  disabled={!canManage || !isSellable}
-                >
-                  <option value="">Без категории</option>
-                  {categories.filter((x) => x.isActive).map((category) => (
-                    <option key={category.id} value={category.id}>{category.name}</option>
-                  ))}
-                </select>
-              </label>
+              {type !== 'MODIFIER' && (
+                <label>
+                  <span>Категория продажи</span>
+                  <select
+                    value={categoryId}
+                    onChange={(e) => setCategoryId(e.target.value)}
+                    disabled={!canManage || !isSellable}
+                  >
+                    <option value="">Выберите категорию</option>
+                    {categories.filter((x) => x.isActive).map((category) => (
+                      <option key={category.id} value={category.id}>{category.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               <label className="full-field">
                 <span>Тип места приготовления</span>
@@ -344,7 +362,7 @@ function NomenclatureEditor({
                   ))}
                 </select>
                 <small className="field-help">
-                  Принтер настраивается отдельно в разделе «Тип места приготовления».
+                  У типа отдельно настраиваются принтер и склад списания.
                 </small>
               </label>
             </div>
