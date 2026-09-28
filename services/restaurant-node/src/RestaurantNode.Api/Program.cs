@@ -113,6 +113,7 @@ app.MapBackOfficePosPrinterEndpoints();
 app.MapBackOfficeFinanceEndpoints();
 app.MapBackOfficeAdjustmentEndpoints();
 app.MapBackOfficeInventoryEndpoints();
+app.MapBackOfficeNomenclatureEndpoints();
 app.MapHallEndpoints();
 app.MapMenuEndpoints();
 app.MapOrderAdjustmentPresetEndpoints();
