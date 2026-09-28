@@ -467,6 +467,7 @@ export type BackOfficeAdjustmentPreset = {
   scope: 'ORDER' | 'GUEST' | 'BOTH';
   applicationMode: 'MANUAL' | 'AUTOMATIC';
   timeBasis: 'ORDER_OPENED_AT' | 'ITEM_ADDED_AT';
+  targetMode: 'ALL_ITEMS' | 'PRESET_SELECTION' | 'POS_SELECTION';
   value: number;
   priority: number;
   canStack: boolean;
@@ -496,6 +497,7 @@ export type UpsertAdjustmentPresetInput = {
   scope: 'ORDER' | 'GUEST' | 'BOTH';
   applicationMode: 'MANUAL' | 'AUTOMATIC';
   timeBasis: 'ORDER_OPENED_AT' | 'ITEM_ADDED_AT';
+  targetMode: 'ALL_ITEMS' | 'PRESET_SELECTION' | 'POS_SELECTION';
   value: number;
   priority: number;
   canStack: boolean;
