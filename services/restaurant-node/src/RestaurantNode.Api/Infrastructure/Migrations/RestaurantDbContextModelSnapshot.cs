@@ -355,31 +355,6 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.ToTable("kitchen_tickets", (string)null);
                 });
 
-            modelBuilder.Entity("RestaurantNode.Api.Domain.Modifier", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<decimal>("PriceDelta")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("numeric(18,4)");
-
-                    b.Property<Guid>("RestaurantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("modifiers", (string)null);
-                });
-
             modelBuilder.Entity("RestaurantNode.Api.Domain.ModifierGroup", b =>
                 {
                     b.Property<Guid>("Id")
