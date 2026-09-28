@@ -617,6 +617,59 @@ export type UpsertAdjustmentPresetInput = {
   categoryIds: string[];
 };
 
+export type PreparationPlaceTypeOption = {
+  id: string;
+  name: string;
+  isActive: boolean;
+};
+
+export type PreparationPlaceOption = {
+  id: string;
+  name: string;
+  preparationPlaceTypeId: string;
+  preparationPlaceTypeName: string | null;
+  printerId: string | null;
+  printerName: string | null;
+  warehouseId: string | null;
+  warehouseName: string | null;
+  isActive: boolean;
+};
+
+export type SalesPointOption = {
+  id: string;
+  name: string;
+  type: 'HALL' | 'DELIVERY' | 'PICKUP' | 'KIOSK' | 'OTHER';
+  hallId: string | null;
+  hallName: string | null;
+  isActive: boolean;
+};
+
+export type PreparationRouteOption = {
+  id: string;
+  salesPointId: string;
+  salesPointName: string;
+  preparationPlaceTypeId: string;
+  preparationPlaceTypeName: string;
+  preparationPlaceId: string;
+  preparationPlaceName: string;
+  isActive: boolean;
+};
+
+export type RoutingLookupOption = {
+  id: string;
+  name: string;
+};
+
+export type BackOfficeRouting = {
+  types: PreparationPlaceTypeOption[];
+  places: PreparationPlaceOption[];
+  salesPoints: SalesPointOption[];
+  routes: PreparationRouteOption[];
+  printers: RoutingLookupOption[];
+  warehouses: RoutingLookupOption[];
+  halls: RoutingLookupOption[];
+};
+
 export type NomenclatureRecipeLine = {
   id: string;
   ingredientProductId: string;
@@ -1160,6 +1213,91 @@ export async function updateAdjustmentPreset(
     },
     token,
   );
+}
+
+export async function getBackOfficeRouting(token: string): Promise<BackOfficeRouting> {
+  return request<BackOfficeRouting>('/api/v1/backoffice/routing', {}, token);
+}
+
+export async function createPreparationPlaceType(token: string, name: string): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/routing/types', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  }, token);
+}
+
+export async function updatePreparationPlaceType(
+  token: string,
+  id: string,
+  input: { name: string; isActive: boolean },
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/routing/types/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createPreparationPlace(
+  token: string,
+  input: { name: string; preparationPlaceTypeId: string; printerId: string | null; warehouseId: string | null; isActive?: boolean },
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/routing/places', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updatePreparationPlace(
+  token: string,
+  id: string,
+  input: { name: string; preparationPlaceTypeId: string; printerId: string | null; warehouseId: string | null; isActive: boolean },
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/routing/places/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createSalesPoint(
+  token: string,
+  input: { name: string; type: SalesPointOption['type']; hallId: string | null; isActive?: boolean },
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/routing/sales-points', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateSalesPoint(
+  token: string,
+  id: string,
+  input: { name: string; type: SalesPointOption['type']; hallId: string | null; isActive: boolean },
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/routing/sales-points/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createPreparationRoute(
+  token: string,
+  input: { salesPointId: string; preparationPlaceTypeId: string; preparationPlaceId: string; isActive?: boolean },
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/routing/routes', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updatePreparationRoute(
+  token: string,
+  id: string,
+  input: { salesPointId: string; preparationPlaceTypeId: string; preparationPlaceId: string; isActive: boolean },
+): Promise<{ id: string }> {
+  return request(`/api/v1/backoffice/routing/routes/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
 }
 
 export async function getBackOfficeNomenclature(token: string): Promise<BackOfficeNomenclature> {
