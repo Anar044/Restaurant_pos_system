@@ -65,8 +65,6 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (session: AuthSession) => voi
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [restaurantSettingsOpen, setRestaurantSettingsOpen] = useState(true);
-  const [catalogOpen, setCatalogOpen] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -134,6 +132,8 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
   const [halls, setHalls] = useState<Hall[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [restaurantSettingsOpen, setRestaurantSettingsOpen] = useState(true);
+  const [catalogOpen, setCatalogOpen] = useState(false);
 
   async function refresh() {
     setLoading(true);
