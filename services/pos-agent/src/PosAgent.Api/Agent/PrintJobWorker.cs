@@ -11,7 +11,10 @@ public sealed class PrintJobWorker(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var configuredSeconds = configuration.GetValue<int?>("Agent:KitchenPrintIntervalSeconds") ?? 2;
+        var configuredSeconds =
+            configuration.GetValue<int?>("Agent:PrintJobIntervalSeconds") ??
+            configuration.GetValue<int?>("Agent:KitchenPrintIntervalSeconds") ??
+            2;
         var interval = TimeSpan.FromSeconds(Math.Clamp(configuredSeconds, 1, 30));
         var configurationWarningLogged = false;
 
@@ -166,7 +169,7 @@ public sealed class PrintJobWorker(
                 {
                     logger.LogWarning(
                         ex,
-                        "Kitchen print queue is temporarily unavailable. Pending jobs remain on Restaurant Node.");
+                        "Print queue is temporarily unavailable. Pending jobs remain on Restaurant Node.");
                 }
             }
 
