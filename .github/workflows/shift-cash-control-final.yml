@@ -1,0 +1,104 @@
+name: Shift cash control final check
+
+on:
+  push:
+    branches:
+      - feature/shifts-cash-control-v1
+
+permissions:
+  contents: write
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: restaurant_local
+          POSTGRES_USER: restaurant
+          POSTGRES_PASSWORD: restaurant_dev_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U restaurant -d restaurant_local"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet tool restore
+      - run: dotnet restore services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj
+      - name: Generate migration
+        shell: bash
+        run: |
+          if ! grep -R -q 'class AddShiftCashReconciliation' services/restaurant-node/src/RestaurantNode.Api/Infrastructure/Migrations/*.cs; then
+            dotnet ef migrations add AddShiftCashReconciliation \
+              --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+              --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+              --output-dir Infrastructure/Migrations
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add services/restaurant-node/src/RestaurantNode.Api/Infrastructure/Migrations
+            git commit -m "Generate shift cash reconciliation migration"
+            git push
+          fi
+      - run: dotnet build services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj --no-restore
+      - name: Verify EF model
+        run: |
+          dotnet ef migrations has-pending-model-changes \
+            --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
+            --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj
+      - run: dotnet test tests/RestaurantNode.Pricing.Tests/RestaurantNode.Pricing.Tests.csproj
+      - name: Runtime cash reconciliation
+        shell: bash
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+        run: |
+          cd services/restaurant-node/src/RestaurantNode.Api
+          dotnet run --no-build --no-launch-profile > /tmp/node.log 2>&1 &
+          PID=$!
+          cd ../../../..
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8180/health >/dev/null; then
+              python3 scripts/ci-shift-cash-control-smoke.py
+              kill "$PID" || true
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/node.log
+          exit 1
+
+  backoffice:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/backoffice/package-lock.json
+      - working-directory: apps/backoffice
+        run: npm ci
+      - working-directory: apps/backoffice
+        run: npm run build
+
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - working-directory: apps/pos-template
+        run: flutter pub get
+      - working-directory: apps/pos-template
+        run: dart format lib
+      - working-directory: apps/pos-template
+        run: flutter analyze --no-fatal-infos
