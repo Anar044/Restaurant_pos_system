@@ -416,6 +416,7 @@ class PosApiClient {
     required String presetId,
     int? guestNumber,
     String? comment,
+    List<String> orderItemIds = const [],
   }) async {
     final response = await _http.put(
       _uri('/api/v1/orders/$orderId/discount'),
@@ -425,6 +426,7 @@ class PosApiClient {
         if (guestNumber != null) 'guestNumber': guestNumber,
         if (comment != null && comment.trim().isNotEmpty)
           'comment': comment.trim(),
+        if (orderItemIds.isNotEmpty) 'orderItemIds': orderItemIds,
       }),
     );
     return OrderDto.fromJson(_decode(response));
@@ -446,6 +448,7 @@ class PosApiClient {
     required String orderId,
     required String presetId,
     String? comment,
+    List<String> orderItemIds = const [],
   }) async {
     final response = await _http.put(
       _uri('/api/v1/orders/$orderId/service-charge'),
@@ -454,6 +457,7 @@ class PosApiClient {
         'presetId': presetId,
         if (comment != null && comment.trim().isNotEmpty)
           'comment': comment.trim(),
+        if (orderItemIds.isNotEmpty) 'orderItemIds': orderItemIds,
       }),
     );
     return OrderDto.fromJson(_decode(response));
@@ -1177,6 +1181,7 @@ class AdjustmentPresetDto {
     required this.scope,
     required this.applicationMode,
     required this.timeBasis,
+    required this.targetMode,
     required this.value,
     required this.priority,
     required this.canStack,
@@ -1195,6 +1200,7 @@ class AdjustmentPresetDto {
   final String scope;
   final String applicationMode;
   final String timeBasis;
+  final String targetMode;
   final double value;
   final int priority;
   final bool canStack;
@@ -1208,6 +1214,7 @@ class AdjustmentPresetDto {
   bool get isDiscount => type == 'DISCOUNT';
   bool get isServiceCharge => type == 'SERVICE_CHARGE';
   bool get isAutomatic => applicationMode == 'AUTOMATIC';
+  bool get requiresPosItemSelection => targetMode == 'POS_SELECTION';
   bool get allowsOrder => scope == 'ORDER' || scope == 'BOTH';
   bool get allowsGuest => scope == 'GUEST' || scope == 'BOTH';
 
@@ -1224,6 +1231,7 @@ class AdjustmentPresetDto {
         scope: json['scope'] as String,
         applicationMode: json['applicationMode'] as String? ?? 'MANUAL',
         timeBasis: json['timeBasis'] as String? ?? 'ITEM_ADDED_AT',
+        targetMode: json['targetMode'] as String? ?? 'ALL_ITEMS',
         value: (json['value'] as num?)?.toDouble() ?? 0,
         priority: (json['priority'] as num?)?.toInt() ?? 100,
         canStack: json['canStack'] as bool? ?? true,
@@ -1249,6 +1257,8 @@ class OrderAdjustmentDto {
     required this.calculatedAmount,
     required this.applicationMode,
     required this.timeBasis,
+    required this.targetMode,
+    required this.orderItemIds,
     required this.priority,
     required this.canStack,
     required this.appliedByEmployeeId,
@@ -1270,6 +1280,8 @@ class OrderAdjustmentDto {
   final double calculatedAmount;
   final String applicationMode;
   final String timeBasis;
+  final String targetMode;
+  final List<String> orderItemIds;
   final int priority;
   final bool canStack;
   final String? reason;
@@ -1280,6 +1292,7 @@ class OrderAdjustmentDto {
   bool get isDiscount => type == 'DISCOUNT';
   bool get isServiceCharge => type == 'SERVICE_CHARGE';
   bool get isAutomatic => applicationMode == 'AUTOMATIC';
+  bool get usesSelectedOrderItems => targetMode == 'POS_SELECTION';
 
   factory OrderAdjustmentDto.fromJson(Map<String, dynamic> json) =>
       OrderAdjustmentDto(
@@ -1295,6 +1308,11 @@ class OrderAdjustmentDto {
         applicationMode:
             json['applicationMode'] as String? ?? 'MANUAL',
         timeBasis: json['timeBasis'] as String? ?? 'ITEM_ADDED_AT',
+        targetMode: json['targetMode'] as String? ?? 'ALL_ITEMS',
+        orderItemIds:
+            ((json['orderItemIdsSnapshot'] as List<dynamic>?) ?? const [])
+                .map((value) => value.toString())
+                .toList(),
         priority: (json['priority'] as num?)?.toInt() ?? 100,
         canStack: json['canStack'] as bool? ?? true,
         reason: json['reason'] as String?,
