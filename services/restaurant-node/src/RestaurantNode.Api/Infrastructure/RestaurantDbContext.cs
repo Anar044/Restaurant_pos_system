@@ -152,6 +152,8 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .HasFilter("\"Status\" = 'Open'")
             .IsUnique();
         modelBuilder.Entity<Order>().HasIndex(x => new { x.RestaurantId, x.Status, x.CreatedAt });
+        modelBuilder.Entity<Order>().HasIndex(x => new { x.RestaurantId, x.OriginDeviceId, x.CreatedAt });
+        modelBuilder.Entity<Order>().HasIndex(x => new { x.OpenedShiftId, x.Status });
         modelBuilder.Entity<OrderItem>().HasIndex(x => new { x.OrderId, x.GuestNumber });
         modelBuilder.Entity<OrderAdjustment>().HasIndex(x => new { x.OrderId, x.Type, x.GuestNumber });
         modelBuilder.Entity<OrderAdjustmentPreset>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
