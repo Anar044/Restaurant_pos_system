@@ -20,11 +20,7 @@ public static class MenuEndpoints
 
             var categories = await db.Categories
                 .AsNoTracking()
-                .Where(x =>
-                    x.RestaurantId == restaurantId &&
-                    x.IsActive &&
-                    x.IsSellable &&
-                    x.Type != "MODIFIER")
+                .Where(x => x.RestaurantId == restaurantId && x.IsActive)
                 .OrderBy(x => x.SortOrder)
                 .ThenBy(x => x.Name)
                 .Select(x => new
@@ -37,7 +33,12 @@ public static class MenuEndpoints
 
             var products = await db.Products
                 .AsNoTracking()
-                .Where(x => x.RestaurantId == restaurantId && x.IsActive)
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive &&
+                    x.IsSellable &&
+                    x.Type != "MODIFIER" &&
+                    x.CategoryId != null)
                 .OrderBy(x => x.SortOrder)
                 .ThenBy(x => x.Name)
                 .Select(x => new
