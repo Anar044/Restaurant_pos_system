@@ -341,6 +341,8 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
 
                     b.HasIndex("PrecheckPrinterId");
 
+                    b.HasIndex("RestaurantId");
+
                     b.HasIndex("GroupId", "Name")
                         .IsUnique();
 
