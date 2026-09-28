@@ -106,6 +106,8 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Modifier>().Property(x => x.PriceDelta).HasPrecision(18, 4);
         modelBuilder.Entity<Shift>().Property(x => x.OpeningCash).HasPrecision(18, 4);
         modelBuilder.Entity<Shift>().Property(x => x.ClosingCash).HasPrecision(18, 4);
+        modelBuilder.Entity<Shift>().Property(x => x.ExpectedCashAtClose).HasPrecision(18, 4);
+        modelBuilder.Entity<Shift>().Property(x => x.CashDifference).HasPrecision(18, 4);
         modelBuilder.Entity<Order>().Property(x => x.Subtotal).HasPrecision(18, 4);
         modelBuilder.Entity<Order>().Property(x => x.DiscountTotal).HasPrecision(18, 4);
         modelBuilder.Entity<Order>().Property(x => x.SurchargeTotal).HasPrecision(18, 4);
@@ -144,6 +146,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Category>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<Product>().HasIndex(x => new { x.RestaurantId, x.Name });
         modelBuilder.Entity<ProductPrice>().HasIndex(x => new { x.ProductId, x.ValidFrom });
+        modelBuilder.Entity<Shift>().HasIndex(x => new { x.RestaurantId, x.DeviceId, x.Status, x.OpenedAt });
         modelBuilder.Entity<Order>().HasIndex(x => new { x.RestaurantId, x.Status, x.CreatedAt });
         modelBuilder.Entity<OrderItem>().HasIndex(x => new { x.OrderId, x.GuestNumber });
         modelBuilder.Entity<OrderAdjustment>().HasIndex(x => new { x.OrderId, x.Type, x.GuestNumber });
