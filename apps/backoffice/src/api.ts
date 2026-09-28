@@ -516,6 +516,7 @@ export type GroupHallOption = {
   precheckPrinterId: string | null;
   precheckPrinterName: string | null;
   tableCount: number;
+  tables: DiningTable[];
   isActive: boolean;
 };
 
