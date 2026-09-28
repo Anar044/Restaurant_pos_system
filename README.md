@@ -39,6 +39,10 @@ A clean-room restaurant POS platform started from scratch. It does **not** depen
 - Applied-rule snapshots freeze value, targets, schedule and priority for existing orders
 - Order/guest discounts and service charges with audit trail and correct guest-payment allocation
 - Receipt/precheck printing with subtotal, discount, service and final total
+- Shift cash control: opening float, cash deposits/withdrawals, live X-report and final Z-report
+- BackOffice cash reconciliation with expected cash, counted cash and stored variance
+- Non-zero closing variance requires a mandatory reason on POS and BackOffice
+- Shift reports include cash/card totals, refunds, cash movements and responsible employees
 
 ## Development seed
 
