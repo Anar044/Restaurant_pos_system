@@ -53,9 +53,9 @@ export function KitchenPage({ token }: { token: string }) {
     <section>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">МАРШРУТИЗАЦИЯ БЛЮД</div>
-          <h1>Кухня</h1>
-          <p>Создавайте кухонные станции и контролируйте, куда отправляется каждое блюдо.</p>
+          <div className="eyebrow">НАСТРОЙКИ РЕСТОРАНА</div>
+          <h1>Тип места приготовления</h1>
+          <p>Создавайте места приготовления и контролируйте, куда отправляется каждое блюдо.</p>
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>Обновить</button>
