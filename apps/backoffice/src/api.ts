@@ -87,7 +87,7 @@ export type KitchenStation = {
 export type MenuProduct = {
   id: string;
   categoryId: string;
-  preparationPlaceTypeId: string | null;
+  kitchenStationId: string | null;
   kitchenStationName: string | null;
   name: string;
   sku: string | null;
