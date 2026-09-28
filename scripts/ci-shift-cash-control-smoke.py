@@ -5,7 +5,6 @@ from decimal import Decimal
 
 BASE = "http://127.0.0.1:8180"
 RESTAURANT_ID = "11111111-1111-1111-1111-111111111111"
-DEVICE_ID = "01a0b072-5a20-7a10-add0-4f890c477588"
 
 
 def call(method, path, token=None, body=None, expected=None):
@@ -38,11 +37,36 @@ auth = call(
 )
 token = auth["token"]
 
+equipment = call(
+    "GET",
+    "/api/v1/backoffice/devices",
+    token=token,
+)
+pos_devices = [
+    device for device in equipment["devices"]
+    if device["type"].upper() == "POS" and device["isActive"]
+]
+
+if pos_devices:
+    device_id = pos_devices[0]["id"]
+else:
+    created_device = call(
+        "POST",
+        "/api/v1/backoffice/devices/terminals",
+        token=token,
+        body={
+            "name": "CI Shift POS",
+            "type": "POS",
+            "receiptPrinterId": None,
+        },
+    )
+    device_id = created_device["id"]
+
 shift = call(
     "POST",
     "/api/v1/shifts/open",
     token=token,
-    body={"deviceId": DEVICE_ID, "openingCash": 100},
+    body={"deviceId": device_id, "openingCash": 100},
 )
 shift_id = shift["id"]
 
