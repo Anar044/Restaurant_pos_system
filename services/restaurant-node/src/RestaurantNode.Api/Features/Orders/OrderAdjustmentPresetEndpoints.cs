@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using RestaurantNode.Api.Domain;
 using RestaurantNode.Api.Infrastructure;
 using RestaurantNode.Api.Security;
 
@@ -39,9 +40,12 @@ public static class OrderAdjustmentPresetEndpoints
 
             var presets = await db.OrderAdjustmentPresets
                 .AsNoTracking()
+                .Include(x => x.Products)
+                .Include(x => x.Categories)
                 .Where(x =>
                     x.RestaurantId == restaurantId &&
                     x.IsActive &&
+                    x.ApplicationMode == OrderAdjustmentApplicationMode.Manual &&
                     x.AllowedRoles.Any(
                         role => role.RoleId == roleId.Value))
                 .OrderBy(x => x.Type)
@@ -57,7 +61,16 @@ public static class OrderAdjustmentPresetEndpoints
                     type = ToEnumText(x.Type.ToString()),
                     mode = ToEnumText(x.Mode.ToString()),
                     scope = ToEnumText(x.Scope.ToString()),
+                    applicationMode = ToEnumText(x.ApplicationMode.ToString()),
+                    timeBasis = ToEnumText(x.TimeBasis.ToString()),
                     x.Value,
+                    x.Priority,
+                    x.CanStack,
+                    x.WeekdayMask,
+                    x.StartMinute,
+                    x.EndMinute,
+                    productIds = x.Products.Select(p => p.ProductId).ToArray(),
+                    categoryIds = x.Categories.Select(category => category.CategoryId).ToArray(),
                     x.RequireComment
                 })
             });
