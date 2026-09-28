@@ -175,12 +175,21 @@ public sealed class OrderAdjustmentPreset : Entity
     public OrderAdjustmentType Type { get; set; }
     public OrderAdjustmentMode Mode { get; set; }
     public OrderAdjustmentScope Scope { get; set; } = OrderAdjustmentScope.Order;
+    public OrderAdjustmentApplicationMode ApplicationMode { get; set; } = OrderAdjustmentApplicationMode.Manual;
+    public OrderAdjustmentTimeBasis TimeBasis { get; set; } = OrderAdjustmentTimeBasis.ItemAddedAt;
     public decimal Value { get; set; }
+    public int Priority { get; set; } = 100;
+    public bool CanStack { get; set; } = true;
+    public int WeekdayMask { get; set; } = 127;
+    public int? StartMinute { get; set; }
+    public int? EndMinute { get; set; }
     public bool RequireComment { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     public List<OrderAdjustmentPresetRole> AllowedRoles { get; set; } = [];
+    public List<OrderAdjustmentPresetProduct> Products { get; set; } = [];
+    public List<OrderAdjustmentPresetCategory> Categories { get; set; } = [];
 }
 
 public sealed class OrderAdjustmentPresetRole
@@ -189,6 +198,22 @@ public sealed class OrderAdjustmentPresetRole
     public OrderAdjustmentPreset? Preset { get; set; }
     public Guid RoleId { get; set; }
     public Role? Role { get; set; }
+}
+
+public sealed class OrderAdjustmentPresetProduct
+{
+    public Guid PresetId { get; set; }
+    public OrderAdjustmentPreset? Preset { get; set; }
+    public Guid ProductId { get; set; }
+    public Product? Product { get; set; }
+}
+
+public sealed class OrderAdjustmentPresetCategory
+{
+    public Guid PresetId { get; set; }
+    public OrderAdjustmentPreset? Preset { get; set; }
+    public Guid CategoryId { get; set; }
+    public Category? Category { get; set; }
 }
 
 public sealed class Shift : Entity
@@ -232,6 +257,7 @@ public sealed class OrderItem : Entity
     public Guid OrderId { get; set; }
     public Order? Order { get; set; }
     public Guid ProductId { get; set; }
+    public Guid CategoryIdSnapshot { get; set; }
     public string ProductNameSnapshot { get; set; } = string.Empty;
     public int GuestNumber { get; set; } = 1;
     public decimal Quantity { get; set; } = 1m;
@@ -265,6 +291,16 @@ public sealed class OrderAdjustment : Entity
     public OrderAdjustmentMode Mode { get; set; }
     public Guid? PresetId { get; set; }
     public string? PresetNameSnapshot { get; set; }
+    public OrderAdjustmentApplicationMode ApplicationModeSnapshot { get; set; } = OrderAdjustmentApplicationMode.Manual;
+    public OrderAdjustmentTimeBasis TimeBasisSnapshot { get; set; } = OrderAdjustmentTimeBasis.ItemAddedAt;
+    public int PrioritySnapshot { get; set; } = 100;
+    public bool CanStackSnapshot { get; set; } = true;
+    public int WeekdayMaskSnapshot { get; set; } = 127;
+    public int? StartMinuteSnapshot { get; set; }
+    public int? EndMinuteSnapshot { get; set; }
+    public string TimeZoneIdSnapshot { get; set; } = "Asia/Baku";
+    public Guid[] ProductIdsSnapshot { get; set; } = [];
+    public Guid[] CategoryIdsSnapshot { get; set; } = [];
     public int? GuestNumber { get; set; }
     public decimal Value { get; set; }
     public decimal CalculatedAmount { get; set; }
