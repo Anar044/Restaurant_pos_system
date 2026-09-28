@@ -380,6 +380,25 @@ export type BackOfficePosPrinters = {
   networkPrinters: PosNetworkPrinter[];
 };
 
+export type FinanceCashRegister = {
+  id: string;
+  name: string;
+  isActive: boolean;
+};
+
+export type FinanceSummary = {
+  completedOrdersAmount: number;
+  completedOrdersCount: number;
+  openOrdersAmount: number;
+  openOrdersCount: number;
+  expectedRevenue: number;
+  refundAmount: number;
+  netExpectedRevenue: number;
+  openShiftsCount: number;
+  closedShiftsCount: number;
+  cashDifference: number;
+};
+
 export type FinanceShift = {
   id: string;
   deviceId: string;
@@ -391,20 +410,17 @@ export type FinanceShift = {
   closedByEmployeeName: string | null;
   openingCash: number;
   closingCash: number | null;
-  expectedCashAtClose: number | null;
+  expectedCashAtClose: number;
   cashDifference: number | null;
   closingNote: string | null;
   openedAt: string;
   closedAt: string | null;
-};
-
-export type FinanceOpenShift = {
-  id: string;
-  deviceId: string;
-  deviceName: string | null;
-  openedAt: string;
-  expectedCash: number;
+  ordersCount: number;
+  grossSales: number;
+  refunds: number;
+  netSales: number;
   cashSales: number;
+  cashRefunds: number;
   deposits: number;
   withdrawals: number;
 };
@@ -454,6 +470,32 @@ export type FinanceShiftReport = {
   cashTransactions: FinanceCashTransaction[];
 };
 
+export type FinanceOrderPaymentMethod = {
+  method: string;
+  amount: number;
+};
+
+export type FinanceShiftOrder = {
+  id: string;
+  orderNumber: number;
+  status: string;
+  total: number;
+  paidTotal: number;
+  remaining: number;
+  paidInShift: number;
+  refundedInShift: number;
+  netPaidInShift: number;
+  guestCount: number;
+  tableName: string | null;
+  hallName: string | null;
+  employeeName: string | null;
+  openedInThisShift: boolean;
+  paymentMethods: FinanceOrderPaymentMethod[];
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+};
+
 export type FinancePayment = {
   id: string;
   orderId: string;
@@ -490,9 +532,15 @@ export type FinanceRefund = {
 };
 
 export type BackOfficeFinance = {
+  period: {
+    from: string;
+    to: string;
+  };
+  cashRegisters: FinanceCashRegister[];
+  summary: FinanceSummary;
   shifts: FinanceShift[];
-  openShifts: FinanceOpenShift[];
   selectedShiftReport: FinanceShiftReport | null;
+  selectedShiftOrders: FinanceShiftOrder[];
   payments: FinancePayment[];
   refunds: FinanceRefund[];
 };
@@ -1002,10 +1050,29 @@ export async function updateAdjustmentPreset(
 
 export async function getBackOfficeFinance(
   token: string,
-  shiftId?: string | null,
+  options: {
+    shiftId?: string | null;
+    from: string;
+    to: string;
+    deviceIds?: string[];
+  },
 ): Promise<BackOfficeFinance> {
-  const query = shiftId ? `?shiftId=${encodeURIComponent(shiftId)}&take=200` : '?take=200';
-  return request<BackOfficeFinance>(`/api/v1/backoffice/finance${query}`, {}, token);
+  const query = new URLSearchParams({
+    from: options.from,
+    to: options.to,
+    take: '300',
+  });
+
+  if (options.shiftId) query.set('shiftId', options.shiftId);
+  if ((options.deviceIds?.length ?? 0) > 0) {
+    query.set('deviceIds', options.deviceIds!.join(','));
+  }
+
+  return request<BackOfficeFinance>(
+    `/api/v1/backoffice/finance?${query.toString()}`,
+    {},
+    token,
+  );
 }
 
 export async function addShiftCashTransaction(
