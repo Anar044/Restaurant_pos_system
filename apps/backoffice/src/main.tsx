@@ -163,7 +163,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'kitchen', label: 'Кухня', icon: '◫', ready: true },
     { key: 'employees', label: 'Сотрудники', icon: '◎', ready: true },
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
-    { key: 'finance', label: 'Оплаты и смены', icon: '₼', ready: true },
+    { key: 'finance', label: 'Касса и смены', icon: '₼', ready: true },
   ];
 
   return (

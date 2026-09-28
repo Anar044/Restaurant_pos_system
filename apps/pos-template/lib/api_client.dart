@@ -244,13 +244,18 @@ class PosApiClient {
         .toList();
   }
 
-  Future<OrderDto> createOrder({int guestCount = 1, String? tableId}) async {
+  Future<OrderDto> createOrder({
+    int guestCount = 1,
+    String? tableId,
+    String? shiftId,
+  }) async {
     final response = await _http.post(
       _uri('/api/v1/orders'),
       headers: _headers,
       body: jsonEncode({
         'guestCount': guestCount,
         if (tableId != null) 'tableId': tableId,
+        if (shiftId != null) 'shiftId': shiftId,
       }),
     );
     return OrderDto.fromJson(_decode(response));

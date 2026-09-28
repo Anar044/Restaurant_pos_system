@@ -240,6 +240,8 @@ public sealed class Order : Entity
     public Guid? TableId { get; set; }
     public DiningTable? Table { get; set; }
     public Guid CreatedByEmployeeId { get; set; }
+    public Guid? OriginDeviceId { get; set; }
+    public Guid? OpenedShiftId { get; set; }
     public OrderStatus Status { get; set; } = OrderStatus.Open;
     public int GuestCount { get; set; } = 1;
     public decimal Subtotal { get; set; }
