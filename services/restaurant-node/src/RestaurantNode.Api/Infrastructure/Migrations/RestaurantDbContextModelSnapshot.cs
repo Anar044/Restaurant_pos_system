@@ -310,12 +310,17 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.Property<Guid?>("PrinterId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("WarehouseId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("RestaurantId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
                     b.HasIndex("PrinterId");
+
+                    b.HasIndex("WarehouseId");
 
                     b.ToTable("kitchen_stations", (string)null);
                 });
@@ -1476,7 +1481,14 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                         .HasForeignKey("PrinterId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("RestaurantNode.Api.Domain.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Printer");
+
+                    b.Navigation("Warehouse");
                 });
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.Order", b =>
