@@ -326,7 +326,7 @@ public static class OrderEndpoints
                 OrderId = order.Id,
                 Order = order,
                 ProductId = product.Id,
-                CategoryIdSnapshot = product.CategoryId,
+                CategoryIdSnapshot = product.CategoryId ?? Guid.Empty,
                 ProductNameSnapshot = product.Name,
                 GuestNumber = request.GuestNumber,
                 Quantity = request.Quantity,
