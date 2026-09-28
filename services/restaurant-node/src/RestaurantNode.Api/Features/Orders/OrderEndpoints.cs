@@ -1946,7 +1946,19 @@ public static class OrderEndpoints
                     restaurantId,
                     ct);
 
-            if (!PricingRuleEngine.PresetHasEligibleItems(
+            var selection = ValidateSelectedAdjustmentItems(
+                preset,
+                order,
+                timeZoneId,
+                request.GuestNumber,
+                request.OrderItemIds);
+
+            if (selection.Error is not null)
+                return selection.Error;
+
+            if (preset.TargetMode !=
+                    OrderAdjustmentTargetMode.PosSelection &&
+                !PricingRuleEngine.PresetHasEligibleItems(
                     preset,
                     order,
                     timeZoneId,
@@ -1981,7 +1993,8 @@ public static class OrderEndpoints
             PricingRuleEngine.CopyPresetSnapshot(
                 adjustment,
                 preset,
-                timeZoneId);
+                timeZoneId,
+                selection.OrderItemIds);
             adjustment.Reason = applicationComment;
             adjustment.AppliedByEmployeeId = employeeId;
             adjustment.UpdatedAt = now;
@@ -2241,7 +2254,19 @@ public static class OrderEndpoints
                     restaurantId,
                     ct);
 
-            if (!PricingRuleEngine.PresetHasEligibleItems(
+            var selection = ValidateSelectedAdjustmentItems(
+                preset,
+                order,
+                timeZoneId,
+                null,
+                request.OrderItemIds);
+
+            if (selection.Error is not null)
+                return selection.Error;
+
+            if (preset.TargetMode !=
+                    OrderAdjustmentTargetMode.PosSelection &&
+                !PricingRuleEngine.PresetHasEligibleItems(
                     preset,
                     order,
                     timeZoneId))
@@ -2275,7 +2300,8 @@ public static class OrderEndpoints
             PricingRuleEngine.CopyPresetSnapshot(
                 adjustment,
                 preset,
-                timeZoneId);
+                timeZoneId,
+                selection.OrderItemIds);
             adjustment.Reason = applicationComment;
             adjustment.AppliedByEmployeeId = employeeId;
             adjustment.UpdatedAt = now;
@@ -2511,6 +2537,98 @@ public static class OrderEndpoints
                 ct);
     }
 
+    private static SelectedAdjustmentItemsResult
+        ValidateSelectedAdjustmentItems(
+            OrderAdjustmentPreset preset,
+            Order order,
+            string timeZoneId,
+            int? guestNumber,
+            Guid[]? requestedItemIds)
+    {
+        var requested = (requestedItemIds ?? [])
+            .Where(x => x != Guid.Empty)
+            .Distinct()
+            .ToArray();
+
+        if (preset.TargetMode != OrderAdjustmentTargetMode.PosSelection)
+        {
+            if (requested.Length > 0)
+            {
+                return SelectedAdjustmentItemsResult.Fail(
+                    Results.BadRequest(new
+                    {
+                        message =
+                            "Выбор конкретных позиций разрешён только для правила с режимом «Кассир выбирает позиции на POS»."
+                    }));
+            }
+
+            return new SelectedAdjustmentItemsResult([], null);
+        }
+
+        if (requested.Length == 0)
+        {
+            return SelectedAdjustmentItemsResult.Fail(
+                Results.BadRequest(new
+                {
+                    code = "ORDER_ITEMS_REQUIRED",
+                    message = "Выберите хотя бы одну позицию заказа."
+                }));
+        }
+
+        var itemsById = order.Items.ToDictionary(x => x.Id);
+        foreach (var itemId in requested)
+        {
+            if (!itemsById.TryGetValue(itemId, out var item) ||
+                item.Status == OrderItemStatus.Voided)
+            {
+                return SelectedAdjustmentItemsResult.Fail(
+                    Results.BadRequest(new
+                    {
+                        message =
+                            "Одна или несколько выбранных позиций больше недоступны."
+                    }));
+            }
+
+            if (guestNumber.HasValue &&
+                item.GuestNumber != guestNumber.Value)
+            {
+                return SelectedAdjustmentItemsResult.Fail(
+                    Results.BadRequest(new
+                    {
+                        message =
+                            "Для скидки гостю можно выбирать только позиции этого гостя."
+                    }));
+            }
+
+            if (!PricingRuleEngine.IsPresetItemEligible(
+                    preset,
+                    order,
+                    item,
+                    timeZoneId,
+                    guestNumber))
+            {
+                return SelectedAdjustmentItemsResult.Fail(
+                    Results.Conflict(new
+                    {
+                        code = "ADJUSTMENT_NOT_APPLICABLE",
+                        message =
+                            $"Правило сейчас не может быть применено к позиции «{item.ProductNameSnapshot}»."
+                    }));
+            }
+        }
+
+        return new SelectedAdjustmentItemsResult(requested, null);
+    }
+
+    private sealed record SelectedAdjustmentItemsResult(
+        Guid[] OrderItemIds,
+        IResult? Error)
+    {
+        public static SelectedAdjustmentItemsResult Fail(
+            IResult error) =>
+            new([], error);
+    }
+
     private static void Recalculate(Order order) =>
         OrderPricingCalculator.Recalculate(order);
 
@@ -2588,6 +2706,7 @@ public static class OrderEndpoints
                 x.PresetNameSnapshot,
                 applicationMode = EnumText(x.ApplicationModeSnapshot),
                 timeBasis = EnumText(x.TimeBasisSnapshot),
+                targetMode = EnumText(x.TargetModeSnapshot),
                 priority = x.PrioritySnapshot,
                 canStack = x.CanStackSnapshot,
                 weekdayMask = x.WeekdayMaskSnapshot,
@@ -2595,6 +2714,7 @@ public static class OrderEndpoints
                 x.EndMinuteSnapshot,
                 x.ProductIdsSnapshot,
                 x.CategoryIdsSnapshot,
+                x.OrderItemIdsSnapshot,
                 x.GuestNumber,
                 x.Value,
                 x.CalculatedAmount,
@@ -2701,7 +2821,9 @@ public sealed record VoidOrderItemRequest(string? Reason);
 public sealed record ApplyOrderDiscountRequest(
     Guid PresetId,
     int? GuestNumber = null,
-    string? Comment = null);
+    string? Comment = null,
+    Guid[]? OrderItemIds = null);
 public sealed record ApplyServiceChargeRequest(
     Guid PresetId,
-    string? Comment = null);
+    string? Comment = null,
+    Guid[]? OrderItemIds = null);
