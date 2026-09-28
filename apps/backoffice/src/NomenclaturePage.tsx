@@ -132,7 +132,7 @@ export function NomenclaturePage({
           editor={editor}
           allItems={data.items}
           categories={data.categories}
-          preparationPlaces={data.preparationPlaces}
+          preparationPlaceTypes={data.preparationPlaceTypes}
           currencyCode={data.currencyCode}
           token={token}
           canManage={canManage}
@@ -151,7 +151,7 @@ function NomenclatureEditor({
   editor,
   allItems,
   categories,
-  preparationPlaces,
+  preparationPlaceTypes,
   currencyCode,
   token,
   canManage,
@@ -161,7 +161,7 @@ function NomenclatureEditor({
   editor: Exclude<EditorState, null>;
   allItems: NomenclatureItem[];
   categories: BackOfficeNomenclature['categories'];
-  preparationPlaces: BackOfficeNomenclature['preparationPlaces'];
+  preparationPlaceTypes: BackOfficeNomenclature['preparationPlaceTypes'];
   currencyCode: string;
   token: string;
   canManage: boolean;
@@ -180,7 +180,7 @@ function NomenclatureEditor({
   const [isSellable, setIsSellable] = useState(item?.isSellable ?? false);
   const [price, setPrice] = useState(item?.currentPrice?.toString() ?? '0');
   const [categoryId, setCategoryId] = useState(item?.categoryId ?? '');
-  const [kitchenStationId, setKitchenStationId] = useState(item?.kitchenStationId ?? '');
+  const [preparationPlaceTypeId, setPreparationPlaceTypeId] = useState(item?.preparationPlaceTypeId ?? '');
   const [recipe, setRecipe] = useState(
     item?.recipe.map((line) => ({
       ingredientProductId: line.ingredientProductId,
@@ -228,7 +228,7 @@ function NomenclatureEditor({
         isActive,
         sortOrder: item?.sortOrder ?? 0,
         categoryId: categoryId || null,
-        kitchenStationId: kitchenStationId || null,
+        preparationPlaceTypeId: preparationPlaceTypeId || null,
         price: isSellable ? numericPrice : null,
       };
 
@@ -352,17 +352,17 @@ function NomenclatureEditor({
               <label className="full-field">
                 <span>Тип места приготовления</span>
                 <select
-                  value={kitchenStationId}
-                  onChange={(e) => setKitchenStationId(e.target.value)}
+                  value={preparationPlaceTypeId}
+                  onChange={(e) => setPreparationPlaceTypeId(e.target.value)}
                   disabled={!canManage || !isSellable}
                 >
                   <option value="">Не назначено</option>
-                  {preparationPlaces.filter((x) => x.isActive).map((place) => (
-                    <option key={place.id} value={place.id}>{place.name}</option>
+                  {preparationPlaceTypes.filter((x) => x.isActive).map((typeOption) => (
+                    <option key={typeOption.id} value={typeOption.id}>{typeOption.name}</option>
                   ))}
                 </select>
                 <small className="field-help">
-                  У типа отдельно настраиваются принтер и склад списания.
+                  Здесь выбирается логический тип. Конкретное место, принтер и склад определяются маршрутизацией.
                 </small>
               </label>
             </div>
