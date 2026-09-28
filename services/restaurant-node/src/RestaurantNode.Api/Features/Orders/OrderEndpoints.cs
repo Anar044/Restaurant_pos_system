@@ -666,20 +666,15 @@ public static class OrderEndpoints
             Guid? guestTransferTicketId = null;
             if (line.Status == OrderItemStatus.Sent)
             {
-                var route = await (
-                    from product in db.Products.AsNoTracking()
-                    join station in db.KitchenStations.AsNoTracking()
-                        on product.KitchenStationId equals (Guid?)station.Id
-                    where product.Id == line.ProductId &&
-                          product.RestaurantId == restaurantId &&
-                          station.RestaurantId == restaurantId &&
-                          station.IsActive
-                    select new
-                    {
-                        StationId = station.Id,
-                        StationName = station.Name
-                    })
-                    .FirstOrDefaultAsync(ct);
+                var groupId = await ResolveOrderGroupIdAsync(db, order, restaurantId, ct);
+                var route = groupId.HasValue
+                    ? (await ResolveDepartmentRoutesAsync(
+                        db,
+                        restaurantId,
+                        groupId.Value,
+                        [line.ProductId],
+                        ct)).GetValueOrDefault(line.ProductId)
+                    : null;
 
                 if (route is not null)
                 {
@@ -708,7 +703,7 @@ public static class OrderEndpoints
                     {
                         RestaurantId = restaurantId,
                         OrderId = order.Id,
-                        KitchenStationId = route.StationId,
+                        DepartmentId = route.DepartmentId,
                         Status = KitchenTicketStatus.Pending,
                         CreatedAt = now
                     };
@@ -723,8 +718,8 @@ public static class OrderEndpoints
                         order.TableId,
                         tableName,
                         hallName,
-                        stationId = route.StationId,
-                        stationName = route.StationName,
+                        stationId = route.DepartmentId,
+                        stationName = route.DepartmentName,
                         createdAt = now,
                         isGuestTransfer = true,
                         fromGuestNumber = previousGuestNumber,
@@ -752,7 +747,7 @@ public static class OrderEndpoints
                     db.PrintJobs.Add(new PrintJob
                     {
                         RestaurantId = restaurantId,
-                        PrinterKey = $"kitchen:{route.StationId:N}",
+                        PrinterKey = $"kitchen:{route.DepartmentId:N}",
                         Type = "KITCHEN_TICKET",
                         PayloadJson = JsonSerializer.Serialize(payload),
                         Status = PrintJobStatus.Pending,
@@ -1224,32 +1219,24 @@ public static class OrderEndpoints
                     message = "Only a sent item requires a void. New items can be removed normally."
                 });
 
-            var route = await (
-                from product in db.Products.AsNoTracking()
-                join station in db.KitchenStations.AsNoTracking()
-                    on product.KitchenStationId equals (Guid?)station.Id
-                join printer in db.Printers.AsNoTracking()
-                    on station.PrinterId equals (Guid?)printer.Id
-                where product.Id == line.ProductId &&
-                      product.RestaurantId == restaurantId &&
-                      station.RestaurantId == restaurantId &&
-                      station.IsActive &&
-                      printer.RestaurantId == restaurantId &&
-                      printer.IsConfigured &&
-                      printer.IsActive &&
-                      printer.HostDeviceId.HasValue
-                select new
-                {
-                    StationId = station.Id,
-                    StationName = station.Name
-                })
-                .FirstOrDefaultAsync(ct);
+            var voidGroupId = await ResolveOrderGroupIdAsync(db, order, restaurantId, ct);
+            var route = voidGroupId.HasValue
+                ? (await ResolveDepartmentRoutesAsync(
+                    db,
+                    restaurantId,
+                    voidGroupId.Value,
+                    [line.ProductId],
+                    ct)).GetValueOrDefault(line.ProductId)
+                : null;
 
-            if (route is null)
+            if (route is null || !route.PrinterId.HasValue ||
+                !await IsPrinterAvailableAsync(db, restaurantId, route.PrinterId.Value, ct))
+            {
                 return Results.Conflict(new
                 {
-                    message = "Kitchen cancellation cannot be printed because the item's kitchen printer is unavailable."
+                    message = "Kitchen cancellation cannot be printed because the item's preparation department or printer is unavailable."
                 });
+            }
 
             string? tableName = null;
             string? hallName = null;
@@ -1272,7 +1259,7 @@ public static class OrderEndpoints
             {
                 RestaurantId = restaurantId,
                 OrderId = order.Id,
-                KitchenStationId = route.StationId,
+                DepartmentId = route.DepartmentId,
                 Status = KitchenTicketStatus.Pending,
                 CreatedAt = now
             };
@@ -1286,8 +1273,8 @@ public static class OrderEndpoints
                 order.TableId,
                 tableName,
                 hallName,
-                stationId = route.StationId,
-                stationName = route.StationName,
+                stationId = route.DepartmentId,
+                stationName = route.DepartmentName,
                 createdAt = now,
                 isVoid = true,
                 voidReason = reason,
@@ -1314,7 +1301,7 @@ public static class OrderEndpoints
             db.PrintJobs.Add(new PrintJob
             {
                 RestaurantId = restaurantId,
-                PrinterKey = $"kitchen:{route.StationId:N}",
+                PrinterKey = $"kitchen:{route.DepartmentId:N}",
                 Type = "KITCHEN_TICKET",
                 PayloadJson = JsonSerializer.Serialize(payload),
                 Status = PrintJobStatus.Pending,
@@ -1341,7 +1328,7 @@ public static class OrderEndpoints
                     line.ProductNameSnapshot,
                     line.Quantity,
                     reason,
-                    kitchenStationId = route.StationId,
+                    departmentId = route.DepartmentId,
                     ticketId = ticket.Id
                 }));
             db.OutboxEvents.Add(Outbox(
@@ -1534,51 +1521,45 @@ public static class OrderEndpoints
 
             if (movedSentItems.Count > 0)
             {
+                var targetGroupId = await ResolveOrderGroupIdAsync(db, target, restaurantId, ct);
+                if (!targetGroupId.HasValue)
+                    return Results.Conflict(new { message = "Target order group cannot be resolved." });
+
                 var productIds = movedSentItems
                     .Select(x => x.ProductId)
                     .Distinct()
                     .ToArray();
 
-                var routing = await db.Products
-                    .AsNoTracking()
-                    .Where(x => x.RestaurantId == restaurantId && productIds.Contains(x.Id))
-                    .Select(x => new { x.Id, x.KitchenStationId })
-                    .ToDictionaryAsync(x => x.Id, ct);
+                var routing = await ResolveDepartmentRoutesAsync(
+                    db,
+                    restaurantId,
+                    targetGroupId.Value,
+                    productIds,
+                    ct);
 
-                var stationIds = routing.Values
-                    .Where(x => x.KitchenStationId.HasValue)
-                    .Select(x => x.KitchenStationId!.Value)
-                    .Distinct()
-                    .ToArray();
-
-                var stations = await db.KitchenStations
-                    .AsNoTracking()
-                    .Where(x =>
-                        x.RestaurantId == restaurantId &&
-                        stationIds.Contains(x.Id) &&
-                        x.IsActive &&
-                        x.PrinterId.HasValue)
-                    .ToDictionaryAsync(x => x.Id, ct);
-
-                foreach (var stationId in stationIds)
+                foreach (var departmentId in routing.Values.Select(x => x.DepartmentId).Distinct())
                 {
-                    if (!stations.TryGetValue(stationId, out var station))
+                    var route = routing.Values.First(x => x.DepartmentId == departmentId);
+                    if (!route.PrinterId.HasValue ||
+                        !await IsPrinterAvailableAsync(db, restaurantId, route.PrinterId.Value, ct))
+                    {
                         continue;
+                    }
 
-                    var stationItems = movedSentItems
+                    var departmentItems = movedSentItems
                         .Where(x =>
-                            routing.TryGetValue(x.ProductId, out var route) &&
-                            route.KitchenStationId == stationId)
+                            routing.TryGetValue(x.ProductId, out var itemRoute) &&
+                            itemRoute.DepartmentId == departmentId)
                         .ToList();
 
-                    if (stationItems.Count == 0)
+                    if (departmentItems.Count == 0)
                         continue;
 
                     var ticket = new KitchenTicket
                     {
                         RestaurantId = restaurantId,
                         OrderId = target.Id,
-                        KitchenStationId = stationId,
+                        DepartmentId = departmentId,
                         Status = KitchenTicketStatus.Pending,
                         CreatedAt = now
                     };
@@ -1593,8 +1574,10 @@ public static class OrderEndpoints
                         target.TableId,
                         tableName = targetTableInfo.TableName,
                         hallName = targetTableInfo.HallName,
-                        stationId,
-                        stationName = station.Name,
+                        departmentId,
+                        departmentName = route.DepartmentName,
+                        stationId = departmentId,
+                        stationName = route.DepartmentName,
                         createdAt = now,
                         isTransfer = true,
                         fromOrderNumber = source.DisplayNumber,
@@ -1603,7 +1586,7 @@ public static class OrderEndpoints
                         fromHallName = sourceTableInfo?.HallName,
                         toTableName = targetTableInfo.TableName,
                         toHallName = targetTableInfo.HallName,
-                        items = stationItems.Select(x => new
+                        items = departmentItems.Select(x => new
                         {
                             lineId = x.Id,
                             productId = x.ProductId,
@@ -1623,7 +1606,7 @@ public static class OrderEndpoints
                     db.PrintJobs.Add(new PrintJob
                     {
                         RestaurantId = restaurantId,
-                        PrinterKey = $"kitchen:{stationId:N}",
+                        PrinterKey = $"kitchen:{departmentId:N}",
                         Type = "KITCHEN_TICKET",
                         PayloadJson = JsonSerializer.Serialize(payload),
                         Status = PrintJobStatus.Pending,
@@ -1699,40 +1682,44 @@ public static class OrderEndpoints
             if (newItems.Count == 0)
                 return Results.Conflict(new { message = "There are no new items to send to the kitchen." });
 
+            var groupId = await ResolveOrderGroupIdAsync(db, order, restaurantId, ct);
+            if (!groupId.HasValue)
+                return Results.Conflict(new { message = "Order group cannot be resolved." });
+
             var productIds = newItems.Select(x => x.ProductId).Distinct().ToArray();
-            var routing = await db.Products
-                .AsNoTracking()
-                .Where(x => x.RestaurantId == restaurantId && productIds.Contains(x.Id))
-                .Select(x => new { x.Id, x.KitchenStationId })
-                .ToDictionaryAsync(x => x.Id, ct);
+            var routing = await ResolveDepartmentRoutesAsync(
+                db,
+                restaurantId,
+                groupId.Value,
+                productIds,
+                ct);
 
             foreach (var item in newItems)
             {
-                if (!routing.TryGetValue(item.ProductId, out var productRoute) || productRoute.KitchenStationId is null)
-                    return Results.Conflict(new { message = $"Product '{item.ProductNameSnapshot}' has no kitchen station." });
+                if (!routing.ContainsKey(item.ProductId))
+                {
+                    return Results.Conflict(new
+                    {
+                        message = $"Product '{item.ProductNameSnapshot}' has no preparation type or group cooking route."
+                    });
+                }
             }
 
-            var stationIds = routing.Values
-                .Select(x => x.KitchenStationId!.Value)
+            var departmentIds = routing.Values
+                .Select(x => x.DepartmentId)
                 .Distinct()
                 .ToArray();
 
-            var stations = await db.KitchenStations
-                .AsNoTracking()
-                .Where(x => x.RestaurantId == restaurantId && stationIds.Contains(x.Id) && x.IsActive)
-                .ToDictionaryAsync(x => x.Id, ct);
-
-            if (stations.Count != stationIds.Length)
-                return Results.Conflict(new { message = "One or more kitchen stations are unavailable." });
-
-            var stationWithoutPrinter = stations.Values.FirstOrDefault(x => !x.PrinterId.HasValue);
-            if (stationWithoutPrinter is not null)
+            var routeWithoutPrinter = routing.Values.FirstOrDefault(x => !x.PrinterId.HasValue);
+            if (routeWithoutPrinter is not null)
+            {
                 return Results.Conflict(new
                 {
-                    message = $"Kitchen station '{stationWithoutPrinter.Name}' has no printer assigned. Configure it in BackOffice > Kitchen."
+                    message = $"Preparation department '{routeWithoutPrinter.DepartmentName}' has no printer assigned. Configure it in BackOffice > Groups and departments."
                 });
+            }
 
-            var kitchenPrinterIds = stations.Values
+            var kitchenPrinterIds = routing.Values
                 .Select(x => x.PrinterId!.Value)
                 .Distinct()
                 .ToArray();
@@ -1750,7 +1737,7 @@ public static class OrderEndpoints
             if (configuredKitchenPrinterCount != kitchenPrinterIds.Length)
                 return Results.Conflict(new
                 {
-                    message = "One or more kitchen printers are unavailable or are not attached to a POS Agent."
+                    message = "One or more preparation printers are unavailable or are not attached to a POS Agent."
                 });
 
             string? tableName = null;
@@ -1772,18 +1759,18 @@ public static class OrderEndpoints
             var now = DateTimeOffset.UtcNow;
             var ticketIds = new List<Guid>();
 
-            foreach (var stationId in stationIds)
+            foreach (var departmentId in departmentIds)
             {
-                var station = stations[stationId];
-                var stationItems = newItems
-                    .Where(x => routing[x.ProductId].KitchenStationId == stationId)
+                var route = routing.Values.First(x => x.DepartmentId == departmentId);
+                var departmentItems = newItems
+                    .Where(x => routing[x.ProductId].DepartmentId == departmentId)
                     .ToList();
 
                 var ticket = new KitchenTicket
                 {
                     RestaurantId = restaurantId,
                     OrderId = order.Id,
-                    KitchenStationId = stationId,
+                    DepartmentId = departmentId,
                     Status = KitchenTicketStatus.Pending,
                     CreatedAt = now
                 };
@@ -1798,10 +1785,12 @@ public static class OrderEndpoints
                     order.TableId,
                     tableName,
                     hallName,
-                    stationId,
-                    stationName = station.Name,
+                    departmentId,
+                    departmentName = route.DepartmentName,
+                    stationId = departmentId,
+                    stationName = route.DepartmentName,
                     createdAt = now,
-                    items = stationItems.Select(x => new
+                    items = departmentItems.Select(x => new
                     {
                         lineId = x.Id,
                         productId = x.ProductId,
@@ -1821,7 +1810,7 @@ public static class OrderEndpoints
                 db.PrintJobs.Add(new PrintJob
                 {
                     RestaurantId = restaurantId,
-                    PrinterKey = $"kitchen:{stationId:N}",
+                    PrinterKey = $"kitchen:{departmentId:N}",
                     Type = "KITCHEN_TICKET",
                     PayloadJson = JsonSerializer.Serialize(printPayload),
                     Status = PrintJobStatus.Pending,
@@ -2681,6 +2670,152 @@ public static class OrderEndpoints
             IResult error) =>
             new([], error);
     }
+
+    private static async Task<Guid?> ResolveOrderGroupIdAsync(
+        RestaurantDbContext db,
+        Order order,
+        Guid restaurantId,
+        CancellationToken ct)
+    {
+        if (order.OriginDeviceId.HasValue)
+        {
+            var deviceGroupId = await (
+                from link in db.RestaurantGroupDevices.AsNoTracking()
+                join group in db.RestaurantGroups.AsNoTracking()
+                    on link.GroupId equals group.Id
+                where link.DeviceId == order.OriginDeviceId.Value &&
+                      group.RestaurantId == restaurantId &&
+                      group.IsActive
+                orderby link.IsMainCashRegister descending
+                select (Guid?)group.Id)
+                .FirstOrDefaultAsync(ct);
+
+            if (deviceGroupId.HasValue)
+                return deviceGroupId;
+        }
+
+        if (order.TableId.HasValue)
+        {
+            var hallId = await db.DiningTables
+                .AsNoTracking()
+                .Where(x =>
+                    x.Id == order.TableId.Value &&
+                    x.RestaurantId == restaurantId)
+                .Select(x => (Guid?)x.HallId)
+                .FirstOrDefaultAsync(ct);
+
+            if (hallId.HasValue)
+            {
+                var hallGroupId = await db.RestaurantDepartments
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.RestaurantId == restaurantId &&
+                        x.HallId == hallId.Value &&
+                        x.IsActive)
+                    .Select(x => (Guid?)x.GroupId)
+                    .FirstOrDefaultAsync(ct);
+
+                if (hallGroupId.HasValue)
+                    return hallGroupId;
+            }
+        }
+
+        return await db.RestaurantGroups
+            .AsNoTracking()
+            .Where(x => x.RestaurantId == restaurantId && x.IsActive)
+            .OrderBy(x => x.Name)
+            .Select(x => (Guid?)x.Id)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    private static async Task<Dictionary<Guid, PreparationDepartmentRoute>> ResolveDepartmentRoutesAsync(
+        RestaurantDbContext db,
+        Guid restaurantId,
+        Guid groupId,
+        Guid[] productIds,
+        CancellationToken ct)
+    {
+        var products = await db.Products
+            .AsNoTracking()
+            .Where(x =>
+                x.RestaurantId == restaurantId &&
+                productIds.Contains(x.Id))
+            .Select(x => new
+            {
+                x.Id,
+                x.PreparationPlaceTypeId
+            })
+            .ToListAsync(ct);
+
+        var typeIds = products
+            .Where(x => x.PreparationPlaceTypeId.HasValue)
+            .Select(x => x.PreparationPlaceTypeId!.Value)
+            .Distinct()
+            .ToArray();
+
+        var maps = await db.GroupPreparationMaps
+            .AsNoTracking()
+            .Where(x =>
+                x.RestaurantId == restaurantId &&
+                x.GroupId == groupId &&
+                x.IsActive &&
+                typeIds.Contains(x.PreparationPlaceTypeId))
+            .ToDictionaryAsync(x => x.PreparationPlaceTypeId, ct);
+
+        var departmentIds = maps.Values
+            .Select(x => x.DepartmentId)
+            .Distinct()
+            .ToArray();
+
+        var departments = await db.RestaurantDepartments
+            .AsNoTracking()
+            .Where(x =>
+                x.RestaurantId == restaurantId &&
+                x.GroupId == groupId &&
+                x.IsActive &&
+                departmentIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, ct);
+
+        var result = new Dictionary<Guid, PreparationDepartmentRoute>();
+        foreach (var product in products)
+        {
+            if (!product.PreparationPlaceTypeId.HasValue ||
+                !maps.TryGetValue(product.PreparationPlaceTypeId.Value, out var map) ||
+                !departments.TryGetValue(map.DepartmentId, out var department))
+            {
+                continue;
+            }
+
+            result[product.Id] = new PreparationDepartmentRoute(
+                department.Id,
+                department.Name,
+                department.PrinterId,
+                department.WarehouseId);
+        }
+
+        return result;
+    }
+
+    private static Task<bool> IsPrinterAvailableAsync(
+        RestaurantDbContext db,
+        Guid restaurantId,
+        Guid printerId,
+        CancellationToken ct) =>
+        db.Printers
+            .AsNoTracking()
+            .AnyAsync(x =>
+                x.Id == printerId &&
+                x.RestaurantId == restaurantId &&
+                x.IsConfigured &&
+                x.IsActive &&
+                x.HostDeviceId.HasValue,
+                ct);
+
+    private sealed record PreparationDepartmentRoute(
+        Guid DepartmentId,
+        string DepartmentName,
+        Guid? PrinterId,
+        Guid? WarehouseId);
 
     private static void Recalculate(Order order) =>
         OrderPricingCalculator.Recalculate(order);
