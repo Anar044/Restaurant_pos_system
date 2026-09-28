@@ -188,68 +188,60 @@ public static class BackOfficeFinanceEndpoints
                     shiftEmployeeIds.Contains(x.Id))
                 .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
 
-            var shiftPayments = shiftIds.Length == 0
-                ? []
-                : await db.Payments
-                    .AsNoTracking()
-                    .Where(x =>
-                        x.RestaurantId == restaurantId &&
-                        shiftIds.Contains(x.ShiftId))
-                    .Select(x => new
-                    {
-                        x.ShiftId,
-                        x.OrderId,
-                        x.Method,
-                        x.Amount
-                    })
-                    .ToListAsync(ct);
+            var shiftPayments = await db.Payments
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    shiftIds.Contains(x.ShiftId))
+                .Select(x => new
+                {
+                    x.ShiftId,
+                    x.OrderId,
+                    x.Method,
+                    x.Amount
+                })
+                .ToListAsync(ct);
 
-            var shiftRefunds = shiftIds.Length == 0
-                ? []
-                : await (
-                    from refund in db.PaymentRefunds.AsNoTracking()
-                    join payment in db.Payments.AsNoTracking()
-                        on refund.PaymentId equals payment.Id
-                    where refund.RestaurantId == restaurantId &&
-                          shiftIds.Contains(refund.ShiftId)
-                    select new
-                    {
-                        refund.ShiftId,
-                        refund.OrderId,
-                        payment.Method,
-                        refund.Amount
-                    })
-                    .ToListAsync(ct);
+            var shiftRefunds = await (
+                from refund in db.PaymentRefunds.AsNoTracking()
+                join payment in db.Payments.AsNoTracking()
+                    on refund.PaymentId equals payment.Id
+                where refund.RestaurantId == restaurantId &&
+                      shiftIds.Contains(refund.ShiftId)
+                select new
+                {
+                    refund.ShiftId,
+                    refund.OrderId,
+                    payment.Method,
+                    refund.Amount
+                })
+                .ToListAsync(ct);
 
-            var shiftCashRows = shiftIds.Length == 0
-                ? []
-                : await db.CashTransactions
-                    .AsNoTracking()
-                    .Where(x =>
-                        x.RestaurantId == restaurantId &&
-                        shiftIds.Contains(x.ShiftId))
-                    .Select(x => new
-                    {
-                        x.ShiftId,
-                        x.Type,
-                        x.Amount
-                    })
-                    .ToListAsync(ct);
+            var shiftCashRows = await db.CashTransactions
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    shiftIds.Contains(x.ShiftId))
+                .Select(x => new
+                {
+                    x.ShiftId,
+                    x.Type,
+                    x.Amount
+                })
+                .ToListAsync(ct);
 
-            var originOrderPairs = shiftIds.Length == 0
-                ? []
-                : await db.Orders
-                    .AsNoTracking()
-                    .Where(x =>
-                        x.RestaurantId == restaurantId &&
-                        x.OpenedShiftId.HasValue &&
-                        shiftIds.Contains(x.OpenedShiftId.Value))
-                    .Select(x => new
-                    {
-                        ShiftId = x.OpenedShiftId!.Value,
-                        OrderId = x.Id
-                    })
-                    .ToListAsync(ct);
+            var originOrderPairs = await db.Orders
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.OpenedShiftId.HasValue &&
+                    shiftIds.Contains(x.OpenedShiftId.Value))
+                .Select(x => new
+                {
+                    ShiftId = x.OpenedShiftId!.Value,
+                    OrderId = x.Id
+                })
+                .ToListAsync(ct);
 
             var orderIdsByShift = shifts.ToDictionary(
                 x => x.id,
@@ -423,21 +415,19 @@ public static class BackOfficeFinanceEndpoints
                     .Select(x => x.Id)
                     .ToArray();
 
-                var selectedOrderRefunds = selectedOrderIds.Length == 0
-                    ? []
-                    : await db.PaymentRefunds
-                        .AsNoTracking()
-                        .Where(x =>
-                            x.RestaurantId == restaurantId &&
-                            x.ShiftId == shiftId.Value &&
-                            selectedOrderIds.Contains(x.OrderId))
-                        .GroupBy(x => x.OrderId)
-                        .Select(group => new
-                        {
-                            OrderId = group.Key,
-                            Amount = group.Sum(x => x.Amount)
-                        })
-                        .ToListAsync(ct);
+                var selectedOrderRefunds = await db.PaymentRefunds
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.RestaurantId == restaurantId &&
+                        x.ShiftId == shiftId.Value &&
+                        selectedOrderIds.Contains(x.OrderId))
+                    .GroupBy(x => x.OrderId)
+                    .Select(group => new
+                    {
+                        OrderId = group.Key,
+                        Amount = group.Sum(x => x.Amount)
+                    })
+                    .ToListAsync(ct);
 
                 var refundsByOrder = selectedOrderRefunds
                     .ToDictionary(x => x.OrderId, x => x.Amount);
@@ -520,20 +510,18 @@ public static class BackOfficeFinanceEndpoints
                     .Select(x => x.Payment.Id)
                     .ToArray();
 
-                var refundTotals = paymentIds.Length == 0
-                    ? []
-                    : await db.PaymentRefunds
-                        .AsNoTracking()
-                        .Where(x =>
-                            x.RestaurantId == restaurantId &&
-                            paymentIds.Contains(x.PaymentId))
-                        .GroupBy(x => x.PaymentId)
-                        .Select(group => new
-                        {
-                            PaymentId = group.Key,
-                            Amount = group.Sum(x => x.Amount)
-                        })
-                        .ToListAsync(ct);
+                var refundTotals = await db.PaymentRefunds
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.RestaurantId == restaurantId &&
+                        paymentIds.Contains(x.PaymentId))
+                    .GroupBy(x => x.PaymentId)
+                    .Select(group => new
+                    {
+                        PaymentId = group.Key,
+                        Amount = group.Sum(x => x.Amount)
+                    })
+                    .ToListAsync(ct);
 
                 var refundedByPayment = refundTotals
                     .ToDictionary(x => x.PaymentId, x => x.Amount);
