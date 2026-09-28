@@ -70,7 +70,6 @@ public static class BackOfficeGroupEndpoints
                     precheckPrinterName = x.PrecheckPrinterId == null
                         ? null
                         : db.Printers.Where(p => p.Id == x.PrecheckPrinterId).Select(p => p.Name).FirstOrDefault(),
-                    tableCount = db.DiningTables.Count(t => t.HallId == x.Id && t.RestaurantId == restaurantId),
                     tables = db.DiningTables
                         .Where(t => t.HallId == x.Id && t.RestaurantId == restaurantId)
                         .OrderBy(t => t.SortOrder)
