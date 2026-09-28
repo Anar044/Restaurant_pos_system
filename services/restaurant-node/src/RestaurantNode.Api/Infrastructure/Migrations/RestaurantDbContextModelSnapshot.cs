@@ -1602,8 +1602,7 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                 {
                     b.HasOne("RestaurantNode.Api.Domain.Category", "Category")
                         .WithMany()
-                        .HasForeignKey("CategoryId")
-                        .OnDelete(DeleteBehavior.Cascade);
+                        .HasForeignKey("CategoryId");
 
                     b.HasOne("RestaurantNode.Api.Domain.KitchenStation", "KitchenStation")
                         .WithMany()
