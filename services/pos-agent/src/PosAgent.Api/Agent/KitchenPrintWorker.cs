@@ -2,12 +2,12 @@ using PosAgent.Api.Printing;
 
 namespace PosAgent.Api.Agent;
 
-public sealed class KitchenPrintWorker(
+public sealed class PrintJobWorker(
     RestaurantNodeClient nodeClient,
-    KitchenPrintJobExecutor executor,
+    PrintJobExecutor executor,
     PrintedJobStore printedJobStore,
     IConfiguration configuration,
-    ILogger<KitchenPrintWorker> logger) : BackgroundService
+    ILogger<PrintJobWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -24,7 +24,7 @@ public sealed class KitchenPrintWorker(
                 if (!configurationWarningLogged)
                 {
                     logger.LogWarning(
-                        "Kitchen print worker is waiting for POS Agent configuration: {ConfigurationError}",
+                        "Print job worker is waiting for POS Agent configuration: {ConfigurationError}",
                         configurationError);
                     configurationWarningLogged = true;
                 }
@@ -59,7 +59,7 @@ public sealed class KitchenPrintWorker(
                                 await printedJobStore.MarkPrintedAsync(job.Id, stoppingToken);
 
                                 logger.LogInformation(
-                                    "Kitchen print job {PrintJobId} physically printed on {PrinterName} ({PrinterAddress}).",
+                                    "Print job {PrintJobId} physically printed on {PrinterName} ({PrinterAddress}).",
                                     job.Id,
                                     job.Printer.Name,
                                     job.Printer.Address);
@@ -72,7 +72,7 @@ public sealed class KitchenPrintWorker(
                             {
                                 logger.LogWarning(
                                     ex,
-                                    "Kitchen print job {PrintJobId} failed before a successful physical print on {PrinterName}. Attempt {Attempt}.",
+                                    "Print job {PrintJobId} failed before a successful physical print on {PrinterName}. Attempt {Attempt}.",
                                     job.Id,
                                     job.Printer.Name,
                                     job.Attempts);
@@ -95,7 +95,7 @@ public sealed class KitchenPrintWorker(
                                 {
                                     logger.LogWarning(
                                         reportError,
-                                        "Could not report physical print failure for kitchen job {PrintJobId}.",
+                                        "Could not report physical print failure for print job {PrintJobId}.",
                                         job.Id);
                                 }
 
@@ -105,7 +105,7 @@ public sealed class KitchenPrintWorker(
                         else
                         {
                             logger.LogWarning(
-                                "Kitchen print job {PrintJobId} was already physically printed on this POS. Skipping duplicate output and retrying acknowledgement only.",
+                                "Print job {PrintJobId} was already physically printed on this POS. Skipping duplicate output and retrying acknowledgement only.",
                                 job.Id);
                         }
 
@@ -126,7 +126,7 @@ public sealed class KitchenPrintWorker(
 
                                 acknowledged = true;
                                 logger.LogInformation(
-                                    "Kitchen print job {PrintJobId} acknowledged as printed.",
+                                    "Print job {PrintJobId} acknowledged as printed.",
                                     job.Id);
                             }
                             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -138,7 +138,7 @@ public sealed class KitchenPrintWorker(
                                 lastAckError = ackError;
                                 logger.LogWarning(
                                     ackError,
-                                    "Kitchen print job {PrintJobId} acknowledgement attempt {AckAttempt}/3 failed.",
+                                    "Print job {PrintJobId} acknowledgement attempt {AckAttempt}/3 failed.",
                                     job.Id,
                                     ackAttempt);
 
@@ -153,7 +153,7 @@ public sealed class KitchenPrintWorker(
                             // as FAILED, because that can cause the same ticket to be printed again.
                             logger.LogError(
                                 lastAckError,
-                                "Kitchen print job {PrintJobId} was physically printed, but acknowledgement failed after 3 attempts. The job remains PRINTING and will not be auto-printed again.",
+                                "Print job {PrintJobId} was physically printed, but acknowledgement failed after 3 attempts. The job remains PRINTING and will not be auto-printed again.",
                                 job.Id);
                         }
                     }
