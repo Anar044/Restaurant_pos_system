@@ -189,34 +189,24 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                 {
                     b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
                     b.Property<Guid>("GroupId").HasColumnType("uuid");
-                    b.Property<Guid?>("HallId").HasColumnType("uuid");
                     b.Property<bool>("IsActive").HasColumnType("boolean");
                     b.Property<string>("Name").IsRequired().HasColumnType("text");
+                    b.Property<Guid?>("PreparationPlaceTypeId").HasColumnType("uuid");
                     b.Property<Guid?>("PrinterId").HasColumnType("uuid");
                     b.Property<Guid>("RestaurantId").HasColumnType("uuid");
                     b.Property<Guid?>("WarehouseId").HasColumnType("uuid");
                     b.HasKey("Id");
-                    b.HasIndex("GroupId", "Name");
-                    b.HasIndex("HallId");
+                    b.HasIndex("PreparationPlaceTypeId");
                     b.HasIndex("PrinterId");
                     b.HasIndex("WarehouseId");
+                    b.HasIndex("GroupId", "Name");
+                    b.HasIndex("GroupId", "PreparationPlaceTypeId")
+                        .IsUnique()
+                        .HasFilter("\"PreparationPlaceTypeId\" IS NOT NULL");
                     b.ToTable("restaurant_departments", (string)null);
                 });
 
-            modelBuilder.Entity("RestaurantNode.Api.Domain.GroupPreparationMap", b =>
-                {
-                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
-                    b.Property<Guid>("DepartmentId").HasColumnType("uuid");
-                    b.Property<Guid>("GroupId").HasColumnType("uuid");
-                    b.Property<bool>("IsActive").HasColumnType("boolean");
-                    b.Property<Guid>("PreparationPlaceTypeId").HasColumnType("uuid");
-                    b.Property<Guid>("RestaurantId").HasColumnType("uuid");
-                    b.HasKey("Id");
-                    b.HasIndex("DepartmentId");
-                    b.HasIndex("PreparationPlaceTypeId");
-                    b.HasIndex("GroupId", "PreparationPlaceTypeId").IsUnique();
-                    b.ToTable("group_preparation_maps", (string)null);
-                });
+
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.Device", b =>
                 {
@@ -328,12 +318,18 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("PrecheckPrinterId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("RestaurantId")
                         .HasColumnType("uuid");
@@ -342,6 +338,11 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("PrecheckPrinterId");
+
+                    b.HasIndex("GroupId", "Name")
+                        .IsUnique();
 
                     b.HasIndex("RestaurantId", "Name")
                         .IsUnique();
@@ -375,9 +376,9 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("RestaurantNode.Api.Domain.Hall", "Hall")
+                    b.HasOne("RestaurantNode.Api.Domain.PreparationPlaceType", "PreparationPlaceType")
                         .WithMany()
-                        .HasForeignKey("HallId")
+                        .HasForeignKey("PreparationPlaceTypeId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("RestaurantNode.Api.Domain.Printer", "Printer")
@@ -391,35 +392,12 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Group");
-                    b.Navigation("Hall");
+                    b.Navigation("PreparationPlaceType");
                     b.Navigation("Printer");
                     b.Navigation("Warehouse");
                 });
 
-            modelBuilder.Entity("RestaurantNode.Api.Domain.GroupPreparationMap", b =>
-                {
-                    b.HasOne("RestaurantNode.Api.Domain.RestaurantDepartment", "Department")
-                        .WithMany()
-                        .HasForeignKey("DepartmentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
 
-                    b.HasOne("RestaurantNode.Api.Domain.RestaurantGroup", "Group")
-                        .WithMany()
-                        .HasForeignKey("GroupId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("RestaurantNode.Api.Domain.PreparationPlaceType", "PreparationPlaceType")
-                        .WithMany()
-                        .HasForeignKey("PreparationPlaceTypeId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Department");
-                    b.Navigation("Group");
-                    b.Navigation("PreparationPlaceType");
-                });
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.KitchenTicket", b =>
                 {
@@ -1575,12 +1553,25 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.Hall", b =>
                 {
+                    b.HasOne("RestaurantNode.Api.Domain.RestaurantGroup", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RestaurantNode.Api.Domain.Printer", "PrecheckPrinter")
+                        .WithMany()
+                        .HasForeignKey("PrecheckPrinterId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("RestaurantNode.Api.Domain.Restaurant", "Restaurant")
                         .WithMany()
                         .HasForeignKey("RestaurantId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.Navigation("Group");
+                    b.Navigation("PrecheckPrinter");
                     b.Navigation("Restaurant");
                 });
 
