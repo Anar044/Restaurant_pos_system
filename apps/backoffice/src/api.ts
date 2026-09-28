@@ -446,22 +446,46 @@ export type AdjustmentPresetRole = {
   canApplyAdjustments: boolean;
 };
 
+export type AdjustmentPresetCategory = {
+  id: string;
+  name: string;
+  isActive: boolean;
+};
+
+export type AdjustmentPresetProduct = {
+  id: string;
+  categoryId: string;
+  name: string;
+  isActive: boolean;
+};
+
 export type BackOfficeAdjustmentPreset = {
   id: string;
   name: string;
   type: 'DISCOUNT' | 'SERVICE_CHARGE';
   mode: 'PERCENT' | 'FIXED';
   scope: 'ORDER' | 'GUEST' | 'BOTH';
+  applicationMode: 'MANUAL' | 'AUTOMATIC';
+  timeBasis: 'ORDER_OPENED_AT' | 'ITEM_ADDED_AT';
   value: number;
+  priority: number;
+  canStack: boolean;
+  weekdayMask: number;
+  startMinute: number | null;
+  endMinute: number | null;
   requireComment: boolean;
   isActive: boolean;
   roleIds: string[];
+  productIds: string[];
+  categoryIds: string[];
   createdAt: string;
   updatedAt: string;
 };
 
 export type BackOfficeAdjustments = {
   roles: AdjustmentPresetRole[];
+  categories: AdjustmentPresetCategory[];
+  products: AdjustmentPresetProduct[];
   presets: BackOfficeAdjustmentPreset[];
 };
 
@@ -470,10 +494,19 @@ export type UpsertAdjustmentPresetInput = {
   type: 'DISCOUNT' | 'SERVICE_CHARGE';
   mode: 'PERCENT' | 'FIXED';
   scope: 'ORDER' | 'GUEST' | 'BOTH';
+  applicationMode: 'MANUAL' | 'AUTOMATIC';
+  timeBasis: 'ORDER_OPENED_AT' | 'ITEM_ADDED_AT';
   value: number;
+  priority: number;
+  canStack: boolean;
+  weekdayMask: number;
+  startMinute: number | null;
+  endMinute: number | null;
   requireComment: boolean;
   isActive: boolean;
   roleIds: string[];
+  productIds: string[];
+  categoryIds: string[];
 };
 
 export type RefundPaymentResult = {
