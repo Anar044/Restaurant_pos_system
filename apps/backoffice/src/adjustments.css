@@ -239,3 +239,12 @@
     grid-template-columns: 1fr;
   }
 }
+
+.application-mode-toggle {
+  margin-top: 4px;
+  border-color: #b2ddff;
+  background: #f5faff;
+}
+.application-mode-toggle input {
+  flex: 0 0 auto;
+}
