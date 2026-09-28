@@ -5,7 +5,7 @@ using PosAgent.Api.Agent;
 
 namespace PosAgent.Api.Printing;
 
-public sealed class KitchenPrintJobExecutor(
+public sealed class PrintJobExecutor(
     WindowsPrinterDiscovery discovery,
     WindowsDriverPrinter windowsDriverPrinter,
     NetworkRawPrinter networkRawPrinter)
@@ -14,9 +14,23 @@ public sealed class KitchenPrintJobExecutor(
 
     public async Task ExecuteAsync(AgentPrintJobResponse job, CancellationToken ct)
     {
-        if (!string.Equals(job.Type, "KITCHEN_TICKET", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"Unsupported print job type '{job.Type}'.");
+        if (string.Equals(job.Type, "KITCHEN_TICKET", StringComparison.OrdinalIgnoreCase))
+        {
+            await ExecuteKitchenTicketAsync(job, ct);
+            return;
+        }
 
+        if (string.Equals(job.Type, "PRECHECK", StringComparison.OrdinalIgnoreCase))
+        {
+            await ExecutePrecheckAsync(job, ct);
+            return;
+        }
+
+        throw new InvalidOperationException($"Unsupported print job type '{job.Type}'.");
+    }
+
+    private async Task ExecuteKitchenTicketAsync(AgentPrintJobResponse job, CancellationToken ct)
+    {
         var payload = JsonSerializer.Deserialize<KitchenTicketPayload>(job.PayloadJson, JsonOptions)
             ?? throw new InvalidOperationException("Kitchen ticket payload is empty.");
 
@@ -46,6 +60,37 @@ public sealed class KitchenPrintJobExecutor(
             $"Unsupported kitchen printer connection type '{job.Printer.ConnectionType}'.");
     }
 
+    private async Task ExecutePrecheckAsync(AgentPrintJobResponse job, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Deserialize<ReceiptPrintRequest>(job.PayloadJson, JsonOptions)
+            ?? throw new InvalidOperationException("Precheck payload is empty.");
+
+        ReceiptBuilder.Validate(payload);
+
+        if (string.Equals(job.Printer.ConnectionType, "WindowsQueue", StringComparison.OrdinalIgnoreCase))
+        {
+            EnsureWindowsPrinterInstalled(job.Printer.Address);
+            windowsDriverPrinter.PrintText(
+                job.Printer.Address,
+                ReceiptBuilder.BuildWindowsText(payload),
+                $"Precheck #{payload.OrderNumber}");
+            return;
+        }
+
+        if (string.Equals(job.Printer.ConnectionType, "Network", StringComparison.OrdinalIgnoreCase))
+        {
+            await networkRawPrinter.SendAsync(
+                job.Printer.Address,
+                job.Printer.Port ?? 9100,
+                ReceiptBuilder.BuildEscPos(payload),
+                ct);
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported precheck printer connection type '{job.Printer.ConnectionType}'.");
+    }
+
     private void EnsureWindowsPrinterInstalled(string queueName)
     {
         var installed = discovery.GetInstalledPrinters().Any(x =>
@@ -53,7 +98,7 @@ public sealed class KitchenPrintJobExecutor(
 
         if (!installed)
             throw new InvalidOperationException(
-                $"Windows kitchen printer '{queueName}' is no longer installed on this POS.");
+                $"Windows printer '{queueName}' is no longer installed on this POS.");
     }
 
     private static string BuildWindowsText(KitchenTicketPayload payload)
