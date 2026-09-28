@@ -1452,6 +1452,12 @@ public static class OrderEndpoints
                 target.Items.Add(item);
             }
 
+            await AutomaticPricingRules.SyncAsync(
+                db,
+                target,
+                restaurantId,
+                employeeId,
+                ct);
             Recalculate(source);
             Recalculate(target);
 
