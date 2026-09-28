@@ -307,6 +307,7 @@ public static class OrderEndpoints
                 OrderId = order.Id,
                 Order = order,
                 ProductId = product.Id,
+                CategoryIdSnapshot = product.CategoryId,
                 ProductNameSnapshot = product.Name,
                 GuestNumber = request.GuestNumber,
                 Quantity = request.Quantity,
@@ -346,6 +347,12 @@ public static class OrderEndpoints
 
             // Explicitly mark the whole graph as new because UUIDs are generated client-side.
             db.OrderItems.Add(line);
+            await AutomaticPricingRules.SyncAsync(
+                db,
+                order,
+                restaurantId,
+                employeeId,
+                ct);
             Recalculate(order);
             order.Version++;
             order.UpdatedAt = now;
@@ -1927,9 +1934,28 @@ public static class OrderEndpoints
                     return Results.Conflict(new { message = $"Guest {guestNumber} has no active items." });
             }
 
+            var timeZoneId = await AutomaticPricingRules
+                .GetRestaurantTimeZoneAsync(
+                    db,
+                    restaurantId,
+                    ct);
+
+            if (!PricingRuleEngine.PresetHasEligibleItems(
+                    preset,
+                    order,
+                    timeZoneId,
+                    request.GuestNumber))
+            {
+                return Results.Conflict(new
+                {
+                    code = "ADJUSTMENT_NOT_APPLICABLE",
+                    message = "Сейчас это правило не подходит ни к одной позиции заказа."
+                });
+            }
+
             var adjustment = order.Adjustments
                 .FirstOrDefault(x =>
-                    x.Type == OrderAdjustmentType.Discount &&
+                    x.PresetId == preset.Id &&
                     x.GuestNumber == request.GuestNumber);
 
             var now = DateTimeOffset.UtcNow;
@@ -1946,10 +1972,10 @@ public static class OrderEndpoints
                 db.OrderAdjustments.Add(adjustment);
             }
 
-            adjustment.Mode = preset.Mode;
-            adjustment.Value = Money(preset.Value);
-            adjustment.PresetId = preset.Id;
-            adjustment.PresetNameSnapshot = preset.Name;
+            PricingRuleEngine.CopyPresetSnapshot(
+                adjustment,
+                preset,
+                timeZoneId);
             adjustment.Reason = applicationComment;
             adjustment.AppliedByEmployeeId = employeeId;
             adjustment.UpdatedAt = now;
@@ -1994,6 +2020,80 @@ public static class OrderEndpoints
             await tx.CommitAsync(ct);
             return Results.Ok(ToDto(order));
         }).RequireAuthorization(Permissions.OrdersWrite, Permissions.OrdersAdjustmentsApply);
+
+        group.MapDelete("/{id:guid}/adjustments/{adjustmentId:guid}", async (
+            Guid id,
+            Guid adjustmentId,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            var order = await db.Orders
+                .Include(x => x.Items).ThenInclude(x => x.Modifiers)
+                .Include(x => x.Payments)
+                .FirstOrDefaultAsync(
+                    x => x.Id == id && x.RestaurantId == restaurantId,
+                    ct);
+
+            if (order is null)
+                return Results.NotFound(new { message = "Order not found." });
+
+            if (!CanEditOrder(order.Status))
+                return Results.Conflict(new { message = $"Order cannot be changed in status {order.Status}." });
+
+            var adjustment = order.Adjustments
+                .FirstOrDefault(x => x.Id == adjustmentId);
+
+            if (adjustment is null)
+                return Results.Ok(ToDto(order));
+
+            if (!await CanRemoveAdjustmentAsync(
+                    db,
+                    user,
+                    restaurantId,
+                    employeeId,
+                    adjustment,
+                    adjustment.Type,
+                    ct))
+            {
+                return Results.Forbid();
+            }
+
+            order.Adjustments.Remove(adjustment);
+            db.OrderAdjustments.Remove(adjustment);
+            Recalculate(order);
+            order.Version++;
+            order.UpdatedAt = DateTimeOffset.UtcNow;
+
+            db.AuditEvents.Add(Audit(
+                restaurantId,
+                employeeId,
+                "ORDER_ADJUSTMENT_REMOVED",
+                "Order",
+                order.Id,
+                new
+                {
+                    adjustment.Id,
+                    adjustment.PresetId,
+                    adjustment.PresetNameSnapshot,
+                    type = EnumText(adjustment.Type),
+                    adjustment.CalculatedAmount
+                }));
+            db.OutboxEvents.Add(Outbox(
+                restaurantId,
+                "ORDER_CHANGED",
+                "Order",
+                order.Id,
+                new { order.Id, order.Version }));
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(ToDto(order));
+        }).RequireAuthorization(
+            Permissions.OrdersWrite,
+            Permissions.OrdersAdjustmentsApply);
 
         group.MapDelete("/{id:guid}/discount", async (
             Guid id,
@@ -2129,8 +2229,28 @@ public static class OrderEndpoints
             if (!order.Items.Any(x => x.Status != OrderItemStatus.Voided))
                 return Results.Conflict(new { message = "Order has no active items." });
 
+            var timeZoneId = await AutomaticPricingRules
+                .GetRestaurantTimeZoneAsync(
+                    db,
+                    restaurantId,
+                    ct);
+
+            if (!PricingRuleEngine.PresetHasEligibleItems(
+                    preset,
+                    order,
+                    timeZoneId))
+            {
+                return Results.Conflict(new
+                {
+                    code = "ADJUSTMENT_NOT_APPLICABLE",
+                    message = "Сейчас это правило не подходит ни к одной позиции заказа."
+                });
+            }
+
             var adjustment = order.Adjustments
-                .FirstOrDefault(x => x.Type == OrderAdjustmentType.ServiceCharge);
+                .FirstOrDefault(x =>
+                    x.PresetId == preset.Id &&
+                    !x.GuestNumber.HasValue);
 
             var now = DateTimeOffset.UtcNow;
             if (adjustment is null)
@@ -2145,11 +2265,11 @@ public static class OrderEndpoints
                 db.OrderAdjustments.Add(adjustment);
             }
 
-            adjustment.Mode = preset.Mode;
-            adjustment.Value = Money(preset.Value);
             adjustment.GuestNumber = null;
-            adjustment.PresetId = preset.Id;
-            adjustment.PresetNameSnapshot = preset.Name;
+            PricingRuleEngine.CopyPresetSnapshot(
+                adjustment,
+                preset,
+                timeZoneId);
             adjustment.Reason = applicationComment;
             adjustment.AppliedByEmployeeId = employeeId;
             adjustment.UpdatedAt = now;
@@ -2313,6 +2433,12 @@ public static class OrderEndpoints
             return true;
         }
 
+        if (adjustment.ApplicationModeSnapshot ==
+            OrderAdjustmentApplicationMode.Automatic)
+        {
+            return false;
+        }
+
         if (!adjustment.PresetId.HasValue)
             return false;
 
@@ -2366,11 +2492,14 @@ public static class OrderEndpoints
         return await db.OrderAdjustmentPresets
             .AsNoTracking()
             .Include(x => x.AllowedRoles)
+            .Include(x => x.Products)
+            .Include(x => x.Categories)
             .FirstOrDefaultAsync(
                 x =>
                     x.Id == presetId &&
                     x.RestaurantId == restaurantId &&
                     x.IsActive &&
+                    x.ApplicationMode == OrderAdjustmentApplicationMode.Manual &&
                     x.Type == expectedType &&
                     x.AllowedRoles.Any(role => role.RoleId == roleId.Value),
                 ct);
@@ -2451,6 +2580,10 @@ public static class OrderEndpoints
                 mode = EnumText(x.Mode),
                 x.PresetId,
                 x.PresetNameSnapshot,
+                applicationMode = EnumText(x.ApplicationModeSnapshot),
+                timeBasis = EnumText(x.TimeBasisSnapshot),
+                priority = x.PrioritySnapshot,
+                canStack = x.CanStackSnapshot,
                 x.GuestNumber,
                 x.Value,
                 x.CalculatedAmount,
@@ -2482,6 +2615,7 @@ public static class OrderEndpoints
         {
             x.Id,
             x.ProductId,
+            categoryId = x.CategoryIdSnapshot,
             productName = x.ProductNameSnapshot,
             x.GuestNumber,
             x.Quantity,
