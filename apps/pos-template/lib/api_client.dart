@@ -393,9 +393,12 @@ class PosApiClient {
     return OrderDto.fromJson(_decode(response));
   }
 
-  Future<List<AdjustmentPresetDto>> getAdjustmentPresets() async {
+  Future<List<AdjustmentPresetDto>> getAdjustmentPresets({
+    String? orderId,
+  }) async {
+    final suffix = orderId == null ? '' : '?orderId=$orderId';
     final response = await _http.get(
-      _uri('/api/v1/order-adjustment-presets'),
+      _uri('/api/v1/order-adjustment-presets$suffix'),
       headers: _headers,
     );
     final data = _decode(response);
