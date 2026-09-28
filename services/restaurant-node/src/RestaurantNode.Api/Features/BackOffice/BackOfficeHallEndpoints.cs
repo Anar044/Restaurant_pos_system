@@ -30,6 +30,9 @@ public static class BackOfficeHallEndpoints
                 .Select(x => new
                 {
                     id = x.Id,
+                    groupId = x.GroupId,
+                    precheckPrinterId = x.PrecheckPrinterId,
+                    precheckPrinterName = x.PrecheckPrinterId == null ? null : db.Printers.Where(p => p.Id == x.PrecheckPrinterId).Select(p => p.Name).FirstOrDefault(),
                     name = x.Name,
                     sortOrder = x.SortOrder,
                     isActive = x.IsActive,
@@ -68,8 +71,20 @@ public static class BackOfficeHallEndpoints
             if (request.SortOrder < 0)
                 return Results.BadRequest(new { message = "Sort order cannot be negative." });
 
+            var groupId = request.GroupId ?? await db.RestaurantGroups
+                .Where(x => x.RestaurantId == restaurantId && x.IsActive)
+                .OrderBy(x => x.Name)
+                .Select(x => (Guid?)x.Id)
+                .FirstOrDefaultAsync(ct);
+            if (!groupId.HasValue)
+                return Results.BadRequest(new { message = "Restaurant group was not found." });
+
+            if (request.PrecheckPrinterId.HasValue && !await db.Printers.AnyAsync(
+                x => x.Id == request.PrecheckPrinterId && x.RestaurantId == restaurantId && x.IsActive, ct))
+                return Results.BadRequest(new { message = "Precheck printer was not found." });
+
             var duplicate = await db.Halls.AnyAsync(
-                x => x.RestaurantId == restaurantId && x.Name == name,
+                x => x.GroupId == groupId.Value && x.Name == name,
                 ct);
             if (duplicate)
                 return Results.Conflict(new { message = "A hall with this name already exists." });
@@ -77,6 +92,8 @@ public static class BackOfficeHallEndpoints
             var hall = new Hall
             {
                 RestaurantId = restaurantId,
+                GroupId = groupId.Value,
+                PrecheckPrinterId = request.PrecheckPrinterId,
                 Name = name,
                 SortOrder = request.SortOrder,
                 IsActive = true
@@ -116,8 +133,16 @@ public static class BackOfficeHallEndpoints
             if (request.SortOrder < 0)
                 return Results.BadRequest(new { message = "Sort order cannot be negative." });
 
+            var targetGroupId = request.GroupId ?? hall.GroupId;
+            if (!await db.RestaurantGroups.AnyAsync(
+                x => x.Id == targetGroupId && x.RestaurantId == restaurantId && x.IsActive, ct))
+                return Results.BadRequest(new { message = "Restaurant group was not found." });
+            if (request.PrecheckPrinterId.HasValue && !await db.Printers.AnyAsync(
+                x => x.Id == request.PrecheckPrinterId && x.RestaurantId == restaurantId && x.IsActive, ct))
+                return Results.BadRequest(new { message = "Precheck printer was not found." });
+
             var duplicate = await db.Halls.AnyAsync(
-                x => x.RestaurantId == restaurantId && x.Id != hallId && x.Name == name,
+                x => x.GroupId == targetGroupId && x.Id != hallId && x.Name == name,
                 ct);
             if (duplicate)
                 return Results.Conflict(new { message = "A hall with this name already exists." });
@@ -135,6 +160,8 @@ public static class BackOfficeHallEndpoints
                     return Results.Conflict(new { message = "The hall cannot be deactivated while one of its tables has an active order." });
             }
 
+            hall.GroupId = targetGroupId;
+            hall.PrecheckPrinterId = request.PrecheckPrinterId;
             hall.Name = name;
             hall.SortOrder = request.SortOrder;
             hall.IsActive = request.IsActive;
@@ -286,6 +313,8 @@ public static class BackOfficeHallEndpoints
     private static object ToHallResponse(Hall hall) => new
     {
         id = hall.Id,
+        groupId = hall.GroupId,
+        precheckPrinterId = hall.PrecheckPrinterId,
         name = hall.Name,
         sortOrder = hall.SortOrder,
         isActive = hall.IsActive
@@ -326,7 +355,7 @@ public static class BackOfficeHallEndpoints
     }
 }
 
-public sealed record CreateHallRequest(string Name, int SortOrder = 0);
-public sealed record UpdateHallRequest(string Name, int SortOrder, bool IsActive);
+public sealed record CreateHallRequest(string Name, int SortOrder = 0, Guid? GroupId = null, Guid? PrecheckPrinterId = null);
+public sealed record UpdateHallRequest(string Name, int SortOrder, bool IsActive, Guid? GroupId = null, Guid? PrecheckPrinterId = null);
 public sealed record CreateTableRequest(string Name, int Seats = 4, int SortOrder = 0);
 public sealed record UpdateTableRequest(Guid HallId, string Name, int Seats, int SortOrder, bool IsActive);
