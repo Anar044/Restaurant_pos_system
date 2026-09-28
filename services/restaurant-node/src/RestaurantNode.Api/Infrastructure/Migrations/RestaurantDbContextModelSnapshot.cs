@@ -157,6 +157,8 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("RestaurantId", "Name")
+                        .IsUnique();
 
                     b.ToTable("categories", (string)null);
                 });
@@ -340,9 +342,6 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.HasIndex("PrecheckPrinterId");
 
                     b.HasIndex("GroupId", "Name")
-                        .IsUnique();
-
-                    b.HasIndex("RestaurantId", "Name")
                         .IsUnique();
 
                     b.ToTable("halls", (string)null);
