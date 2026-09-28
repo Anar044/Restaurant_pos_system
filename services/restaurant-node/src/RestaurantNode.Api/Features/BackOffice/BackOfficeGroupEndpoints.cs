@@ -129,7 +129,7 @@ public static class BackOfficeGroupEndpoints
             await db.SaveChangesAsync(ct); return Results.Ok(new{id=entity.Id});
         }).RequireAuthorization(Permissions.KitchenManage);
 
-        group.MapPost("/types", async (NameRequest request, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
+        group.MapPost("/types", async (GroupNameRequest request, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
             if (!TryRestaurantId(user, out var restaurantId)) return Results.Unauthorized();
             var name=Normalize(request.Name); if(name is null) return Results.BadRequest(new{message="Название типа обязательно."});
