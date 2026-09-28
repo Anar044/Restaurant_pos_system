@@ -4166,47 +4166,6 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
     presetsFuture = widget.api.getAdjustmentPresets();
   }
 
-  OrderAdjustmentDto? _discountFor(int? guestNumber) {
-    for (final adjustment in currentOrder.adjustments) {
-      if (adjustment.isDiscount &&
-          adjustment.guestNumber == guestNumber) {
-        return adjustment;
-      }
-    }
-    return null;
-  }
-
-  OrderAdjustmentDto? get _serviceCharge {
-    for (final adjustment in currentOrder.adjustments) {
-      if (adjustment.isServiceCharge) return adjustment;
-    }
-    return null;
-  }
-
-  String _adjustmentSummary(OrderAdjustmentDto? adjustment) {
-    if (adjustment == null) return 'Не выбрано';
-
-    final presetName = adjustment.presetNameSnapshot?.trim();
-    final name = presetName == null || presetName.isEmpty
-        ? adjustment.reason ?? 'Правило'
-        : presetName;
-    final value = adjustment.mode == 'PERCENT'
-        ? '${adjustment.value.toStringAsFixed(2)}%'
-        : '${adjustment.value.toStringAsFixed(2)} AZN';
-    final sign = adjustment.isDiscount ? '-' : '+';
-
-    final amount = '$name · $value · '
-        '$sign${adjustment.calculatedAmount.toStringAsFixed(2)} AZN';
-    final comment = adjustment.reason?.trim();
-    final presetSnapshot = adjustment.presetNameSnapshot?.trim();
-    if (comment == null ||
-        comment.isEmpty ||
-        comment == presetSnapshot) {
-      return amount;
-    }
-    return '$amount\nКомментарий: $comment';
-  }
-
   Future<String?> _requestAdjustmentComment(
     AdjustmentPresetDto preset,
   ) async {
@@ -4241,7 +4200,7 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
                   maxLines: 4,
                   decoration: InputDecoration(
                     labelText: 'Комментарий *',
-                    hintText: 'Например: по согласованию с управляющим',
+                    hintText: 'Например: согласовано с управляющим',
                     border: const OutlineInputBorder(),
                     errorText: validationError,
                   ),
@@ -4312,27 +4271,6 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
     }
   }
 
-  Future<void> _removeDiscount(int? guestNumber) async {
-    if (busy) return;
-    setState(() {
-      busy = true;
-      error = null;
-    });
-
-    try {
-      final updated = await widget.api.removeDiscount(
-        orderId: currentOrder.id,
-        guestNumber: guestNumber,
-      );
-      if (!mounted) return;
-      setState(() => currentOrder = updated);
-    } catch (e) {
-      if (mounted) setState(() => error = e.toString());
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
-  }
-
   Future<void> _applyServiceCharge(
     AdjustmentPresetDto preset,
   ) async {
@@ -4361,16 +4299,21 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
     }
   }
 
-  Future<void> _removeServiceCharge() async {
-    if (busy) return;
+  Future<void> _removeAdjustment(
+    OrderAdjustmentDto adjustment,
+  ) async {
+    if (busy || adjustment.isAutomatic) return;
+
     setState(() {
       busy = true;
       error = null;
     });
 
     try {
-      final updated =
-          await widget.api.removeServiceCharge(currentOrder.id);
+      final updated = await widget.api.removeAdjustment(
+        orderId: currentOrder.id,
+        adjustmentId: adjustment.id,
+      );
       if (!mounted) return;
       setState(() => currentOrder = updated);
     } catch (e) {
@@ -4380,12 +4323,110 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
     }
   }
 
+  String _adjustmentTitle(OrderAdjustmentDto adjustment) {
+    final name = adjustment.presetNameSnapshot?.trim();
+    return name == null || name.isEmpty ? 'Правило' : name;
+  }
+
+  String _adjustmentDetails(OrderAdjustmentDto adjustment) {
+    final value = adjustment.mode == 'PERCENT'
+        ? '${adjustment.value.toStringAsFixed(2)}%'
+        : '${adjustment.value.toStringAsFixed(2)} AZN';
+    final sign = adjustment.isDiscount ? '-' : '+';
+    final parts = <String>[
+      value,
+      '$sign${adjustment.calculatedAmount.toStringAsFixed(2)} AZN',
+      'приоритет ${adjustment.priority}',
+      adjustment.canStack ? 'совмещается' : 'не совмещать',
+      adjustment.isAutomatic ? 'авто' : 'вручную',
+      if (adjustment.guestNumber != null)
+        'Гость ${adjustment.guestNumber}',
+    ];
+
+    final comment = adjustment.reason?.trim();
+    if (comment != null && comment.isNotEmpty) {
+      parts.add('Комментарий: $comment');
+    }
+
+    return parts.join(' · ');
+  }
+
+  Widget _appliedRules() {
+    final applied = [...currentOrder.adjustments]
+      ..sort((a, b) {
+        final priority = a.priority.compareTo(b.priority);
+        if (priority != 0) return priority;
+        return a.createdAt.compareTo(b.createdAt);
+      });
+
+    if (applied.isEmpty) {
+      return const Card.outlined(
+        child: Padding(
+          padding: EdgeInsets.all(14),
+          child: Text('К заказу пока не применено ни одного правила.'),
+        ),
+      );
+    }
+
+    return Card.outlined(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'ПРИМЕНЁННЫЕ ПРАВИЛА',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                letterSpacing: .6,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final adjustment in applied) ...[
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  child: Icon(
+                    adjustment.isAutomatic
+                        ? Icons.bolt_outlined
+                        : adjustment.isDiscount
+                            ? Icons.percent
+                            : Icons.room_service_outlined,
+                    size: 18,
+                  ),
+                ),
+                title: Text(
+                  _adjustmentTitle(adjustment),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: Text(_adjustmentDetails(adjustment)),
+                trailing: adjustment.isAutomatic
+                    ? const Tooltip(
+                        message: 'Автоматическое правило управляется BackOffice',
+                        child: Icon(Icons.lock_outline, size: 20),
+                      )
+                    : IconButton(
+                        tooltip: 'Убрать правило',
+                        onPressed: busy
+                            ? null
+                            : () => _removeAdjustment(adjustment),
+                        icon: const Icon(Icons.delete_outline),
+                      ),
+              ),
+              if (adjustment != applied.last) const Divider(height: 1),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _presetSection({
     required String title,
-    required String current,
     required List<AdjustmentPresetDto> presets,
     required ValueChanged<AdjustmentPresetDto> onSelected,
-    required VoidCallback? onRemove,
   }) {
     final scheme = Theme.of(context).colorScheme;
     return Card.outlined(
@@ -4394,43 +4435,17 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 15,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        current,
-                        style: TextStyle(
-                          color: scheme.onSurfaceVariant,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (onRemove != null)
-                  IconButton(
-                    tooltip: 'Убрать',
-                    onPressed: busy ? null : onRemove,
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-              ],
+            Text(
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 15,
+              ),
             ),
             const SizedBox(height: 10),
             if (presets.isEmpty)
               Text(
-                'Нет доступных правил для вашей роли.',
+                'Нет доступных ручных правил.',
                 style: TextStyle(
                   color: scheme.onSurfaceVariant,
                   fontSize: 12,
@@ -4467,9 +4482,6 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final orderDiscount = _discountFor(null);
-    final guestDiscount = _discountFor(selectedGuestNumber);
-    final serviceCharge = _serviceCharge;
 
     return AlertDialog(
       insetPadding: const EdgeInsets.all(24),
@@ -4485,7 +4497,7 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
         ],
       ),
       content: SizedBox(
-        width: 760,
+        width: 820,
         child: FutureBuilder<List<AdjustmentPresetDto>>(
           future: presetsFuture,
           builder: (context, snapshot) {
@@ -4558,16 +4570,14 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
+                  _appliedRules(),
+                  const SizedBox(height: 12),
                   _presetSection(
-                    title: 'Скидка на весь заказ',
-                    current: _adjustmentSummary(orderDiscount),
+                    title: 'Добавить скидку на заказ',
                     presets: orderDiscountPresets,
                     onSelected: (preset) =>
                         _applyDiscount(preset, null),
-                    onRemove: orderDiscount == null
-                        ? null
-                        : () => _removeDiscount(null),
                   ),
                   const SizedBox(height: 10),
                   const Text(
@@ -4602,28 +4612,18 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
                   ),
                   const SizedBox(height: 8),
                   _presetSection(
-                    title: 'Гость $selectedGuestNumber',
-                    current: _adjustmentSummary(guestDiscount),
+                    title: 'Добавить скидку · Гость $selectedGuestNumber',
                     presets: guestDiscountPresets,
                     onSelected: (preset) => _applyDiscount(
                       preset,
                       selectedGuestNumber,
                     ),
-                    onRemove: guestDiscount == null
-                        ? null
-                        : () => _removeDiscount(
-                              selectedGuestNumber,
-                            ),
                   ),
                   const SizedBox(height: 10),
                   _presetSection(
-                    title: 'Сервис / надбавка',
-                    current: _adjustmentSummary(serviceCharge),
+                    title: 'Добавить надбавку / сервис',
                     presets: servicePresets,
                     onSelected: _applyServiceCharge,
-                    onRemove: serviceCharge == null
-                        ? null
-                        : _removeServiceCharge,
                   ),
                   if (error != null) ...[
                     const SizedBox(height: 12),
@@ -4643,9 +4643,8 @@ class _OrderAdjustmentsDialogState extends State<_OrderAdjustmentsDialog> {
                   ],
                   const SizedBox(height: 10),
                   Text(
-                    'Процент и сумма задаются только в BackOffice. '
-                    'На этой кассе доступны только правила, '
-                    'разрешённые вашей роли.',
+                    'Условия, время, блюда и приоритет задаются только '
+                    'в BackOffice. Автоматические правила применяет сервер.',
                     style: TextStyle(
                       color: scheme.onSurfaceVariant,
                       fontSize: 12,
