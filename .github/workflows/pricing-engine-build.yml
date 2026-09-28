@@ -43,6 +43,8 @@ jobs:
           dotnet ef migrations has-pending-model-changes \
             --project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj \
             --startup-project services/restaurant-node/src/RestaurantNode.Api/RestaurantNode.Api.csproj
+      - name: Run pricing engine tests
+        run: dotnet test tests/RestaurantNode.Pricing.Tests/RestaurantNode.Pricing.Tests.csproj
 
   backoffice:
     runs-on: ubuntu-latest
