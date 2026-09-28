@@ -107,7 +107,7 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                 table: "restaurant_departments",
                 columns: new[] { "GroupId", "PreparationPlaceTypeId" },
                 unique: true,
-                filter: ""PreparationPlaceTypeId" IS NOT NULL");
+                filter: "\"PreparationPlaceTypeId\" IS NOT NULL");
 
             migrationBuilder.AddForeignKey(
                 name: "FK_halls_printers_PrecheckPrinterId",
