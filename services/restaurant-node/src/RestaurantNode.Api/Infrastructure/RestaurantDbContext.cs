@@ -19,7 +19,6 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<RecipeLine> RecipeLines => Set<RecipeLine>();
     public DbSet<ProductPrice> ProductPrices => Set<ProductPrice>();
     public DbSet<ModifierGroup> ModifierGroups => Set<ModifierGroup>();
-    public DbSet<Modifier> Modifiers => Set<Modifier>();
     public DbSet<ProductModifierGroup> ProductModifierGroups => Set<ProductModifierGroup>();
     public DbSet<ModifierGroupModifier> ModifierGroupModifiers => Set<ModifierGroupModifier>();
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
@@ -59,7 +58,6 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<RecipeLine>().ToTable("recipe_lines");
         modelBuilder.Entity<ProductPrice>().ToTable("product_prices");
         modelBuilder.Entity<ModifierGroup>().ToTable("modifier_groups");
-        modelBuilder.Entity<Modifier>().ToTable("modifiers");
         modelBuilder.Entity<ProductModifierGroup>().ToTable("product_modifier_groups");
         modelBuilder.Entity<ModifierGroupModifier>().ToTable("modifier_group_modifiers");
         modelBuilder.Entity<Warehouse>().ToTable("warehouses");
@@ -111,7 +109,6 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Product>().Property(x => x.MinStock).HasPrecision(18, 3);
         modelBuilder.Entity<RecipeLine>().Property(x => x.Quantity).HasPrecision(18, 3);
         modelBuilder.Entity<ProductPrice>().Property(x => x.Amount).HasPrecision(18, 4);
-        modelBuilder.Entity<Modifier>().Property(x => x.PriceDelta).HasPrecision(18, 4);
         modelBuilder.Entity<StockMovement>().Property(x => x.QuantityDelta).HasPrecision(18, 3);
         modelBuilder.Entity<Shift>().Property(x => x.OpeningCash).HasPrecision(18, 4);
         modelBuilder.Entity<Shift>().Property(x => x.ClosingCash).HasPrecision(18, 4);
