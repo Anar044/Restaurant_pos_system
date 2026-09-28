@@ -172,6 +172,18 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .HasForeignKey(x => x.DepartmentId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        modelBuilder.Entity<Device>()
+            .HasOne(x => x.ReceiptPrinter)
+            .WithMany()
+            .HasForeignKey(x => x.ReceiptPrinterId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Printer>()
+            .HasOne(x => x.HostDevice)
+            .WithMany()
+            .HasForeignKey(x => x.HostDeviceId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         modelBuilder.Entity<Order>()
             .HasMany(x => x.Items)
             .WithOne(x => x.Order)
