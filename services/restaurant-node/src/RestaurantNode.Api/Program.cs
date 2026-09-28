@@ -104,7 +104,6 @@ app.MapPosAgentEndpoints();
 app.MapPosAgentPrintJobEndpoints();
 app.MapBackOfficeEndpoints();
 app.MapBackOfficeHallEndpoints();
-app.MapBackOfficeMenuEndpoints();
 app.MapBackOfficeModifierEndpoints();
 app.MapBackOfficeEmployeeEndpoints();
 app.MapBackOfficeDeviceEndpoints();
