@@ -322,8 +322,12 @@ public static class BackOfficeGroupEndpoints
             return Results.BadRequest(new { message = "Склад списания не найден." });
 
         if (request.PrinterId.HasValue && !await db.Printers.AnyAsync(x =>
-            x.Id == request.PrinterId && x.RestaurantId == restaurantId && x.IsActive, ct))
-            return Results.BadRequest(new { message = "Принтер отделения не найден." });
+            x.Id == request.PrinterId &&
+            x.RestaurantId == restaurantId &&
+            x.IsActive &&
+            x.IsConfigured &&
+            x.HostDeviceId.HasValue, ct))
+            return Results.BadRequest(new { message = "Принтер отделения не найден или не привязан к POS Agent." });
 
         return null;
     }
