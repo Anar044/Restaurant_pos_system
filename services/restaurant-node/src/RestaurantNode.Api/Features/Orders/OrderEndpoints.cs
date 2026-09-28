@@ -162,18 +162,37 @@ public static class OrderEndpoints
                 if (lockConflict is not null) return lockConflict;
             }
 
+            Guid? originDeviceId = null;
+            if (request.ShiftId.HasValue)
+            {
+                var originShift = await db.Shifts
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x =>
+                        x.Id == request.ShiftId.Value &&
+                        x.RestaurantId == restaurantId &&
+                        x.Status == ShiftStatus.Open,
+                        ct);
+
+                if (originShift is null)
+                    return Results.Conflict(new { message = "The order must be opened in an active POS shift." });
+
+                originDeviceId = originShift.DeviceId;
+            }
+
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             var order = new Order
             {
                 RestaurantId = restaurantId,
                 TableId = request.TableId,
                 CreatedByEmployeeId = employeeId,
+                OriginDeviceId = originDeviceId,
+                OpenedShiftId = request.ShiftId,
                 GuestCount = request.GuestCount,
                 Status = OrderStatus.Open
             };
             db.Orders.Add(order);
-            db.AuditEvents.Add(Audit(restaurantId, employeeId, "ORDER_CREATED", "Order", order.Id, new { request.TableId, request.GuestCount }));
-            db.OutboxEvents.Add(Outbox(restaurantId, "ORDER_CREATED", "Order", order.Id, new { order.Id, request.TableId, request.GuestCount }));
+            db.AuditEvents.Add(Audit(restaurantId, employeeId, "ORDER_CREATED", "Order", order.Id, new { request.TableId, request.GuestCount, request.ShiftId, originDeviceId }));
+            db.OutboxEvents.Add(Outbox(restaurantId, "ORDER_CREATED", "Order", order.Id, new { order.Id, request.TableId, request.GuestCount, request.ShiftId, originDeviceId }));
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Created($"/api/v1/orders/{order.Id}", ToDto(order));
@@ -2800,7 +2819,10 @@ public static class OrderEndpoints
     }
 }
 
-public sealed record CreateOrderRequest(Guid? TableId = null, int GuestCount = 1);
+public sealed record CreateOrderRequest(
+    Guid? TableId = null,
+    int GuestCount = 1,
+    Guid? ShiftId = null);
 public sealed record ModifierSelectionRequest(
     Guid GroupId,
     Guid ModifierId,
