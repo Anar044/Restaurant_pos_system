@@ -136,11 +136,16 @@ class PosApiClient {
   Future<CloseShiftResult> closeShift(
     String shiftId, {
     required double closingCash,
+    String? reason,
   }) async {
     final response = await _http.post(
       _uri('/api/v1/shifts/$shiftId/close'),
       headers: _headers,
-      body: jsonEncode({'closingCash': closingCash}),
+      body: jsonEncode({
+        'closingCash': closingCash,
+        if (reason != null && reason.trim().isNotEmpty)
+          'reason': reason.trim(),
+      }),
     );
     return CloseShiftResult.fromJson(_decode(response));
   }
@@ -625,9 +630,12 @@ class ShiftReportDto {
     required this.grossSales,
     required this.refunds,
     required this.netSales,
+    required this.cashSales,
+    required this.cashRefunds,
     required this.deposits,
     required this.withdrawals,
     required this.payments,
+    this.closingNote,
     this.closedAt,
     this.closingCash,
     this.cashDifference,
@@ -647,8 +655,11 @@ class ShiftReportDto {
   final double grossSales;
   final double refunds;
   final double netSales;
+  final double cashSales;
+  final double cashRefunds;
   final double deposits;
   final double withdrawals;
+  final String? closingNote;
   final List<ShiftPaymentTotalDto> payments;
 
   factory ShiftReportDto.fromJson(Map<String, dynamic> json) => ShiftReportDto(
@@ -668,8 +679,11 @@ class ShiftReportDto {
         grossSales: (json['grossSales'] as num).toDouble(),
         refunds: (json['refunds'] as num).toDouble(),
         netSales: (json['netSales'] as num).toDouble(),
+        cashSales: (json['cashSales'] as num?)?.toDouble() ?? 0,
+        cashRefunds: (json['cashRefunds'] as num?)?.toDouble() ?? 0,
         deposits: (json['deposits'] as num).toDouble(),
         withdrawals: (json['withdrawals'] as num).toDouble(),
+        closingNote: json['closingNote'] as String?,
         payments: ((json['payments'] as List<dynamic>?) ?? const [])
             .map((e) => ShiftPaymentTotalDto.fromJson(e as Map<String, dynamic>))
             .toList(),
