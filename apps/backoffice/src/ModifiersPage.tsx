@@ -1,14 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
-  type BackOfficeModifier,
   type BackOfficeModifierGroup,
   type BackOfficeModifiers,
-  createModifier,
   createModifierGroup,
   getBackOfficeModifiers,
   setModifierGroupItems,
   setProductModifierGroups,
-  updateModifier,
   updateModifierGroup,
 } from './api';
 import './modifiers.css';
@@ -16,8 +13,6 @@ import './modifiers.css';
 type EditorState =
   | { kind: 'group-create' }
   | { kind: 'group-edit'; group: BackOfficeModifierGroup }
-  | { kind: 'modifier-create' }
-  | { kind: 'modifier-edit'; modifier: BackOfficeModifier }
   | null;
 
 export function ModifiersPage({ token }: { token: string }) {
@@ -39,7 +34,7 @@ export function ModifiersPage({ token }: { token: string }) {
         return next.groups[0]?.id ?? null;
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить модификаторы');
+      setError(e instanceof Error ? e.message : 'Не удалось загрузить группы модификаторов');
     } finally {
       setLoading(false);
     }
@@ -56,7 +51,7 @@ export function ModifiersPage({ token }: { token: string }) {
 
   async function toggleModifier(group: BackOfficeModifierGroup, modifierId: string, checked: boolean) {
     if (!data || savingLink) return;
-    setSavingLink(`modifier:${modifierId}`);
+    setSavingLink('modifier:' + modifierId);
     setError(null);
     try {
       const current = group.modifiers.map((item) => item.id);
@@ -77,7 +72,7 @@ export function ModifiersPage({ token }: { token: string }) {
     const product = data.products.find((item) => item.id === productId);
     if (!product) return;
 
-    setSavingLink(`product:${productId}`);
+    setSavingLink('product:' + productId);
     setError(null);
     try {
       const next = checked
@@ -86,40 +81,47 @@ export function ModifiersPage({ token }: { token: string }) {
       await setProductModifierGroups(token, product.id, next);
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось назначить группу блюду');
+      setError(e instanceof Error ? e.message : 'Не удалось назначить группу позиции');
     } finally {
       setSavingLink(null);
     }
   }
 
   if (!data && loading) {
-    return <div className="empty-state">Загружаем модификаторы…</div>;
+    return <div className="empty-state">Загружаем группы модификаторов…</div>;
   }
 
   return (
     <section>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">МЕНЮ · НАСТРОЙКИ</div>
-          <h1>Модификаторы</h1>
-          <p>Размеры, соусы, добавки, степень прожарки и другие варианты блюда.</p>
+          <div className="eyebrow">НОМЕНКЛАТУРА И СКЛАД</div>
+          <h1>Группы модификаторов</h1>
+          <p>
+            Здесь настраиваются только группы и правила выбора. Сами модификаторы
+            создаются и редактируются в «Номенклатуре».
+          </p>
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>Обновить</button>
-          <button className="secondary-button" onClick={() => setEditor({ kind: 'modifier-create' })}>+ Вариант</button>
           <button className="primary-button" onClick={() => setEditor({ kind: 'group-create' })}>+ Группа</button>
         </div>
       </div>
 
-      {error && <div className="global-error"><span>{error}</span><button onClick={() => void refresh()}>Повторить</button></div>}
+      {error && (
+        <div className="global-error">
+          <span>{error}</span>
+          <button onClick={() => void refresh()}>Повторить</button>
+        </div>
+      )}
 
       <div className="stats-grid">
         <ModifierStat label="Группы" value={data?.groups.filter((x) => x.isActive).length ?? 0} detail="активных" />
-        <ModifierStat label="Варианты" value={data?.modifiers.filter((x) => x.isActive).length ?? 0} detail="активных" />
+        <ModifierStat label="Модификаторы" value={data?.modifiers.filter((x) => x.isActive).length ?? 0} detail="из номенклатуры" />
         <ModifierStat
-          label="Блюда с модификаторами"
+          label="Позиций с группами"
           value={data?.products.filter((x) => x.groupIds.length > 0).length ?? 0}
-          detail={`${data?.products.length ?? 0} блюд всего`}
+          detail={(data?.products.length ?? 0) + ' продаваемых позиций'}
         />
       </div>
 
@@ -133,7 +135,7 @@ export function ModifiersPage({ token }: { token: string }) {
           {(data?.groups ?? []).map((group) => (
             <button
               key={group.id}
-              className={`modifier-group-row ${selectedGroupId === group.id ? 'selected' : ''} ${!group.isActive ? 'inactive' : ''}`}
+              className={'modifier-group-row ' + (selectedGroupId === group.id ? 'selected ' : '') + (!group.isActive ? 'inactive' : '')}
               onClick={() => setSelectedGroupId(group.id)}
             >
               <span>
@@ -147,7 +149,7 @@ export function ModifiersPage({ token }: { token: string }) {
           ))}
 
           {(data?.groups.length ?? 0) === 0 && (
-            <div className="modifier-empty-small">Создайте первую группу, например «Размер».</div>
+            <div className="modifier-empty-small">Создайте первую группу, например «Добавки».</div>
           )}
         </aside>
 
@@ -160,20 +162,28 @@ export function ModifiersPage({ token }: { token: string }) {
                   <h2>{selectedGroup.name}</h2>
                   <p>Выбор: минимум {selectedGroup.minSelections}, максимум {selectedGroup.maxSelections}.</p>
                 </div>
-                <button className="secondary-button compact" onClick={() => setEditor({ kind: 'group-edit', group: selectedGroup })}>Настроить</button>
+                <button className="secondary-button compact" onClick={() => setEditor({ kind: 'group-edit', group: selectedGroup })}>
+                  Настроить
+                </button>
               </div>
 
               <div className="modifier-section">
                 <div className="modifier-section-heading">
-                  <div><strong>Варианты в группе</strong><small>Отметьте доступные варианты и их доплату.</small></div>
-                  <button className="text-button" onClick={() => setEditor({ kind: 'modifier-create' })}>+ Новый вариант</button>
+                  <div>
+                    <strong>Модификаторы в группе</strong>
+                    <small>Список берётся из номенклатуры с типом «Модификатор».</small>
+                  </div>
+                  <span className="route-badge">{selectedGroup.modifiers.length} выбрано</span>
                 </div>
 
                 <div className="modifier-option-grid">
                   {(data?.modifiers ?? []).map((modifier) => {
                     const checked = selectedGroup.modifiers.some((item) => item.id === modifier.id);
                     return (
-                      <label key={modifier.id} className={`modifier-option-card ${checked ? 'checked' : ''} ${!modifier.isActive ? 'inactive' : ''}`}>
+                      <label
+                        key={modifier.id}
+                        className={'modifier-option-card ' + (checked ? 'checked ' : '') + (!modifier.isActive ? 'inactive' : '')}
+                      >
                         <input
                           type="checkbox"
                           checked={checked}
@@ -184,37 +194,33 @@ export function ModifiersPage({ token }: { token: string }) {
                           <strong>{modifier.name}</strong>
                           <small>{priceText(modifier.priceDelta, data?.currencyCode ?? 'AZN')}</small>
                         </span>
-                        <button
-                          type="button"
-                          className="modifier-inline-edit"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setEditor({ kind: 'modifier-edit', modifier });
-                          }}
-                        >
-                          Изменить
-                        </button>
                       </label>
                     );
                   })}
                 </div>
 
                 {(data?.modifiers.length ?? 0) === 0 && (
-                  <div className="menu-empty"><strong>Нет вариантов</strong><span>Создайте, например, «Большой +2 AZN».</span></div>
+                  <div className="menu-empty">
+                    <strong>Нет модификаторов</strong>
+                    <span>Создайте позицию типа «Модификатор» в разделе «Номенклатура».</span>
+                  </div>
                 )}
               </div>
 
               <div className="modifier-section">
                 <div className="modifier-section-heading">
-                  <div><strong>Назначить блюдам</strong><small>На POS эта группа появится только у отмеченных блюд.</small></div>
-                  <span className="route-badge">{selectedGroup.productIds.length} блюд</span>
+                  <div>
+                    <strong>Назначить продаваемым позициям</strong>
+                    <small>На POS группа появится только у отмеченных блюд или товаров.</small>
+                  </div>
+                  <span className="route-badge">{selectedGroup.productIds.length} поз.</span>
                 </div>
+
                 <div className="modifier-product-list">
                   {(data?.products ?? []).map((product) => {
                     const checked = product.groupIds.includes(selectedGroup.id);
                     return (
-                      <label key={product.id} className={`modifier-product-row ${!product.isActive ? 'inactive' : ''}`}>
+                      <label key={product.id} className={'modifier-product-row ' + (!product.isActive ? 'inactive' : '')}>
                         <input
                           type="checkbox"
                           checked={checked}
@@ -239,10 +245,9 @@ export function ModifiersPage({ token }: { token: string }) {
         </div>
       </div>
 
-      {editor && data && (
-        <ModifierEditor
+      {editor && (
+        <ModifierGroupEditor
           editor={editor}
-          currencyCode={data.currencyCode}
           token={token}
           onClose={() => setEditor(null)}
           onSaved={async () => {
@@ -259,30 +264,23 @@ function ModifierStat({ label, value, detail }: { label: string; value: number; 
   return <div className="stat-card"><span>{label}</span><div><strong>{value}</strong><small>{detail}</small></div></div>;
 }
 
-function ModifierEditor({
+function ModifierGroupEditor({
   editor,
-  currencyCode,
   token,
   onClose,
   onSaved,
 }: {
   editor: Exclude<EditorState, null>;
-  currencyCode: string;
   token: string;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   const group = editor.kind === 'group-edit' ? editor.group : null;
-  const modifier = editor.kind === 'modifier-edit' ? editor.modifier : null;
-  const isGroup = editor.kind.startsWith('group');
-  const editing = editor.kind.endsWith('edit');
-
-  const [name, setName] = useState(group?.name ?? modifier?.name ?? '');
+  const [name, setName] = useState(group?.name ?? '');
   const [minSelections, setMinSelections] = useState(group?.minSelections ?? 0);
   const [maxSelections, setMaxSelections] = useState(group?.maxSelections ?? 1);
   const [isRequired, setIsRequired] = useState(group?.isRequired ?? false);
-  const [priceDelta, setPriceDelta] = useState(modifier?.priceDelta ?? 0);
-  const [isActive, setIsActive] = useState(group?.isActive ?? modifier?.isActive ?? true);
+  const [isActive, setIsActive] = useState(group?.isActive ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -292,17 +290,24 @@ function ModifierEditor({
     setError(null);
     try {
       if (editor.kind === 'group-create') {
-        await createModifierGroup(token, { name: name.trim(), minSelections, maxSelections, isRequired });
-      } else if (editor.kind === 'group-edit') {
-        await updateModifierGroup(token, editor.group.id, { name: name.trim(), minSelections, maxSelections, isRequired, isActive });
-      } else if (editor.kind === 'modifier-create') {
-        await createModifier(token, { name: name.trim(), priceDelta });
+        await createModifierGroup(token, {
+          name: name.trim(),
+          minSelections,
+          maxSelections,
+          isRequired,
+        });
       } else {
-        await updateModifier(token, editor.modifier.id, { name: name.trim(), priceDelta, isActive });
+        await updateModifierGroup(token, editor.group.id, {
+          name: name.trim(),
+          minSelections,
+          maxSelections,
+          isRequired,
+          isActive,
+        });
       }
       await onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось сохранить');
+      setError(e instanceof Error ? e.message : 'Не удалось сохранить группу');
     } finally {
       setSaving(false);
     }
@@ -318,8 +323,8 @@ function ModifierEditor({
       <form className="modal-card modifier-modal" onSubmit={submit}>
         <div className="modal-header">
           <div>
-            <div className="eyebrow">{isGroup ? 'ГРУППА МОДИФИКАТОРОВ' : 'ВАРИАНТ'}</div>
-            <h2>{editing ? 'Настройки' : isGroup ? 'Новая группа' : 'Новый вариант'}</h2>
+            <div className="eyebrow">ГРУППА МОДИФИКАТОРОВ</div>
+            <h2>{editor.kind === 'group-create' ? 'Новая группа' : 'Настройки группы'}</h2>
           </div>
           <button type="button" className="close-button" onClick={onClose}>×</button>
         </div>
@@ -327,36 +332,28 @@ function ModifierEditor({
         <div className="form-grid">
           <label className="full-field">
             <span>Название</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={160} autoFocus />
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} autoFocus />
           </label>
-
-          {isGroup ? (
-            <>
-              <label>
-                <span>Минимум выборов</span>
-                <input type="number" min={0} max={100} value={minSelections} onChange={(e) => setMinSelections(Number(e.target.value))} />
-              </label>
-              <label>
-                <span>Максимум выборов</span>
-                <input type="number" min={1} max={100} value={maxSelections} onChange={(e) => setMaxSelections(Number(e.target.value))} />
-              </label>
-              <label className="toggle-row full-field">
-                <span><strong>Обязательная группа</strong><small>Кассир не сможет добавить блюдо, пока не сделает выбор.</small></span>
-                <input type="checkbox" checked={isRequired} onChange={(e) => requiredChanged(e.target.checked)} />
-              </label>
-            </>
-          ) : (
-            <label className="full-field">
-              <span>Изменение цены, {currencyCode}</span>
-              <input type="number" step="0.01" min={-1000000} max={1000000} value={priceDelta} onChange={(e) => setPriceDelta(Number(e.target.value))} />
-              <small className="field-hint">0 — без доплаты, 2 — +2 {currencyCode}, -1 — скидка 1 {currencyCode}.</small>
-            </label>
-          )}
+          <label>
+            <span>Минимум выборов</span>
+            <input type="number" min={0} max={100} value={minSelections} onChange={(e) => setMinSelections(Number(e.target.value))} />
+          </label>
+          <label>
+            <span>Максимум выборов</span>
+            <input type="number" min={1} max={100} value={maxSelections} onChange={(e) => setMaxSelections(Number(e.target.value))} />
+          </label>
+          <label className="toggle-row full-field">
+            <span>
+              <strong>Обязательная группа</strong>
+              <small>Кассир не сможет добавить позицию, пока не сделает обязательный выбор.</small>
+            </span>
+            <input type="checkbox" checked={isRequired} onChange={(e) => requiredChanged(e.target.checked)} />
+          </label>
         </div>
 
-        {editing && (
+        {editor.kind === 'group-edit' && (
           <label className="toggle-row">
-            <span><strong>Активно</strong><small>Неактивный элемент не показывается на POS.</small></span>
+            <span><strong>Группа активна</strong><small>Неактивная группа не показывается на POS.</small></span>
             <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
           </label>
         )}
@@ -365,14 +362,7 @@ function ModifierEditor({
 
         <div className="modal-actions">
           <button type="button" className="secondary-button" onClick={onClose}>Отмена</button>
-          <button
-            className="primary-button"
-            disabled={
-              saving ||
-              !name.trim() ||
-              (isGroup && (maxSelections < 1 || minSelections < 0 || minSelections > maxSelections || (isRequired && minSelections < 1)))
-            }
-          >
+          <button className="primary-button" disabled={saving || !name.trim()}>
             {saving ? 'Сохраняем…' : 'Сохранить'}
           </button>
         </div>
@@ -381,7 +371,8 @@ function ModifierEditor({
   );
 }
 
-function priceText(value: number, currency: string) {
-  if (Math.abs(value) < 0.0001) return 'Без доплаты';
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)} ${currency}`;
+function priceText(value: number, currencyCode: string) {
+  if (value === 0) return 'без изменения цены';
+  const sign = value > 0 ? '+' : '';
+  return sign + value.toFixed(2) + ' ' + currencyCode;
 }
