@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   type BackOfficeInventory,
-  type InventoryStockItem,
+  type InventoryNomenclatureItem,
   type InventoryWarehouse,
   createStockMovement,
   createWarehouse,
@@ -13,7 +13,7 @@ import './inventory.css';
 type EditorState =
   | { kind: 'warehouse-create' }
   | { kind: 'warehouse-edit'; warehouse: InventoryWarehouse }
-  | { kind: 'movement'; item?: InventoryStockItem }
+  | { kind: 'movement'; item?: InventoryNomenclatureItem }
   | null;
 
 const UNIT_OPTIONS = [
@@ -255,7 +255,7 @@ export function InventoryPage({
             {data!.recentMovements.slice(0, 20).map((movement) => (
               <div className="inventory-movement-row" key={movement.id}>
                 <div>
-                  <strong>{movement.stockItemName}</strong>
+                  <strong>{movement.productName}</strong>
                   <span>{movement.warehouseName} · {formatDateTime(movement.createdAt)}</span>
                 </div>
                 <div className={movement.quantityDelta >= 0 ? 'inventory-movement-plus' : 'inventory-movement-minus'}>
@@ -420,7 +420,7 @@ function MovementEditor({
   onClose,
   onSaved,
 }: {
-  item?: InventoryStockItem;
+  item?: InventoryNomenclatureItem;
   data: BackOfficeInventory;
   token: string;
   selectedWarehouseId: string;
@@ -434,19 +434,19 @@ function MovementEditor({
       : data.warehouses.find((x) => x.isActive)?.id ?? '';
 
   const [warehouseId, setWarehouseId] = useState(defaultWarehouse);
-  const [stockItemId, setStockItemId] = useState(item?.id ?? data.items.find((x) => x.isActive)?.id ?? '');
+  const [productId, setProductId] = useState(item?.id ?? data.items.find((x) => x.isActive)?.id ?? '');
   const [type, setType] = useState<'RECEIPT' | 'WRITE_OFF'>('RECEIPT');
   const [quantity, setQuantity] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedItem = data.items.find((x) => x.id === stockItemId);
+  const selectedProduct = data.items.find((x) => x.id === productId);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const numericQuantity = Number(quantity.replace(',', '.'));
-    if (!warehouseId || !stockItemId || !Number.isFinite(numericQuantity) || numericQuantity <= 0) {
+    if (!warehouseId || !productId || !Number.isFinite(numericQuantity) || numericQuantity <= 0) {
       setError('Выберите склад, позицию и укажите количество больше нуля.');
       return;
     }
@@ -456,7 +456,7 @@ function MovementEditor({
     try {
       await createStockMovement(token, {
         warehouseId,
-        stockItemId,
+        productId,
         type,
         quantity: numericQuantity,
         note: note.trim() || null,
@@ -497,16 +497,16 @@ function MovementEditor({
 
         <label>
           <span>Позиция номенклатуры</span>
-          <select value={stockItemId} onChange={(e) => setStockItemId(e.target.value)}>
+          <select value={productId} onChange={(e) => setProductId(e.target.value)}>
             <option value="">Выберите позицию</option>
-            {data.items.filter((x) => x.isActive).map((stockItem) => (
-              <option value={stockItem.id} key={stockItem.id}>{stockItem.name}</option>
+            {data.items.filter((x) => x.isActive).map((product) => (
+              <option value={product.id} key={product.id}>{product.name}</option>
             ))}
           </select>
         </label>
 
         <label>
-          <span>Количество {selectedItem ? '(' + unitLabel(selectedItem.unit) + ')' : ''}</span>
+          <span>Количество {selectedProduct ? '(' + unitLabel(selectedProduct.unit) + ')' : ''}</span>
           <input value={quantity} onChange={(e) => setQuantity(e.target.value)} inputMode="decimal" autoFocus />
         </label>
 
@@ -518,7 +518,7 @@ function MovementEditor({
         {error && <div className="error-box">{error}</div>}
         <div className="modal-actions">
           <button type="button" className="secondary-button" onClick={onClose}>Отмена</button>
-          <button className="primary-button" disabled={saving || !warehouseId || !stockItemId}>
+          <button className="primary-button" disabled={saving || !warehouseId || !productId}>
             {saving ? 'Проводим…' : 'Провести'}
           </button>
         </div>
@@ -527,7 +527,7 @@ function MovementEditor({
   );
 }
 
-function stockFor(item: InventoryStockItem, warehouseId: string) {
+function stockFor(item: InventoryNomenclatureItem, warehouseId: string) {
   if (warehouseId === 'ALL') return item.totalStock;
   return item.warehouseBalances.find((x) => x.warehouseId === warehouseId)?.quantity ?? 0;
 }
