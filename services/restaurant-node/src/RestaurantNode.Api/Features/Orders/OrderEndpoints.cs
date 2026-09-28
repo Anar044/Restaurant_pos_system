@@ -1755,6 +1755,7 @@ public static class OrderEndpoints
             var now = DateTimeOffset.UtcNow;
             var payload = new
             {
+                orderId = order.Id,
                 restaurantName = restaurant?.Name ?? "Restaurant",
                 orderNumber = order.DisplayNumber,
                 hallName = place.HallName,
