@@ -273,6 +273,12 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .HasForeignKey(x => x.PrinterId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        modelBuilder.Entity<KitchenStation>()
+            .HasOne(x => x.Warehouse)
+            .WithMany()
+            .HasForeignKey(x => x.WarehouseId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         modelBuilder.Entity<Order>()
             .HasMany(x => x.Items)
             .WithOne(x => x.Order)
