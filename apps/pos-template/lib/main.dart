@@ -3880,41 +3880,21 @@ class _OrderPageState extends State<OrderPage> {
     });
 
     try {
-      final groups = CartGroup.fromOrder(current);
-      final result = await widget.printer.printReceipt(
-        restaurantName: AppConfig.restaurantDisplayName,
-        orderNumber: current.displayNumber,
-        hallName: widget.hallName,
-        tableName: widget.table.name,
-        cashierName: widget.session.employeeName,
-        guestCount: current.guestCount,
-        currencyCode: AppConfig.currencyCode,
-        subtotal: current.subtotal,
-        discountTotal: current.discountTotal,
-        surchargeTotal: current.surchargeTotal,
-        total: current.total,
-        items: groups
-            .map(
-              (group) => ReceiptPrintItem(
-                name: group.receiptName,
-                quantity: group.quantity,
-                unitPrice: group.effectiveUnitPrice,
-                lineTotal: group.total,
-              ),
-            )
-            .toList(),
-      );
+      final result = await widget.api.printPrecheck(current.id);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Предчек #${result.orderNumber} отправлен на ${result.printerName}',
+            'Предчек #' +
+                current.displayNumber.toString() +
+                ' отправлен на ' +
+                result.printerName,
           ),
         ),
       );
     } catch (e) {
-      if (mounted) setState(() => error = 'Печать: $e');
+      if (mounted) setState(() => error = 'Печать предчека: $e');
     } finally {
       if (mounted) setState(() => printing = false);
     }
