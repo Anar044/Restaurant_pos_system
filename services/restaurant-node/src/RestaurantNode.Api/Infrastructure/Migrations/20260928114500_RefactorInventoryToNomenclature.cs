@@ -17,9 +17,10 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                 name: "FK_products_categories_CategoryId",
                 table: "products");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_products_categories_CategoryId",
-                table: "products");
+            migrationBuilder.Sql(@"
+ALTER TABLE products
+DROP CONSTRAINT IF EXISTS ""FK_products_categories_CategoryId"";
+");
 
             migrationBuilder.AlterColumn<Guid>(
                 name: "CategoryId",
