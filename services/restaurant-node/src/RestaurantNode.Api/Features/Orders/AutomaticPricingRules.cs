@@ -29,7 +29,8 @@ internal static class AutomaticPricingRules
             .Where(x =>
                 x.RestaurantId == restaurantId &&
                 x.IsActive &&
-                x.ApplicationMode == OrderAdjustmentApplicationMode.Automatic)
+                x.ApplicationMode == OrderAdjustmentApplicationMode.Automatic &&
+                x.TargetMode != OrderAdjustmentTargetMode.PosSelection)
             .OrderBy(x => x.Priority)
             .ThenBy(x => x.Name)
             .ToListAsync(ct);
