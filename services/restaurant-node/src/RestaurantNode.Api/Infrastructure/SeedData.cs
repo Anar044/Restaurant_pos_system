@@ -85,17 +85,71 @@ public static class SeedData
             .Select(i => new DiningTable { RestaurantId = RestaurantId, HallId = hall.Id, Name = i.ToString(), Seats = 4, SortOrder = i })
             .ToList();
 
-        var hot = new KitchenStation { RestaurantId = RestaurantId, Name = "Hot Kitchen" };
-        var bar = new KitchenStation { RestaurantId = RestaurantId, Name = "Bar" };
+        var group = new RestaurantGroup
+        {
+            Id = RestaurantId,
+            RestaurantId = RestaurantId,
+            Name = "Основная группа"
+        };
+        var hotType = new PreparationPlaceType { RestaurantId = RestaurantId, Name = "Hot Kitchen" };
+        var barType = new PreparationPlaceType { RestaurantId = RestaurantId, Name = "Bar" };
+        var hallDepartment = new RestaurantDepartment
+        {
+            RestaurantId = RestaurantId,
+            GroupId = group.Id,
+            Name = "Main Hall",
+            HallId = hall.Id
+        };
+        var hotDepartment = new RestaurantDepartment
+        {
+            RestaurantId = RestaurantId,
+            GroupId = group.Id,
+            Name = "Hot Kitchen"
+        };
+        var barDepartment = new RestaurantDepartment
+        {
+            RestaurantId = RestaurantId,
+            GroupId = group.Id,
+            Name = "Bar"
+        };
+        var hotMap = new GroupPreparationMap
+        {
+            RestaurantId = RestaurantId,
+            GroupId = group.Id,
+            PreparationPlaceTypeId = hotType.Id,
+            DepartmentId = hotDepartment.Id
+        };
+        var barMap = new GroupPreparationMap
+        {
+            RestaurantId = RestaurantId,
+            GroupId = group.Id,
+            PreparationPlaceTypeId = barType.Id,
+            DepartmentId = barDepartment.Id
+        };
         var foodCategory = new Category { RestaurantId = RestaurantId, Name = "Food", SortOrder = 1 };
         var drinksCategory = new Category { RestaurantId = RestaurantId, Name = "Drinks", SortOrder = 2 };
 
-        var burger = new Product { RestaurantId = RestaurantId, CategoryId = foodCategory.Id, KitchenStationId = hot.Id, Name = "Burger", SortOrder = 1 };
-        var pasta = new Product { RestaurantId = RestaurantId, CategoryId = foodCategory.Id, KitchenStationId = hot.Id, Name = "Pasta", SortOrder = 2 };
-        var cola = new Product { RestaurantId = RestaurantId, CategoryId = drinksCategory.Id, KitchenStationId = bar.Id, Name = "Cola", SortOrder = 1 };
-        var water = new Product { RestaurantId = RestaurantId, CategoryId = drinksCategory.Id, KitchenStationId = bar.Id, Name = "Water", SortOrder = 2 };
+        var burger = new Product { RestaurantId = RestaurantId, CategoryId = foodCategory.Id, PreparationPlaceTypeId = hotType.Id, Name = "Burger", SortOrder = 1 };
+        var pasta = new Product { RestaurantId = RestaurantId, CategoryId = foodCategory.Id, PreparationPlaceTypeId = hotType.Id, Name = "Pasta", SortOrder = 2 };
+        var cola = new Product { RestaurantId = RestaurantId, CategoryId = drinksCategory.Id, PreparationPlaceTypeId = barType.Id, Name = "Cola", SortOrder = 1 };
+        var water = new Product { RestaurantId = RestaurantId, CategoryId = drinksCategory.Id, PreparationPlaceTypeId = barType.Id, Name = "Water", SortOrder = 2 };
 
-        db.AddRange(organization, restaurant, adminRole, admin, hall, hot, bar, foodCategory, drinksCategory);
+        db.AddRange(
+            organization,
+            restaurant,
+            adminRole,
+            admin,
+            hall,
+            group,
+            hotType,
+            barType,
+            hallDepartment,
+            hotDepartment,
+            barDepartment,
+            hotMap,
+            barMap,
+            foodCategory,
+            drinksCategory);
         db.AddRange(tables);
         db.AddRange(burger, pasta, cola, water);
         db.AddRange(
