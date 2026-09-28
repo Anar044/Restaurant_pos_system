@@ -103,6 +103,49 @@ public sealed class Category : Entity
     public bool IsActive { get; set; } = true;
 }
 
+public sealed class RestaurantGroup : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public required string Name { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed class RestaurantGroupDevice
+{
+    public Guid GroupId { get; set; }
+    public RestaurantGroup? Group { get; set; }
+    public Guid DeviceId { get; set; }
+    public Device? Device { get; set; }
+    public bool IsMainCashRegister { get; set; }
+}
+
+public sealed class RestaurantDepartment : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public Guid GroupId { get; set; }
+    public RestaurantGroup? Group { get; set; }
+    public required string Name { get; set; }
+    public Guid? HallId { get; set; }
+    public Hall? Hall { get; set; }
+    public Guid? WarehouseId { get; set; }
+    public Warehouse? Warehouse { get; set; }
+    public Guid? PrinterId { get; set; }
+    public Printer? Printer { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed class GroupPreparationMap : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public Guid GroupId { get; set; }
+    public RestaurantGroup? Group { get; set; }
+    public Guid PreparationPlaceTypeId { get; set; }
+    public PreparationPlaceType? PreparationPlaceType { get; set; }
+    public Guid DepartmentId { get; set; }
+    public RestaurantDepartment? Department { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
 public sealed class PreparationPlaceType : Entity
 {
     public Guid RestaurantId { get; set; }
