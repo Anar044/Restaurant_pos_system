@@ -153,24 +153,11 @@ public sealed class PreparationPlaceType : Entity
     public bool IsActive { get; set; } = true;
 }
 
-public sealed class KitchenStation : Entity
-{
-    public Guid RestaurantId { get; set; }
-    public required string Name { get; set; }
-    public Guid? PrinterId { get; set; }
-    public Printer? Printer { get; set; }
-    public Guid? WarehouseId { get; set; }
-    public Warehouse? Warehouse { get; set; }
-    public bool IsActive { get; set; } = true;
-}
-
 public sealed class Product : Entity
 {
     public Guid RestaurantId { get; set; }
     public Guid? CategoryId { get; set; }
     public Category? Category { get; set; }
-    public Guid? KitchenStationId { get; set; }
-    public KitchenStation? KitchenStation { get; set; }
     public Guid? PreparationPlaceTypeId { get; set; }
     public PreparationPlaceType? PreparationPlaceType { get; set; }
     public required string Name { get; set; }
@@ -445,7 +432,8 @@ public sealed class KitchenTicket : Entity
 {
     public Guid RestaurantId { get; set; }
     public Guid OrderId { get; set; }
-    public Guid KitchenStationId { get; set; }
+    public Guid DepartmentId { get; set; }
+    public RestaurantDepartment? Department { get; set; }
     public KitchenTicketStatus Status { get; set; } = KitchenTicketStatus.Pending;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? PrintedAt { get; set; }
