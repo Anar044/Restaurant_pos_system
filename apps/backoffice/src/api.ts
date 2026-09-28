@@ -385,8 +385,15 @@ export type FinanceShift = {
   deviceId: string;
   deviceName: string;
   status: string;
+  openedByEmployeeId: string;
+  openedByEmployeeName: string | null;
+  closedByEmployeeId: string | null;
+  closedByEmployeeName: string | null;
   openingCash: number;
   closingCash: number | null;
+  expectedCashAtClose: number | null;
+  cashDifference: number | null;
+  closingNote: string | null;
   openedAt: string;
   closedAt: string | null;
 };
@@ -394,8 +401,57 @@ export type FinanceShift = {
 export type FinanceOpenShift = {
   id: string;
   deviceId: string;
-  deviceName: string;
+  deviceName: string | null;
   openedAt: string;
+  expectedCash: number;
+  cashSales: number;
+  deposits: number;
+  withdrawals: number;
+};
+
+export type FinanceShiftPaymentTotal = {
+  method: string;
+  gross: number;
+  refunds: number;
+  net: number;
+};
+
+export type FinanceCashTransaction = {
+  id: string;
+  type: 'DEPOSIT' | 'WITHDRAWAL';
+  amount: number;
+  reason: string | null;
+  employeeId: string;
+  employeeName: string | null;
+  createdAt: string;
+};
+
+export type FinanceShiftReport = {
+  shiftId: string;
+  deviceId: string;
+  deviceName: string | null;
+  openedByEmployeeName: string | null;
+  closedByEmployeeName: string | null;
+  reportType: 'X' | 'Z';
+  status: string;
+  openedAt: string;
+  closedAt: string | null;
+  openingCash: number;
+  closingCash: number | null;
+  expectedCash: number;
+  cashDifference: number | null;
+  closingNote: string | null;
+  ordersCount: number;
+  paymentsCount: number;
+  grossSales: number;
+  refunds: number;
+  netSales: number;
+  cashSales: number;
+  cashRefunds: number;
+  deposits: number;
+  withdrawals: number;
+  payments: FinanceShiftPaymentTotal[];
+  cashTransactions: FinanceCashTransaction[];
 };
 
 export type FinancePayment = {
@@ -436,6 +492,7 @@ export type FinanceRefund = {
 export type BackOfficeFinance = {
   shifts: FinanceShift[];
   openShifts: FinanceOpenShift[];
+  selectedShiftReport: FinanceShiftReport | null;
   payments: FinancePayment[];
   refunds: FinanceRefund[];
 };
@@ -949,6 +1006,47 @@ export async function getBackOfficeFinance(
 ): Promise<BackOfficeFinance> {
   const query = shiftId ? `?shiftId=${encodeURIComponent(shiftId)}&take=200` : '?take=200';
   return request<BackOfficeFinance>(`/api/v1/backoffice/finance${query}`, {}, token);
+}
+
+export async function addShiftCashTransaction(
+  token: string,
+  shiftId: string,
+  input: {
+    type: 'DEPOSIT' | 'WITHDRAWAL';
+    amount: number;
+    reason: string;
+  },
+): Promise<void> {
+  await request(
+    `/api/v1/shifts/${shiftId}/cash-transactions`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  );
+}
+
+export async function closeShiftFromBackOffice(
+  token: string,
+  shiftId: string,
+  input: {
+    closingCash: number;
+    reason: string | null;
+  },
+): Promise<{
+  expectedCash: number;
+  difference: number;
+  report: FinanceShiftReport;
+}> {
+  return request(
+    `/api/v1/shifts/${shiftId}/close`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token,
+  );
 }
 
 export async function refundPayment(
