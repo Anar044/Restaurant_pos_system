@@ -40,6 +40,30 @@ public sealed class PricingEngineTests
     }
 
     [Fact]
+    public void PosSelectedTargetOnlyAffectsExactOrderItem()
+    {
+        var product = Guid.NewGuid();
+        var category = Guid.NewGuid();
+        var first = Item(product, category, 10m);
+        var second = Item(product, category, 10m);
+        var order = OrderWithItems(first, second);
+
+        order.Adjustments.Add(Adjustment(
+            type: OrderAdjustmentType.Discount,
+            mode: OrderAdjustmentMode.Percent,
+            value: 50m,
+            priority: 10,
+            targetMode: OrderAdjustmentTargetMode.PosSelection,
+            orderItemIds: [first.Id]));
+
+        var result = OrderPricingCalculator.Recalculate(order);
+
+        Assert.Equal(20m, result.Subtotal);
+        Assert.Equal(5m, result.DiscountTotal);
+        Assert.Equal(15m, result.Total);
+    }
+
+    [Fact]
     public void PriorityChangesResultWhenDiscountAndSurchargeAreReordered()
     {
         var product = Guid.NewGuid();
@@ -235,7 +259,10 @@ public sealed class PricingEngineTests
         int? startMinute = null,
         int? endMinute = null,
         Guid[]? productIds = null,
-        Guid[]? categoryIds = null) =>
+        Guid[]? categoryIds = null,
+        OrderAdjustmentTargetMode targetMode =
+            OrderAdjustmentTargetMode.AllItems,
+        Guid[]? orderItemIds = null) =>
         new()
         {
             Type = type,
@@ -246,12 +273,20 @@ public sealed class PricingEngineTests
             ApplicationModeSnapshot =
                 OrderAdjustmentApplicationMode.Manual,
             TimeBasisSnapshot = timeBasis,
+            TargetModeSnapshot =
+                orderItemIds is { Length: > 0 }
+                    ? OrderAdjustmentTargetMode.PosSelection
+                    : productIds is { Length: > 0 } ||
+                      categoryIds is { Length: > 0 }
+                        ? OrderAdjustmentTargetMode.PresetSelection
+                        : targetMode,
             WeekdayMaskSnapshot = weekdayMask,
             StartMinuteSnapshot = startMinute,
             EndMinuteSnapshot = endMinute,
             TimeZoneIdSnapshot = "Asia/Baku",
             ProductIdsSnapshot = productIds ?? [],
             CategoryIdsSnapshot = categoryIds ?? [],
+            OrderItemIdsSnapshot = orderItemIds ?? [],
             AppliedByEmployeeId = Guid.NewGuid(),
             CreatedAt = AtBaku(2026, 10, 2, 12, 1),
             UpdatedAt = AtBaku(2026, 10, 2, 12, 1)
