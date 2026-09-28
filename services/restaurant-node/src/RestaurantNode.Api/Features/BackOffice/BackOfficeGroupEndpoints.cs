@@ -102,7 +102,11 @@ public static class BackOfficeGroupEndpoints
                 .ToListAsync(ct);
 
             var printers = await db.Printers.AsNoTracking()
-                .Where(x => x.RestaurantId == restaurantId && x.IsActive && x.IsConfigured)
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive &&
+                    x.IsConfigured &&
+                    x.HostDeviceId.HasValue)
                 .OrderBy(x => x.Name)
                 .Select(x => new { id = x.Id, name = x.Name })
                 .ToListAsync(ct);
@@ -341,8 +345,12 @@ public static class BackOfficeGroupEndpoints
             return Results.Conflict(new { message = "В этой группе уже есть зал с таким названием." });
 
         if (request.PrecheckPrinterId.HasValue && !await db.Printers.AnyAsync(x =>
-            x.Id == request.PrecheckPrinterId && x.RestaurantId == restaurantId && x.IsActive, ct))
-            return Results.BadRequest(new { message = "Принтер пречека не найден." });
+            x.Id == request.PrecheckPrinterId &&
+            x.RestaurantId == restaurantId &&
+            x.IsActive &&
+            x.IsConfigured &&
+            x.HostDeviceId.HasValue, ct))
+            return Results.BadRequest(new { message = "Принтер пречека не найден или не привязан к POS Agent." });
 
         return null;
     }
