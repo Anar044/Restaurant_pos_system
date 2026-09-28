@@ -7,7 +7,8 @@ internal static class PricingRuleEngine
     public static void CopyPresetSnapshot(
         OrderAdjustment target,
         OrderAdjustmentPreset preset,
-        string timeZoneId)
+        string timeZoneId,
+        IReadOnlyCollection<Guid>? selectedOrderItemIds = null)
     {
         target.PresetId = preset.Id;
         target.PresetNameSnapshot = preset.Name;
@@ -15,6 +16,7 @@ internal static class PricingRuleEngine
         target.Mode = preset.Mode;
         target.ApplicationModeSnapshot = preset.ApplicationMode;
         target.TimeBasisSnapshot = preset.TimeBasis;
+        target.TargetModeSnapshot = preset.TargetMode;
         target.PrioritySnapshot = preset.Priority;
         target.CanStackSnapshot = preset.CanStack;
         target.WeekdayMaskSnapshot = preset.WeekdayMask;
@@ -23,14 +25,35 @@ internal static class PricingRuleEngine
         target.TimeZoneIdSnapshot = string.IsNullOrWhiteSpace(timeZoneId)
             ? "Asia/Baku"
             : timeZoneId;
-        target.ProductIdsSnapshot = preset.Products
-            .Select(x => x.ProductId)
-            .Distinct()
-            .ToArray();
-        target.CategoryIdsSnapshot = preset.Categories
-            .Select(x => x.CategoryId)
-            .Distinct()
-            .ToArray();
+
+        if (preset.TargetMode == OrderAdjustmentTargetMode.PresetSelection)
+        {
+            target.ProductIdsSnapshot = preset.Products
+                .Select(x => x.ProductId)
+                .Distinct()
+                .ToArray();
+            target.CategoryIdsSnapshot = preset.Categories
+                .Select(x => x.CategoryId)
+                .Distinct()
+                .ToArray();
+            target.OrderItemIdsSnapshot = [];
+        }
+        else if (preset.TargetMode == OrderAdjustmentTargetMode.PosSelection)
+        {
+            target.ProductIdsSnapshot = [];
+            target.CategoryIdsSnapshot = [];
+            target.OrderItemIdsSnapshot = (selectedOrderItemIds ?? [])
+                .Where(x => x != Guid.Empty)
+                .Distinct()
+                .ToArray();
+        }
+        else
+        {
+            target.ProductIdsSnapshot = [];
+            target.CategoryIdsSnapshot = [];
+            target.OrderItemIdsSnapshot = [];
+        }
+
         target.Value = Money(preset.Value);
     }
 
@@ -46,30 +69,61 @@ internal static class PricingRuleEngine
                 continue;
             if (guestNumber.HasValue && item.GuestNumber != guestNumber.Value)
                 continue;
-            if (!MatchesTargets(
+            if (IsPresetItemEligible(
+                    preset,
+                    order,
                     item,
-                    preset.Products.Select(x => x.ProductId),
-                    preset.Categories.Select(x => x.CategoryId)))
-            {
-                continue;
-            }
-
-            var instant = preset.TimeBasis == OrderAdjustmentTimeBasis.OrderOpenedAt
-                ? order.CreatedAt
-                : item.CreatedAt;
-
-            if (MatchesSchedule(
-                    instant,
-                    preset.WeekdayMask,
-                    preset.StartMinute,
-                    preset.EndMinute,
-                    timeZoneId))
+                    timeZoneId,
+                    guestNumber))
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    public static bool IsPresetItemEligible(
+        OrderAdjustmentPreset preset,
+        Order order,
+        OrderItem item,
+        string timeZoneId,
+        int? guestNumber = null)
+    {
+        if (item.Status == OrderItemStatus.Voided)
+            return false;
+
+        if (guestNumber.HasValue &&
+            item.GuestNumber != guestNumber.Value)
+        {
+            return false;
+        }
+
+        var targetMatches = preset.TargetMode switch
+        {
+            OrderAdjustmentTargetMode.AllItems => true,
+            OrderAdjustmentTargetMode.PresetSelection => MatchesTargets(
+                item,
+                preset.Products.Select(x => x.ProductId),
+                preset.Categories.Select(x => x.CategoryId)),
+            OrderAdjustmentTargetMode.PosSelection => true,
+            _ => false
+        };
+
+        if (!targetMatches)
+            return false;
+
+        var instant = preset.TimeBasis ==
+                OrderAdjustmentTimeBasis.OrderOpenedAt
+            ? order.CreatedAt
+            : item.CreatedAt;
+
+        return MatchesSchedule(
+            instant,
+            preset.WeekdayMask,
+            preset.StartMinute,
+            preset.EndMinute,
+            timeZoneId);
     }
 
     public static bool AdjustmentMatchesItem(
@@ -86,13 +140,20 @@ internal static class PricingRuleEngine
             return false;
         }
 
-        if (!MatchesTargets(
+        var targetMatches = adjustment.TargetModeSnapshot switch
+        {
+            OrderAdjustmentTargetMode.AllItems => true,
+            OrderAdjustmentTargetMode.PresetSelection => MatchesTargets(
                 item,
                 adjustment.ProductIdsSnapshot,
-                adjustment.CategoryIdsSnapshot))
-        {
+                adjustment.CategoryIdsSnapshot),
+            OrderAdjustmentTargetMode.PosSelection =>
+                adjustment.OrderItemIdsSnapshot.Contains(item.Id),
+            _ => false
+        };
+
+        if (!targetMatches)
             return false;
-        }
 
         var instant =
             adjustment.TimeBasisSnapshot == OrderAdjustmentTimeBasis.OrderOpenedAt
