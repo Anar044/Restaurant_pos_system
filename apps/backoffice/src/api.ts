@@ -211,6 +211,8 @@ export type KitchenProductSummary = {
 export type BackOfficeKitchenStation = KitchenStation & {
   printerId: string | null;
   printerName: string | null;
+  warehouseId: string | null;
+  warehouseName: string | null;
   activeProductCount: number;
   totalProductCount: number;
   products: KitchenProductSummary[];
@@ -227,21 +229,29 @@ export type KitchenPrinterOption = {
   lastSeenAt: string | null;
 };
 
+export type KitchenWarehouseOption = {
+  id: string;
+  name: string;
+};
+
 export type BackOfficeKitchen = {
   stations: BackOfficeKitchenStation[];
   unassignedProducts: KitchenProductSummary[];
   availablePrinters: KitchenPrinterOption[];
+  availableWarehouses: KitchenWarehouseOption[];
 };
 
 export type CreateKitchenStationInput = {
   name: string;
   printerId: string | null;
+  warehouseId: string | null;
 };
 
 export type UpdateKitchenStationInput = {
   name: string;
   isActive: boolean;
   printerId: string | null;
+  warehouseId: string | null;
 };
 
 export type EmployeeRole = {
