@@ -88,8 +88,8 @@ public static class PosAgentPrintJobEndpoints
                 job.Status = PrintJobStatus.Printing;
                 job.Attempts++;
                 // PRINTING means this job has already been dispatched to an agent.
-                // It is intentionally not auto-dispatched again: duplicate kitchen tickets
-                // are more dangerous than requiring a manual retry after a rare crash.
+                // It is intentionally not auto-dispatched again: duplicate physical output
+                // is more dangerous than requiring a manual retry after a rare crash.
                 job.PrintedAt = claimedAt;
                 job.LastError = null;
                 jobs.Add(job);
