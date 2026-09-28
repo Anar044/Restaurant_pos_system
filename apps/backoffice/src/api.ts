@@ -87,7 +87,7 @@ export type KitchenStation = {
 export type MenuProduct = {
   id: string;
   categoryId: string;
-  kitchenStationId: string | null;
+  preparationPlaceTypeId: string | null;
   kitchenStationName: string | null;
   name: string;
   sku: string | null;
@@ -702,7 +702,7 @@ export type NomenclatureCategoryOption = {
   isActive: boolean;
 };
 
-export type NomenclaturePreparationPlaceOption = {
+export type NomenclaturePreparationPlaceTypeOption = {
   id: string;
   name: string;
   isActive: boolean;
@@ -712,7 +712,7 @@ export type BackOfficeNomenclature = {
   supportedTypes: string[];
   currencyCode: string;
   categories: NomenclatureCategoryOption[];
-  preparationPlaces: NomenclaturePreparationPlaceOption[];
+  preparationPlaceTypes: NomenclaturePreparationPlaceTypeOption[];
   items: NomenclatureItem[];
 };
 
@@ -727,7 +727,7 @@ export type UpsertNomenclatureItemInput = {
   isActive: boolean;
   sortOrder: number;
   categoryId: string | null;
-  kitchenStationId: string | null;
+  preparationPlaceTypeId: string | null;
   price: number | null;
 };
 
