@@ -56,7 +56,7 @@ public static class BackOfficeMenuEndpoints
                     sortOrder = category.SortOrder,
                     isActive = category.IsActive,
                     products = db.Products
-                        .Where(product => product.RestaurantId == restaurantId && product.CategoryId == category.Id)
+                        .Where(product => product.RestaurantId == restaurantId && product.IsSellable && product.CategoryId == category.Id)
                         .OrderBy(product => product.SortOrder)
                         .ThenBy(product => product.Name)
                         .Select(product => new
@@ -232,6 +232,10 @@ public static class BackOfficeMenuEndpoints
                 KitchenStationId = request.KitchenStationId,
                 Name = validation.Name!,
                 Sku = validation.Sku,
+                Type = "DISH",
+                Unit = "pcs",
+                TrackStock = false,
+                IsSellable = true,
                 SortOrder = request.SortOrder,
                 IsActive = true
             };
