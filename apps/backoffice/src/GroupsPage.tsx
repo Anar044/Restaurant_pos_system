@@ -2,24 +2,29 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   type BackOfficeGroups,
   type GroupDepartmentOption,
+  type GroupHallOption,
   type RestaurantGroupOption,
+  createGroupHall,
   createGroupPreparationType,
   createRestaurantDepartment,
   createRestaurantGroup,
   getBackOfficeGroups,
-  setGroupCookingMap,
   setRestaurantGroupDevices,
+  updateGroupHall,
   updateRestaurantDepartment,
   updateRestaurantGroup,
 } from './api';
 import './groups.css';
 
-type Tab = 'main' | 'devices' | 'departments' | 'cooking';
+type Tab = 'main' | 'devices' | 'departments' | 'halls';
+
 type Editor =
   | { kind: 'group-create' }
   | { kind: 'group-edit'; group: RestaurantGroupOption }
   | { kind: 'department-create'; groupId: string }
   | { kind: 'department-edit'; department: GroupDepartmentOption }
+  | { kind: 'hall-create'; groupId: string }
+  | { kind: 'hall-edit'; hall: GroupHallOption }
   | { kind: 'type-create' }
   | null;
 
@@ -44,7 +49,7 @@ export function GroupsPage({ token }: { token: string }) {
           : next.groups[0]?.id ?? null,
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить группы и отделения');
+      setError(e instanceof Error ? e.message : 'Не удалось загрузить структуру ресторана');
     } finally {
       setLoading(false);
     }
@@ -55,6 +60,10 @@ export function GroupsPage({ token }: { token: string }) {
   const group = data?.groups.find((x) => x.id === selectedGroupId) ?? null;
   const departments = useMemo(
     () => (data?.departments ?? []).filter((x) => x.groupId === selectedGroupId),
+    [data, selectedGroupId],
+  );
+  const halls = useMemo(
+    () => (data?.halls ?? []).filter((x) => x.groupId === selectedGroupId),
     [data, selectedGroupId],
   );
 
@@ -72,20 +81,6 @@ export function GroupsPage({ token }: { token: string }) {
     }
   }
 
-  async function changeMap(typeId: string, departmentId: string) {
-    if (!group || !departmentId) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await setGroupCookingMap(token, group.id, typeId, departmentId);
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось сохранить карту приготовления');
-    } finally {
-      setSaving(false);
-    }
-  }
-
   if (!data && loading) return <div className="empty-state">Загружаем структуру ресторана…</div>;
 
   return (
@@ -93,8 +88,8 @@ export function GroupsPage({ token }: { token: string }) {
       <div className="page-heading">
         <div>
           <div className="eyebrow">НАСТРОЙКИ РЕСТОРАНА</div>
-          <h1>Группы и отделения</h1>
-          <p>Кассы, официантские станции, залы, цеха, склады, принтеры и карта приготовления в одной структуре.</p>
+          <h1>Группы ресторана</h1>
+          <p>В каждой группе настраиваются главная касса, POS официантов, производственные отделения и залы.</p>
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>Обновить</button>
@@ -107,16 +102,20 @@ export function GroupsPage({ token }: { token: string }) {
       <div className="group-layout">
         <aside className="group-list">
           <div className="group-list-title"><strong>Группы</strong><small>{data?.groups.length ?? 0}</small></div>
-          {(data?.groups ?? []).map((item) => (
-            <button
-              key={item.id}
-              className={'group-list-item ' + (item.id === selectedGroupId ? 'active ' : '') + (!item.isActive ? 'inactive' : '')}
-              onClick={() => { setSelectedGroupId(item.id); setTab('main'); }}
-            >
-              <strong>{item.name}</strong>
-              <span>{item.deviceIds.length} терминалов</span>
-            </button>
-          ))}
+          {(data?.groups ?? []).map((item) => {
+            const groupDepartments = data?.departments.filter((x) => x.groupId === item.id).length ?? 0;
+            const groupHalls = data?.halls.filter((x) => x.groupId === item.id).length ?? 0;
+            return (
+              <button
+                key={item.id}
+                className={'group-list-item ' + (item.id === selectedGroupId ? 'active ' : '') + (!item.isActive ? 'inactive' : '')}
+                onClick={() => { setSelectedGroupId(item.id); setTab('main'); }}
+              >
+                <strong>{item.name}</strong>
+                <span>{item.deviceIds.length} терминалов · {groupDepartments} отделений · {groupHalls} залов</span>
+              </button>
+            );
+          })}
         </aside>
 
         <div className="group-content">
@@ -126,7 +125,7 @@ export function GroupsPage({ token }: { token: string }) {
                 <div>
                   <div className="eyebrow">ГРУППА РЕСТОРАНА</div>
                   <h2>{group.name}</h2>
-                  <p>{departments.length} отделений · {group.deviceIds.length} терминалов</p>
+                  <p>{group.deviceIds.length} терминалов · {departments.length} отделений · {halls.length} залов</p>
                 </div>
                 <button className="secondary-button compact" onClick={() => setEditor({ kind: 'group-edit', group })}>Настроить</button>
               </div>
@@ -135,41 +134,39 @@ export function GroupsPage({ token }: { token: string }) {
                 <button className={tab === 'main' ? 'active' : ''} onClick={() => setTab('main')}>Основное</button>
                 <button className={tab === 'devices' ? 'active' : ''} onClick={() => setTab('devices')}>Терминалы</button>
                 <button className={tab === 'departments' ? 'active' : ''} onClick={() => setTab('departments')}>Отделения</button>
-                <button className={tab === 'cooking' ? 'active' : ''} onClick={() => setTab('cooking')}>Карта приготовления</button>
+                <button className={tab === 'halls' ? 'active' : ''} onClick={() => setTab('halls')}>Залы</button>
               </div>
 
               {tab === 'main' && (
                 <div className="group-summary-grid">
-                  <SummaryCard label="Терминалы" value={group.deviceIds.length} text="кассы и официантские станции" />
-                  <SummaryCard label="Отделения" value={departments.length} text="залы и производственные отделения" />
+                  <SummaryCard label="Терминалы" value={group.deviceIds.length} text="главная касса и POS официантов" />
+                  <SummaryCard label="Отделения" value={departments.length} text="места приготовления и списания" />
+                  <SummaryCard label="Залы" value={halls.length} text="зоны обслуживания гостей" />
                   <SummaryCard
-                    label="Типы приготовления"
-                    value={data?.types.filter((x) => x.isActive).length ?? 0}
-                    text="используются номенклатурой"
-                  />
-                  <SummaryCard
-                    label="Настроено маршрутов"
-                    value={data?.maps.filter((x) => x.groupId === group.id && x.isActive).length ?? 0}
-                    text="тип → отделение"
+                    label="Настроено типов приготовления"
+                    value={departments.filter((x) => x.preparationPlaceTypeId && x.isActive).length}
+                    text="тип напрямую назначен отделению"
                   />
                 </div>
               )}
 
               {tab === 'devices' && (
-                <DevicesTab
-                  data={data!}
-                  group={group}
-                  saving={saving}
-                  onSave={saveDevices}
-                />
+                <DevicesTab data={data!} group={group} saving={saving} onSave={saveDevices} />
               )}
 
               {tab === 'departments' && (
                 <div>
                   <div className="group-section-head">
-                    <div><strong>Отделения группы</strong><span>Зал может участвовать в продажах; у производственного отделения задаются склад и принтер.</span></div>
-                    <button className="primary-button compact" onClick={() => setEditor({ kind: 'department-create', groupId: group.id })}>+ Отделение</button>
+                    <div>
+                      <strong>Отделения группы</strong>
+                      <span>Для каждого отделения задаются тип места приготовления, склад списания и принтер кухни/бара.</span>
+                    </div>
+                    <div className="heading-actions">
+                      <button className="secondary-button compact" onClick={() => setEditor({ kind: 'type-create' })}>+ Тип приготовления</button>
+                      <button className="primary-button compact" onClick={() => setEditor({ kind: 'department-create', groupId: group.id })}>+ Отделение</button>
+                    </div>
                   </div>
+
                   <div className="department-grid">
                     {departments.map((department) => (
                       <button key={department.id} className="department-card" onClick={() => setEditor({ kind: 'department-edit', department })}>
@@ -178,47 +175,43 @@ export function GroupsPage({ token }: { token: string }) {
                           <span className={'badge ' + (department.isActive ? 'success' : 'neutral')}>{department.isActive ? 'Активно' : 'Отключено'}</span>
                         </div>
                         <div className="department-lines">
-                          <span><b>Зал:</b> {department.hallName ?? '—'}</span>
-                          <span><b>Склад:</b> {department.warehouseName ?? '—'}</span>
+                          <span><b>Тип приготовления:</b> {department.preparationPlaceTypeName ?? '—'}</span>
+                          <span><b>Склад списания:</b> {department.warehouseName ?? '—'}</span>
                           <span><b>Принтер:</b> {department.printerName ?? '—'}</span>
                         </div>
                       </button>
                     ))}
                   </div>
-                  {departments.length === 0 && <div className="empty-state">В группе пока нет отделений.</div>}
+                  {departments.length === 0 && <div className="empty-state">В группе пока нет производственных отделений.</div>}
                 </div>
               )}
 
-              {tab === 'cooking' && (
+              {tab === 'halls' && (
                 <div>
                   <div className="group-section-head">
-                    <div><strong>Карта приготовления</strong><span>Блюдо выбирает тип. Группа определяет, в какое отделение он направляется.</span></div>
-                    <button className="secondary-button compact" onClick={() => setEditor({ kind: 'type-create' })}>+ Тип</button>
+                    <div>
+                      <strong>Залы группы</strong>
+                      <span>Каждый зал принадлежит группе и может иметь собственный принтер пречека.</span>
+                    </div>
+                    <button className="primary-button compact" onClick={() => setEditor({ kind: 'hall-create', groupId: group.id })}>+ Зал</button>
                   </div>
-                  <div className="cooking-map-list">
-                    {(data?.types ?? []).filter((x) => x.isActive).map((type) => {
-                      const map = data?.maps.find((x) => x.groupId === group.id && x.preparationPlaceTypeId === type.id && x.isActive);
-                      const selectedDepartment = map?.departmentId ?? '';
-                      return (
-                        <div className="cooking-map-row" key={type.id}>
-                          <div><strong>{type.name}</strong><small>Тип места приготовления</small></div>
-                          <span className="routing-arrow">→</span>
-                          <select value={selectedDepartment} onChange={(e) => void changeMap(type.id, e.target.value)} disabled={saving}>
-                            <option value="">Не настроено</option>
-                            {departments.filter((x) => x.isActive).map((department) => (
-                              <option key={department.id} value={department.id}>{department.name}</option>
-                            ))}
-                          </select>
-                          <div className="map-result">
-                            {selectedDepartment ? (() => {
-                              const dep = departments.find((x) => x.id === selectedDepartment);
-                              return <><span>Склад: {dep?.warehouseName ?? '—'}</span><span>Принтер: {dep?.printerName ?? '—'}</span></>;
-                            })() : <span>Выберите отделение</span>}
-                          </div>
+
+                  <div className="department-grid">
+                    {halls.map((hall) => (
+                      <button key={hall.id} className="department-card" onClick={() => setEditor({ kind: 'hall-edit', hall })}>
+                        <div className="department-card-head">
+                          <strong>{hall.name}</strong>
+                          <span className={'badge ' + (hall.isActive ? 'success' : 'neutral')}>{hall.isActive ? 'Активно' : 'Отключено'}</span>
                         </div>
-                      );
-                    })}
+                        <div className="department-lines">
+                          <span><b>Принтер пречека:</b> {hall.precheckPrinterName ?? '—'}</span>
+                          <span><b>Столов:</b> {hall.tableCount}</span>
+                          <span><b>Порядок:</b> {hall.sortOrder}</span>
+                        </div>
+                      </button>
+                    ))}
                   </div>
+                  {halls.length === 0 && <div className="empty-state">В группе пока нет залов.</div>}
                 </div>
               )}
             </>
@@ -268,7 +261,7 @@ function DevicesTab({
   return (
     <div>
       <div className="group-section-head">
-        <div><strong>Терминалы группы</strong><span>Главная касса координирует работу группы; остальные POS могут использоваться официантами.</span></div>
+        <div><strong>Терминалы группы</strong><span>Выберите главную кассу и POS-терминалы официантов, которые работают в этой группе.</span></div>
         <button className="primary-button compact" disabled={saving} onClick={() => void onSave(ids, mainId || null)}>Сохранить</button>
       </div>
       <div className="device-group-list">
@@ -276,8 +269,14 @@ function DevicesTab({
           const checked = ids.includes(device.id);
           return (
             <div className="device-group-row" key={device.id}>
-              <label><input type="checkbox" checked={checked} onChange={(e) => toggle(device.id, e.target.checked)} /><span><strong>{device.name}</strong><small>{device.type}</small></span></label>
-              <label className="main-register-radio"><input type="radio" name="mainRegister" checked={mainId === device.id} disabled={!checked} onChange={() => setMainId(device.id)} /><span>Главная касса</span></label>
+              <label>
+                <input type="checkbox" checked={checked} onChange={(e) => toggle(device.id, e.target.checked)} />
+                <span><strong>{device.name}</strong><small>{device.type}</small></span>
+              </label>
+              <label className="main-register-radio">
+                <input type="radio" name="mainRegister" checked={mainId === device.id} disabled={!checked} onChange={() => setMainId(device.id)} />
+                <span>Главная касса</span>
+              </label>
             </div>
           );
         })}
@@ -304,57 +303,146 @@ function EditorModal({
   onSaved: () => Promise<void>;
 }) {
   const department = editor.kind === 'department-edit' ? editor.department : null;
+  const hall = editor.kind === 'hall-edit' ? editor.hall : null;
   const group = editor.kind === 'group-edit' ? editor.group : null;
-  const [name, setName] = useState(department?.name ?? group?.name ?? '');
-  const [hallId, setHallId] = useState(department?.hallId ?? '');
+
+  const [name, setName] = useState(department?.name ?? hall?.name ?? group?.name ?? '');
+  const [preparationPlaceTypeId, setPreparationPlaceTypeId] = useState(department?.preparationPlaceTypeId ?? '');
   const [warehouseId, setWarehouseId] = useState(department?.warehouseId ?? '');
-  const [printerId, setPrinterId] = useState(department?.printerId ?? '');
-  const [isActive, setIsActive] = useState(department?.isActive ?? group?.isActive ?? true);
+  const [printerId, setPrinterId] = useState(department?.printerId ?? hall?.precheckPrinterId ?? '');
+  const [sortOrder, setSortOrder] = useState(hall?.sortOrder ?? 0);
+  const [isActive, setIsActive] = useState(department?.isActive ?? hall?.isActive ?? group?.isActive ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const departmentMode = editor.kind === 'department-create' || editor.kind === 'department-edit';
+  const hallMode = editor.kind === 'hall-create' || editor.kind === 'hall-edit';
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
-    setSaving(true); setError(null);
+
+    setSaving(true);
+    setError(null);
     try {
-      if (editor.kind === 'group-create') await createRestaurantGroup(token, name.trim());
-      else if (editor.kind === 'group-edit') await updateRestaurantGroup(token, editor.group.id, { name: name.trim(), isActive });
-      else if (editor.kind === 'department-create') {
-        await createRestaurantDepartment(token, editor.groupId, { name: name.trim(), hallId: hallId || null, warehouseId: warehouseId || null, printerId: printerId || null });
+      if (editor.kind === 'group-create') {
+        await createRestaurantGroup(token, name.trim());
+      } else if (editor.kind === 'group-edit') {
+        await updateRestaurantGroup(token, editor.group.id, { name: name.trim(), isActive });
+      } else if (editor.kind === 'department-create') {
+        await createRestaurantDepartment(token, editor.groupId, {
+          name: name.trim(),
+          preparationPlaceTypeId: preparationPlaceTypeId || null,
+          warehouseId: warehouseId || null,
+          printerId: printerId || null,
+        });
       } else if (editor.kind === 'department-edit') {
-        await updateRestaurantDepartment(token, editor.department.groupId, editor.department.id, { name: name.trim(), hallId: hallId || null, warehouseId: warehouseId || null, printerId: printerId || null, isActive });
+        await updateRestaurantDepartment(token, editor.department.groupId, editor.department.id, {
+          name: name.trim(),
+          preparationPlaceTypeId: preparationPlaceTypeId || null,
+          warehouseId: warehouseId || null,
+          printerId: printerId || null,
+          isActive,
+        });
+      } else if (editor.kind === 'hall-create') {
+        await createGroupHall(token, editor.groupId, {
+          name: name.trim(),
+          sortOrder,
+          precheckPrinterId: printerId || null,
+        });
+      } else if (editor.kind === 'hall-edit') {
+        await updateGroupHall(token, editor.hall.groupId, editor.hall.id, {
+          name: name.trim(),
+          sortOrder,
+          precheckPrinterId: printerId || null,
+          isActive,
+        });
       } else if (editor.kind === 'type-create') {
         await createGroupPreparationType(token, name.trim());
       }
+
       await onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось сохранить');
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   }
 
-  const departmentMode = editor.kind === 'department-create' || editor.kind === 'department-edit';
   const title =
     editor.kind === 'group-create' ? 'Новая группа' :
     editor.kind === 'group-edit' ? 'Настройки группы' :
     editor.kind === 'type-create' ? 'Новый тип места приготовления' :
-    editor.kind === 'department-create' ? 'Новое отделение' : 'Настройки отделения';
+    editor.kind === 'department-create' ? 'Новое отделение' :
+    editor.kind === 'department-edit' ? 'Настройки отделения' :
+    editor.kind === 'hall-create' ? 'Новый зал' : 'Настройки зала';
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <form className="modal-card" onSubmit={submit}>
-        <div className="modal-header"><div><div className="eyebrow">СТРУКТУРА РЕСТОРАНА</div><h2>{title}</h2></div><button type="button" className="close-button" onClick={onClose}>×</button></div>
+        <div className="modal-header">
+          <div><div className="eyebrow">СТРУКТУРА РЕСТОРАНА</div><h2>{title}</h2></div>
+          <button type="button" className="close-button" onClick={onClose}>×</button>
+        </div>
+
         <label><span>Название</span><input value={name} onChange={(e) => setName(e.target.value)} autoFocus /></label>
 
-        {departmentMode && <>
-          <label><span>Зал / зона продаж</span><select value={hallId} onChange={(e) => setHallId(e.target.value)}><option value="">Не используется как зал</option>{data.halls.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select><small className="field-hint">Если выбран зал со столами, отделение участвует в работе POS как зона продаж.</small></label>
-          <label><span>Склад списания</span><select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}><option value="">Не назначен</option>{data.warehouses.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-          <label><span>Принтер блюд</span><select value={printerId} onChange={(e) => setPrinterId(e.target.value)}><option value="">Не назначен</option>{data.printers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
-        </>}
+        {departmentMode && (
+          <>
+            <label>
+              <span>Тип места приготовления</span>
+              <select value={preparationPlaceTypeId} onChange={(e) => setPreparationPlaceTypeId(e.target.value)}>
+                <option value="">Не назначен</option>
+                {data.types.filter((x) => x.isActive).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+              <small className="field-hint">Блюда с этим типом будут печататься именно в это отделение внутри выбранной группы.</small>
+            </label>
 
-        {(editor.kind === 'group-edit' || editor.kind === 'department-edit') && <label className="toggle-row"><span><strong>Активно</strong></span><input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /></label>}
+            <label>
+              <span>Склад списания</span>
+              <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+                <option value="">Не назначен</option>
+                {data.warehouses.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            </label>
+
+            <label>
+              <span>Принтер печати</span>
+              <select value={printerId} onChange={(e) => setPrinterId(e.target.value)}>
+                <option value="">Не назначен</option>
+                {data.printers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            </label>
+          </>
+        )}
+
+        {hallMode && (
+          <>
+            <label>
+              <span>Порядок</span>
+              <input type="number" min={0} value={sortOrder} onChange={(e) => setSortOrder(Math.max(0, Number(e.target.value) || 0))} />
+            </label>
+            <label>
+              <span>Принтер пречека</span>
+              <select value={printerId} onChange={(e) => setPrinterId(e.target.value)}>
+                <option value="">Не назначен</option>
+                {data.printers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+              <small className="field-hint">Пречек для столов этого зала будет направляться на выбранный принтер.</small>
+            </label>
+          </>
+        )}
+
+        {(editor.kind === 'group-edit' || editor.kind === 'department-edit' || editor.kind === 'hall-edit') && (
+          <label className="toggle-row"><span><strong>Активно</strong></span><input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /></label>
+        )}
+
         {error && <div className="error-box">{error}</div>}
-        <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Отмена</button><button className="primary-button" disabled={saving || !name.trim()}>{saving ? 'Сохраняем…' : 'Сохранить'}</button></div>
+
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose}>Отмена</button>
+          <button className="primary-button" disabled={saving || !name.trim()}>{saving ? 'Сохраняем…' : 'Сохранить'}</button>
+        </div>
       </form>
     </div>
   );
