@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   type BackOfficeEquipment,
   type EquipmentDevice,
-  assignKitchenPrinter,
   createDevice,
   getBackOfficeEquipment,
   updateDevice,
@@ -29,7 +28,6 @@ export function DevicesPage({ token }: { token: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState>(null);
-  const [savingStationId, setSavingStationId] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -50,26 +48,11 @@ export function DevicesPage({ token }: { token: string }) {
   const stats = useMemo(() => {
     const devices = data?.devices ?? [];
     const printers = data?.printers ?? [];
-    const stations = data?.kitchenStations ?? [];
     return {
       devices: devices.filter((x) => x.isActive).length,
       printers: printers.filter((x) => x.isActive).length,
-      unassignedStations: stations.filter((x) => x.isActive && !x.printerId).length,
     };
   }, [data]);
-
-  async function setStationPrinter(stationId: string, printerId: string) {
-    setSavingStationId(stationId);
-    setError(null);
-    try {
-      await assignKitchenPrinter(token, stationId, printerId || null);
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось сохранить маршрут печати');
-    } finally {
-      setSavingStationId(null);
-    }
-  }
 
   if (!data && loading) {
     return <div className="empty-state">Загружаем оборудование…</div>;
@@ -98,8 +81,7 @@ export function DevicesPage({ token }: { token: string }) {
 
       <div className="stats-grid">
         <EquipmentStat label="Активные устройства" value={stats.devices} detail={`${data?.devices.length ?? 0} всего`} />
-        <EquipmentStat label="Настроенные принтеры" value={stats.printers} detail="по всем POS" />
-        <EquipmentStat label="Станции без принтера" value={stats.unassignedStations} detail={stats.unassignedStations ? 'требуют настройки' : 'всё настроено'} warning={stats.unassignedStations > 0} />
+        <EquipmentStat label="Настроенные принтеры" value={stats.printers} detail="по всем POS и отделениям" />
       </div>
 
       <PosPrinterAssignment token={token} onChanged={refresh} />
@@ -147,38 +129,6 @@ export function DevicesPage({ token }: { token: string }) {
             </table>
           </div>
         )}
-      </div>
-
-      <div className="equipment-section">
-        <div className="equipment-section-header">
-          <div>
-            <h2>Маршруты кухонной печати</h2>
-            <p>После настройки принтеров на POS назначьте нужный принтер каждой кухонной станции.</p>
-          </div>
-        </div>
-
-        <div className="route-list">
-          {data?.kitchenStations.map((station) => (
-            <div className="route-row" key={station.id}>
-              <div>
-                <strong>{station.name}</strong>
-                <span>{station.isActive ? 'Активная станция' : 'Станция отключена'}</span>
-              </div>
-              <div className="route-arrow">→</div>
-              <select
-                value={station.printerId ?? ''}
-                disabled={savingStationId === station.id}
-                onChange={(e) => void setStationPrinter(station.id, e.target.value)}
-              >
-                <option value="">Принтер не назначен</option>
-                {data?.printers.filter((x) => x.isActive).map((printer) => (
-                  <option value={printer.id} key={printer.id}>{printer.name}</option>
-                ))}
-              </select>
-            </div>
-          ))}
-          {(data?.kitchenStations.length ?? 0) === 0 && <div className="equipment-empty">Кухонных станций пока нет.</div>}
-        </div>
       </div>
 
       {editor && data && (
