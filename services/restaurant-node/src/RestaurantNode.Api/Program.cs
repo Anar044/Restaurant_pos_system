@@ -115,6 +115,7 @@ app.MapBackOfficeAdjustmentEndpoints();
 app.MapBackOfficeInventoryEndpoints();
 app.MapBackOfficeNomenclatureEndpoints();
 app.MapBackOfficeRoutingEndpoints();
+app.MapBackOfficeGroupEndpoints();
 app.MapHallEndpoints();
 app.MapMenuEndpoints();
 app.MapOrderAdjustmentPresetEndpoints();
