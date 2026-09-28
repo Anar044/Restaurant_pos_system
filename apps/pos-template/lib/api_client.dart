@@ -1276,6 +1276,7 @@ class OrderAdjustmentDto {
 
   bool get isDiscount => type == 'DISCOUNT';
   bool get isServiceCharge => type == 'SERVICE_CHARGE';
+  bool get isAutomatic => applicationMode == 'AUTOMATIC';
 
   factory OrderAdjustmentDto.fromJson(Map<String, dynamic> json) =>
       OrderAdjustmentDto(
