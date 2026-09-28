@@ -33,6 +33,13 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                 nullable: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_shifts_RestaurantId_DeviceId",
+                table: "shifts",
+                columns: new[] { "RestaurantId", "DeviceId" },
+                unique: true,
+                filter: "\"Status\" = 'Open'");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_shifts_RestaurantId_DeviceId_Status_OpenedAt",
                 table: "shifts",
                 columns: new[] { "RestaurantId", "DeviceId", "Status", "OpenedAt" });
@@ -41,6 +48,10 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropIndex(
+                name: "IX_shifts_RestaurantId_DeviceId",
+                table: "shifts");
+
             migrationBuilder.DropIndex(
                 name: "IX_shifts_RestaurantId_DeviceId_Status_OpenedAt",
                 table: "shifts");
