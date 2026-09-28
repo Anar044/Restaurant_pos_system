@@ -9,6 +9,7 @@ public enum OrderAdjustmentMode { Percent, Fixed }
 public enum OrderAdjustmentScope { Order, Guest, Both }
 public enum OrderAdjustmentApplicationMode { Manual, Automatic }
 public enum OrderAdjustmentTimeBasis { OrderOpenedAt, ItemAddedAt }
+public enum OrderAdjustmentTargetMode { AllItems, PresetSelection, PosSelection }
 public enum ShiftStatus { Open, Closed }
 public enum PaymentMethod { Cash, Card, Other }
 public enum PaymentStatus { Pending, Completed, Cancelled, Refunded }
