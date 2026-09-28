@@ -55,11 +55,11 @@ export function KitchenPage({ token }: { token: string }) {
         <div>
           <div className="eyebrow">НАСТРОЙКИ РЕСТОРАНА</div>
           <h1>Тип места приготовления</h1>
-          <p>Создавайте места приготовления и контролируйте, куда отправляется каждое блюдо.</p>
+          <p>Настройте маршрутизацию: куда отправлять позицию, на каком принтере печатать и с какого склада списывать ингредиенты.</p>
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>Обновить</button>
-          <button className="primary-button" onClick={() => setEditor({ kind: 'create' })}>+ Добавить станцию</button>
+          <button className="primary-button" onClick={() => setEditor({ kind: 'create' })}>+ Добавить тип</button>
         </div>
       </div>
 
@@ -71,10 +71,10 @@ export function KitchenPage({ token }: { token: string }) {
       )}
 
       <div className="stats-grid">
-        <KitchenStat label="Активные станции" value={stats.activeStations} detail={`${stats.totalStations} всего`} />
+        <KitchenStat label="Активные типы" value={stats.activeStations} detail={`${stats.totalStations} всего`} />
         <KitchenStat label="Назначено блюд" value={stats.routedProducts} detail="активных позиций" />
         <KitchenStat
-          label="Без станции"
+          label="Без типа"
           value={stats.unassignedProducts}
           detail={stats.unassignedProducts === 0 ? 'всё распределено' : 'требуют настройки'}
           warning={stats.unassignedProducts > 0}
@@ -85,8 +85,8 @@ export function KitchenPage({ token }: { token: string }) {
         <div className="kitchen-warning-panel">
           <div className="kitchen-warning-icon">!</div>
           <div>
-            <strong>Есть блюда без кухонной станции</strong>
-            <p>Назначьте станцию в разделе «Меню», иначе такие позиции нельзя будет корректно отправить на кухню.</p>
+            <strong>Есть позиции без типа места приготовления</strong>
+            <p>Назначьте тип места приготовления во вкладке «Продажа» карточки номенклатуры.</p>
             <div className="unassigned-chips">
               {data?.unassignedProducts.slice(0, 8).map((product) => (
                 <span key={product.id}>{product.name}</span>
@@ -101,9 +101,9 @@ export function KitchenPage({ token }: { token: string }) {
 
       {(data?.stations.length ?? 0) === 0 ? (
         <div className="empty-state">
-          <strong>Кухонных станций пока нет</strong>
-          <span>Создайте первую станцию, например «Горячий цех» или «Бар».</span>
-          <button className="primary-button" onClick={() => setEditor({ kind: 'create' })}>Создать станцию</button>
+          <strong>Типов места приготовления пока нет</strong>
+          <span>Создайте первый тип, например «Горячий цех», «Бар» или «Холодный цех».</span>
+          <button className="primary-button" onClick={() => setEditor({ kind: 'create' })}>Создать тип</button>
         </div>
       ) : (
         <div className="kitchen-station-grid">
@@ -123,6 +123,9 @@ export function KitchenPage({ token }: { token: string }) {
                     <div className="station-printer-line">
                       Принтер: <strong>{station.printerName ?? 'не назначен'}</strong>
                     </div>
+                    <div className="station-printer-line">
+                      Склад списания: <strong>{station.warehouseName ?? 'не назначен'}</strong>
+                    </div>
                   </div>
                 </div>
                 <button className="text-button" onClick={() => setEditor({ kind: 'edit', station })}>Настроить</button>
@@ -131,8 +134,8 @@ export function KitchenPage({ token }: { token: string }) {
               <div className="station-products">
                 {station.products.length === 0 ? (
                   <div className="station-empty-products">
-                    <strong>Блюда не назначены</strong>
-                    <span>Выберите эту станцию в настройках блюда.</span>
+                    <strong>Позиции не назначены</strong>
+                    <span>Выберите этот тип во вкладке «Продажа» номенклатуры.</span>
                   </div>
                 ) : (
                   <>
@@ -162,6 +165,7 @@ export function KitchenPage({ token }: { token: string }) {
           editor={editor}
           token={token}
           availablePrinters={data?.availablePrinters ?? []}
+          availableWarehouses={data?.availableWarehouses ?? []}
           onClose={() => setEditor(null)}
           onSaved={async () => {
             setEditor(null);
@@ -199,18 +203,21 @@ function KitchenStationEditor({
   editor,
   token,
   availablePrinters,
+  availableWarehouses,
   onClose,
   onSaved,
 }: {
   editor: Exclude<EditorState, null>;
   token: string;
   availablePrinters: BackOfficeKitchen['availablePrinters'];
+  availableWarehouses: BackOfficeKitchen['availableWarehouses'];
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   const station = editor.kind === 'edit' ? editor.station : null;
   const [name, setName] = useState(station?.name ?? '');
   const [printerId, setPrinterId] = useState(station?.printerId ?? '');
+  const [warehouseId, setWarehouseId] = useState(station?.warehouseId ?? '');
   const [isActive, setIsActive] = useState(station?.isActive ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -226,11 +233,13 @@ function KitchenStationEditor({
         await createKitchenStation(token, {
           name: name.trim(),
           printerId: printerId || null,
+          warehouseId: warehouseId || null,
         });
       } else {
         await updateKitchenStation(token, editor.station.id, {
           name: name.trim(),
           printerId: printerId || null,
+          warehouseId: warehouseId || null,
           isActive,
         });
       }
@@ -247,8 +256,8 @@ function KitchenStationEditor({
       <form className="modal-card" onSubmit={submit}>
         <div className="modal-header">
           <div>
-            <div className="eyebrow">КУХОННАЯ СТАНЦИЯ</div>
-            <h2>{editor.kind === 'create' ? 'Новая станция' : 'Настройки станции'}</h2>
+            <div className="eyebrow">МАРШРУТИЗАЦИЯ ПРИГОТОВЛЕНИЯ</div>
+            <h2>{editor.kind === 'create' ? 'Новый тип места приготовления' : 'Настройки типа'}</h2>
           </div>
           <button type="button" className="close-button" onClick={onClose}>×</button>
         </div>
@@ -262,6 +271,21 @@ function KitchenStationEditor({
             placeholder="Например: Горячий цех"
             autoFocus
           />
+        </label>
+
+        <label>
+          <span>Склад списания</span>
+          <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+            <option value="">Не назначен</option>
+            {availableWarehouses.map((warehouse) => (
+              <option key={warehouse.id} value={warehouse.id}>
+                {warehouse.name}
+              </option>
+            ))}
+          </select>
+          <small className="field-hint">
+            Ингредиенты техкарты будут списываться с этого склада при продаже позиции.
+          </small>
         </label>
 
         <label>
@@ -288,11 +312,11 @@ function KitchenStationEditor({
         {editor.kind === 'edit' && (
           <label className="toggle-row">
             <span>
-              <strong>Станция активна</strong>
+              <strong>Тип активен</strong>
               <small>
                 {station && station.activeProductCount > 0
                   ? `Назначено активных блюд: ${station.activeProductCount}`
-                  : 'Отключённая станция не используется для новых отправок'}
+                  : 'Отключённый тип не используется для новых отправок'}
               </small>
             </span>
             <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
@@ -301,7 +325,7 @@ function KitchenStationEditor({
 
         {editor.kind === 'edit' && station && station.activeProductCount > 0 && !isActive && (
           <div className="kitchen-inline-warning">
-            Сначала перенесите активные блюда на другую станцию или отключите их в меню.
+            Сначала назначьте активным позициям другой тип места приготовления или отключите продажу.
           </div>
         )}
 
