@@ -173,19 +173,31 @@ public static class AccountingLedger
 
         if (account is null)
         {
-            account = new MoneyAccount
+            account = await db.MoneyAccounts
+                .Where(x => x.RestaurantId == restaurantId && x.Type == type)
+                .OrderBy(x => x.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+
+            if (account is not null)
             {
-                RestaurantId = restaurantId,
-                Name = method switch
+                account.IsActive = true;
+            }
+            else
+            {
+                account = new MoneyAccount
                 {
-                    PaymentMethod.Cash => "Торговая касса",
-                    PaymentMethod.Card => "Эквайринг",
-                    _ => "Прочие оплаты"
-                },
-                Type = type,
-                IsActive = true
-            };
-            db.MoneyAccounts.Add(account);
+                    RestaurantId = restaurantId,
+                    Name = method switch
+                    {
+                        PaymentMethod.Cash => "Торговая касса",
+                        PaymentMethod.Card => "Эквайринг",
+                        _ => "Прочие оплаты"
+                    },
+                    Type = type,
+                    IsActive = true
+                };
+                db.MoneyAccounts.Add(account);
+            }
         }
 
         await EnsureMoneyAccountAsync(db, restaurantId, account, ct);
