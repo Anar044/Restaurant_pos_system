@@ -799,8 +799,6 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                         .HasForeignKey("EntryId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.LedgerLine", b =>
