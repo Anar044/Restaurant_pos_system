@@ -160,6 +160,7 @@ public sealed class Product : Entity
     public string Unit { get; set; } = "pcs";
     public decimal MinStock { get; set; }
     public bool TrackStock { get; set; }
+    public string? InventoryAccountCode { get; set; }
     public bool IsSellable { get; set; } = true;
     public bool IsActive { get; set; } = true;
     public int SortOrder { get; set; }
