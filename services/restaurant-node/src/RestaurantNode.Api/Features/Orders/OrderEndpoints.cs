@@ -2075,9 +2075,26 @@ public static class OrderEndpoints
             if (order.Status != OrderStatus.Paid)
                 return Results.Conflict(new { message = "Only a fully paid order can be closed." });
 
+            var closedAt = DateTimeOffset.UtcNow;
+            var stockAccounting = await OrderStockAccounting.ApplyOnCloseAsync(
+                db,
+                order,
+                restaurantId,
+                employeeId,
+                closedAt,
+                ct);
+            if (stockAccounting.Error is not null)
+            {
+                return Results.Conflict(new
+                {
+                    message = stockAccounting.Error,
+                    code = "STOCK_ACCOUNTING_NOT_CONFIGURED"
+                });
+            }
+
             order.Status = OrderStatus.Closed;
-            order.ClosedAt = DateTimeOffset.UtcNow;
-            order.UpdatedAt = order.ClosedAt.Value;
+            order.ClosedAt = closedAt;
+            order.UpdatedAt = closedAt;
             order.Version++;
 
             db.AuditEvents.Add(Audit(
@@ -2092,6 +2109,7 @@ public static class OrderEndpoints
                     order.DisplayNumber,
                     order.Total,
                     order.PaidTotal,
+                    stockCost = stockAccounting.TotalCost,
                     order.ClosedAt
                 }));
             db.OutboxEvents.Add(Outbox(
