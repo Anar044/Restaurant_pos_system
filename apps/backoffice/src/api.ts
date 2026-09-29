@@ -1490,7 +1490,8 @@ export async function getBackOfficeAccounting(
   const query = new URLSearchParams();
   if (from) query.set('from', from);
   if (to) query.set('to', to);
-  const suffix = query.size ? '?' + query.toString() : '';
+  const serialized = query.toString();
+  const suffix = serialized ? '?' + serialized : '';
   return request<BackOfficeAccounting>('/api/v1/backoffice/accounting' + suffix, {}, token);
 }
 
