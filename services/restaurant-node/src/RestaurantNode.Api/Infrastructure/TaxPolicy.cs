@@ -15,6 +15,13 @@ public static class TaxPolicy
     public const string PurchaseVatExempt = "VAT_EXEMPT";
     public const string PurchaseNoVat = "NO_VAT";
 
+    public const string PurchaseDocumentSupplierInvoice = "SUPPLIER_INVOICE";
+    public const string PurchaseDocumentRetailReceipt = "RETAIL_RECEIPT";
+    public const string PurchaseDocumentOther = "OTHER";
+
+    public const string RetailVatNotSpecified = "NOT_SPECIFIED";
+    public const string RetailVat18 = "VAT_18";
+
     public const string InputVatNotApplicable = "NOT_APPLICABLE";
     public const string InputVatPending = "PENDING";
     public const string InputVatEligible = "ELIGIBLE";
@@ -118,6 +125,14 @@ public static class TaxPolicy
     public static bool IsSupportedPurchaseVatCode(string? value) =>
         value?.Trim().ToUpperInvariant() is
             PurchaseVat18 or PurchaseVatZero or PurchaseVatExempt or PurchaseNoVat;
+
+
+    public static bool IsSupportedPurchaseDocumentKind(string? value) =>
+        value?.Trim().ToUpperInvariant() is
+            PurchaseDocumentSupplierInvoice or PurchaseDocumentRetailReceipt or PurchaseDocumentOther;
+
+    public static bool IsSupportedRetailVatMode(string? value) =>
+        value?.Trim().ToUpperInvariant() is RetailVatNotSpecified or RetailVat18;
 
     public static bool IsSupportedInputVatCreditStatus(string? value) =>
         value?.Trim().ToUpperInvariant() is
