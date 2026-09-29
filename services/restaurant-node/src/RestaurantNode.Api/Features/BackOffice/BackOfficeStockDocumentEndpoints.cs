@@ -299,7 +299,7 @@ public static class BackOfficeStockDocumentEndpoints
 
             db.StockDocumentLines.RemoveRange(document.Lines);
             document.Lines.Clear();
-            foreach (var line in validation.Lines)
+            foreach (var line in validation.Lines!)
             {
                 document.Lines.Add(new StockDocumentLine
                 {
