@@ -6,7 +6,6 @@ import {
   getBackOfficeEquipment,
   updateDevice,
 } from './api';
-import { PosPrinterAssignment } from './PosPrinterAssignment';
 import './devices.css';
 
 type EditorState =
@@ -64,7 +63,7 @@ export function DevicesPage({ token }: { token: string }) {
         <div>
           <div className="eyebrow">ИНФРАСТРУКТУРА РЕСТОРАНА</div>
           <h1>Оборудование</h1>
-          <p>Сначала выберите POS, затем добавляйте и настраивайте все его принтеры.</p>
+          <p>Управляйте POS, планшетами, киосками и другими устройствами. Принтеры и маршрутизация находятся в разделе «Печать».</p>
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>Обновить</button>
@@ -84,12 +83,10 @@ export function DevicesPage({ token }: { token: string }) {
         <EquipmentStat label="Настроенные принтеры" value={stats.printers} detail="по всем POS и отделениям" />
       </div>
 
-      <PosPrinterAssignment token={token} onChanged={refresh} />
-
       <div className="equipment-section">
         <div className="equipment-section-header">
           <div>
-            <h2>Другие устройства</h2>
+            <h2>Устройства</h2>
             <p>POS, планшеты, KDS, киоски, экраны покупателя и Restaurant Node.</p>
           </div>
           <button className="secondary-button compact" onClick={() => setEditor({ kind: 'device-create' })}>+ Устройство</button>
@@ -230,8 +227,8 @@ function DeviceEditor({
           </label>
           {type === 'Pos' && (
             <div className="full-field pos-agent-info-box">
-              <strong>Принтеры настраиваются внутри выбранного POS</strong>
-              <span>После запуска POS Agent Windows-принтеры этой кассы появятся в списке автоматически.</span>
+              <strong>Печать настраивается в отдельном разделе</strong>
+              <span>Windows-принтеры POS Agent обнаруживает автоматически. Назначения делаются в «Настройки ресторана → Печать».</span>
             </div>
           )}
         </div>
