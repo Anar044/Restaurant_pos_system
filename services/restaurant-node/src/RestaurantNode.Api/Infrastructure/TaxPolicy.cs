@@ -10,6 +10,17 @@ public static class TaxPolicy
     public const string VatPriceIncluded = "INCLUDED";
     public const string VatPriceExcluded = "EXCLUDED";
 
+    public const string PurchaseVat18 = "VAT_18";
+    public const string PurchaseVatZero = "VAT_0";
+    public const string PurchaseVatExempt = "VAT_EXEMPT";
+    public const string PurchaseNoVat = "NO_VAT";
+
+    public const string InputVatNotApplicable = "NOT_APPLICABLE";
+    public const string InputVatPending = "PENDING";
+    public const string InputVatEligible = "ELIGIBLE";
+    public const string InputVatCredited = "CREDITED";
+    public const string InputVatNonCreditable = "NON_CREDITABLE";
+
     public const string Standard = "STANDARD";
     public const string VatExemptOwnAgriculture = "VAT_EXEMPT_OWN_AGRICULTURE";
     public const string VatAgricultureMargin = "VAT_AGRI_MARGIN";
@@ -44,6 +55,13 @@ public static class TaxPolicy
         decimal Turnover,
         decimal TaxRate,
         decimal TaxAmount);
+
+    public sealed record PurchaseVatCalculation(
+        decimal NetAmount,
+        decimal VatAmount,
+        decimal GrossAmount,
+        decimal InventoryCostAmount,
+        decimal RecoverableVatAmount);
 
     public static IReadOnlyList<TaxRegimeOption> RestaurantTaxRegimes { get; } =
     [
@@ -95,6 +113,20 @@ public static class TaxPolicy
 
     public static bool IsSupportedVatPriceMode(string? value) =>
         value?.Trim().ToUpperInvariant() is VatPriceIncluded or VatPriceExcluded;
+
+
+    public static bool IsSupportedPurchaseVatCode(string? value) =>
+        value?.Trim().ToUpperInvariant() is
+            PurchaseVat18 or PurchaseVatZero or PurchaseVatExempt or PurchaseNoVat;
+
+    public static bool IsSupportedInputVatCreditStatus(string? value) =>
+        value?.Trim().ToUpperInvariant() is
+            InputVatNotApplicable or InputVatPending or InputVatEligible or InputVatCredited or InputVatNonCreditable;
+
+    public static bool IsInputVatRecognizedAsRecoverable(string taxRegime, string inputVatCreditStatus) =>
+        string.Equals(taxRegime, Vat18Regime, StringComparison.OrdinalIgnoreCase) &&
+        inputVatCreditStatus.Trim().ToUpperInvariant() is
+            InputVatPending or InputVatEligible or InputVatCredited;
 
     public static bool IsSupportedProductTaxStatus(string? value) =>
         ProductTaxStatuses.Any(x =>
@@ -152,6 +184,69 @@ public static class TaxPolicy
         var vatAmount = Money(taxableBase * VatRate / 100m);
         var grossAmount = Money(baseAmount + vatAmount);
         return new VatCalculation(baseAmount, vatAmount, grossAmount, taxableBase);
+    }
+
+    public static PurchaseVatCalculation CalculatePurchaseVat(
+        decimal enteredAmount,
+        string vatPriceMode,
+        string vatCode,
+        string taxRegime,
+        string inputVatCreditStatus)
+    {
+        if (enteredAmount < 0m)
+            throw new ArgumentOutOfRangeException(nameof(enteredAmount));
+
+        var mode = vatPriceMode.Trim().ToUpperInvariant();
+        var code = vatCode.Trim().ToUpperInvariant();
+        var regime = taxRegime.Trim().ToUpperInvariant();
+        var creditStatus = inputVatCreditStatus.Trim().ToUpperInvariant();
+
+        if (!IsSupportedVatPriceMode(mode))
+            throw new ArgumentException("Unsupported VAT price mode.", nameof(vatPriceMode));
+        if (!IsSupportedPurchaseVatCode(code))
+            throw new ArgumentException("Unsupported purchase VAT code.", nameof(vatCode));
+        if (!IsSupportedInputVatCreditStatus(creditStatus))
+            throw new ArgumentException("Unsupported input VAT credit status.", nameof(inputVatCreditStatus));
+
+        decimal net;
+        decimal vat;
+        decimal gross;
+
+        if (code == PurchaseVat18)
+        {
+            if (mode == VatPriceIncluded)
+            {
+                gross = Money(enteredAmount);
+                net = Money(gross * 100m / 118m);
+                vat = Money(gross - net);
+            }
+            else
+            {
+                net = Money(enteredAmount);
+                vat = Money(net * VatRate / 100m);
+                gross = Money(net + vat);
+            }
+        }
+        else
+        {
+            net = Money(enteredAmount);
+            vat = 0m;
+            gross = net;
+        }
+
+        var recoverableVat = code == PurchaseVat18 &&
+                             IsInputVatRecognizedAsRecoverable(regime, creditStatus)
+            ? vat
+            : 0m;
+
+        var inventoryCost = Money(gross - recoverableVat);
+
+        return new PurchaseVatCalculation(
+            net,
+            vat,
+            gross,
+            inventoryCost,
+            recoverableVat);
     }
 
     public static SimplifiedTaxCalculation CalculateSimplifiedTax(
