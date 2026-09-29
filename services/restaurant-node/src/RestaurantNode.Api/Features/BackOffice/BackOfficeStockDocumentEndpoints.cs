@@ -1213,7 +1213,8 @@ public static class BackOfficeStockDocumentEndpoints
     }
 }
 
-public sealed record ReverseReceiptDocumentRequest(bool CreateCorrectionDraft, string? Reason);\npublic sealed record UpsertSupplierRequest(string Name, string Type, string? TaxId, string? Phone);
+public sealed record ReverseReceiptDocumentRequest(bool CreateCorrectionDraft, string? Reason);
+public sealed record UpsertSupplierRequest(string Name, string Type, string? TaxId, string? Phone);
 public sealed record UpdateSupplierRequest(string Name, string Type, string? TaxId, string? Phone, bool IsActive);
 public sealed record ReceiptDocumentLineRequest(
     Guid ProductId,
