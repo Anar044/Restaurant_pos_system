@@ -182,7 +182,7 @@ function NomenclatureEditor({
   const [type, setType] = useState<NomenclatureItem['type']>(item?.type ?? 'GOODS');
   const [unit, setUnit] = useState(item?.unit ?? 'pcs');
   const [minStock, setMinStock] = useState(String(item?.minStock ?? 0));
-  const [trackStock, setTrackStock] = useState(item?.trackStock ?? (item?.type === 'GOODS' || item?.type === 'PREPARATION'));
+  const [trackStock, setTrackStock] = useState(item?.trackStock ?? true);
   const [inventoryAccountCode, setInventoryAccountCode] = useState(item?.inventoryAccountCode ?? '201-1');
   const [isActive, setIsActive] = useState(item?.isActive ?? true);
   const [isSellable, setIsSellable] = useState(item?.isSellable ?? false);
