@@ -17,11 +17,12 @@ import { ModifiersPage } from './ModifiersPage';
 import { NomenclaturePage } from './NomenclaturePage';
 import { OverviewPage } from './OverviewPage';
 import { GroupsPage } from './GroupsPage';
+import { PrintingPage } from './PrintingPage';
 import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'groups' | 'modifiers' | 'nomenclature' | 'inventory' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance';
+type PageKey = 'overview' | 'groups' | 'printing' | 'modifiers' | 'nomenclature' | 'inventory' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -155,6 +156,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'overview', label: 'Обзор', icon: '⌂', ready: true },
     { key: 'finance', label: 'Кассы и смены', icon: '₼', ready: true },
     { key: 'groups', label: 'Группы, отделения и залы', icon: '▦', ready: true },
+    { key: 'printing', label: 'Печать', icon: '▧', ready: true },
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
     { key: 'nomenclature', label: 'Номенклатура', icon: '▤', ready: true },
     { key: 'modifiers', label: 'Группы модификаторов', icon: '±', ready: true },
@@ -164,7 +166,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'roles', label: 'Роли и права', icon: '◉', ready: true },
   ];
 
-  const restaurantSettingsItems: PageKey[] = ['groups', 'devices'];
+  const restaurantSettingsItems: PageKey[] = ['groups', 'printing', 'devices'];
   const catalogItems: PageKey[] = ['nomenclature', 'modifiers', 'inventory'];
   const employeeItems: PageKey[] = ['employees', 'roles'];
 
@@ -317,6 +319,8 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             />
           ) : page === 'groups' ? (
             <GroupsPage token={session.token} />
+          ) : page === 'printing' ? (
+            <PrintingPage token={session.token} />
           ) : page === 'employees' ? (
             <EmployeesPage
               token={session.token}
