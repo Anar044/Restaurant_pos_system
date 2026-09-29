@@ -25,6 +25,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<ProductModifierGroup> ProductModifierGroups => Set<ProductModifierGroup>();
     public DbSet<ModifierGroupModifier> ModifierGroupModifiers => Set<ModifierGroupModifier>();
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+    public DbSet<StockDocument> StockDocuments => Set<StockDocument>();
+    public DbSet<StockDocumentLine> StockDocumentLines => Set<StockDocumentLine>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
     public DbSet<Shift> Shifts => Set<Shift>();
     public DbSet<Order> Orders => Set<Order>();
@@ -70,6 +73,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<ProductModifierGroup>().ToTable("product_modifier_groups");
         modelBuilder.Entity<ModifierGroupModifier>().ToTable("modifier_group_modifiers");
         modelBuilder.Entity<Warehouse>().ToTable("warehouses");
+        modelBuilder.Entity<Supplier>().ToTable("suppliers");
+        modelBuilder.Entity<StockDocument>().ToTable("stock_documents");
+        modelBuilder.Entity<StockDocumentLine>().ToTable("stock_document_lines");
         modelBuilder.Entity<StockMovement>().ToTable("stock_movements");
         modelBuilder.Entity<Shift>().ToTable("shifts");
         modelBuilder.Entity<Order>().ToTable("orders");
@@ -101,6 +107,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<MoneyAccount>().Property(x => x.Type).HasConversion<string>();
         modelBuilder.Entity<MoneyCategory>().Property(x => x.Direction).HasConversion<string>();
         modelBuilder.Entity<MoneyTransaction>().Property(x => x.Direction).HasConversion<string>();
+        modelBuilder.Entity<Supplier>().Property(x => x.Type).HasConversion<string>();
+        modelBuilder.Entity<StockDocument>().Property(x => x.Type).HasConversion<string>();
+        modelBuilder.Entity<StockDocument>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<Order>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<OrderItem>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<OrderAdjustment>().Property(x => x.Type).HasConversion<string>();
@@ -125,6 +134,12 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<RecipeLine>().Property(x => x.Quantity).HasPrecision(18, 3);
         modelBuilder.Entity<ProductPrice>().Property(x => x.Amount).HasPrecision(18, 4);
         modelBuilder.Entity<StockMovement>().Property(x => x.QuantityDelta).HasPrecision(18, 3);
+        modelBuilder.Entity<StockMovement>().Property(x => x.UnitCost).HasPrecision(18, 4);
+        modelBuilder.Entity<StockMovement>().Property(x => x.CostDelta).HasPrecision(18, 4);
+        modelBuilder.Entity<StockDocument>().Property(x => x.TotalAmount).HasPrecision(18, 4);
+        modelBuilder.Entity<StockDocumentLine>().Property(x => x.Quantity).HasPrecision(18, 3);
+        modelBuilder.Entity<StockDocumentLine>().Property(x => x.UnitPrice).HasPrecision(18, 4);
+        modelBuilder.Entity<StockDocumentLine>().Property(x => x.Amount).HasPrecision(18, 4);
         modelBuilder.Entity<Shift>().Property(x => x.OpeningCash).HasPrecision(18, 4);
         modelBuilder.Entity<Shift>().Property(x => x.ClosingCash).HasPrecision(18, 4);
         modelBuilder.Entity<Shift>().Property(x => x.ExpectedCashAtClose).HasPrecision(18, 4);
@@ -183,6 +198,10 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<RecipeLine>().HasIndex(x => x.IngredientProductId);
         modelBuilder.Entity<ProductPrice>().HasIndex(x => new { x.ProductId, x.ValidFrom });
         modelBuilder.Entity<Warehouse>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<Supplier>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<StockDocument>().HasIndex(x => new { x.RestaurantId, x.Number }).IsUnique();
+        modelBuilder.Entity<StockDocument>().HasIndex(x => new { x.RestaurantId, x.Type, x.Status, x.DocumentDate });
+        modelBuilder.Entity<StockDocumentLine>().HasIndex(x => new { x.DocumentId, x.ProductId });
         modelBuilder.Entity<StockMovement>().HasIndex(x => new { x.RestaurantId, x.WarehouseId, x.ProductId, x.CreatedAt });
         modelBuilder.Entity<StockMovement>().HasIndex(x => new { x.RestaurantId, x.OperationId });
         modelBuilder.Entity<StockMovement>().HasIndex(x => new { x.RestaurantId, x.ReferenceType, x.ReferenceId });
@@ -276,6 +295,42 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .HasOne(x => x.Category)
             .WithMany()
             .HasForeignKey(x => x.CategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<StockDocument>()
+            .HasOne(x => x.Warehouse)
+            .WithMany()
+            .HasForeignKey(x => x.WarehouseId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<StockDocument>()
+            .HasOne(x => x.FromWarehouse)
+            .WithMany()
+            .HasForeignKey(x => x.FromWarehouseId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<StockDocument>()
+            .HasOne(x => x.ToWarehouse)
+            .WithMany()
+            .HasForeignKey(x => x.ToWarehouseId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<StockDocument>()
+            .HasOne(x => x.Supplier)
+            .WithMany()
+            .HasForeignKey(x => x.SupplierId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<StockDocument>()
+            .HasMany(x => x.Lines)
+            .WithOne(x => x.Document)
+            .HasForeignKey(x => x.DocumentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<StockDocumentLine>()
+            .HasOne(x => x.Product)
+            .WithMany()
+            .HasForeignKey(x => x.ProductId)
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<StockMovement>()
