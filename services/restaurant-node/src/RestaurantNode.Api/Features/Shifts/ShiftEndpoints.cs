@@ -203,6 +203,51 @@ public static class ShiftEndpoints
             };
 
             db.CashTransactions.Add(entry);
+
+            await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+            var cashMoneyAccount = await AccountingLedger.EnsurePaymentMoneyAccountAsync(
+                db, restaurantId, PaymentMethod.Cash, ct);
+            var cashLedgerAccount = await AccountingLedger.EnsureMoneyAccountAsync(
+                db, restaurantId, cashMoneyAccount, ct);
+            var cashClearingAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                db, restaurantId, AccountingLedger.CashClearingKey,
+                "3.90", "Кассовые внесения и изъятия", LedgerAccountType.Equity, ct);
+
+            var cashLedgerLines = type == CashTransactionType.Deposit
+                ? new[]
+                {
+                    new AccountingLedger.LineDraft(
+                        cashLedgerAccount,
+                        Debit: entry.Amount,
+                        MoneyAccountId: cashMoneyAccount.Id),
+                    new AccountingLedger.LineDraft(
+                        cashClearingAccount,
+                        Credit: entry.Amount)
+                }
+                : new[]
+                {
+                    new AccountingLedger.LineDraft(
+                        cashClearingAccount,
+                        Debit: entry.Amount),
+                    new AccountingLedger.LineDraft(
+                        cashLedgerAccount,
+                        Credit: entry.Amount,
+                        MoneyAccountId: cashMoneyAccount.Id)
+                };
+
+            await AccountingLedger.PostAsync(
+                db,
+                restaurantId,
+                "SHIFT_CASH_TRANSACTION",
+                entry.Id,
+                entry.CreatedAt,
+                type == CashTransactionType.Deposit
+                    ? "Внесение в кассу"
+                    : "Изъятие из кассы",
+                employeeId,
+                cashLedgerLines,
+                ct);
+
             db.AuditEvents.Add(Audit(
                 restaurantId,
                 employeeId,
