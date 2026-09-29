@@ -90,3 +90,13 @@ export async function assignPosReceiptPrinter(
     body: JSON.stringify({ printerId }),
   }, token);
 }
+
+export async function activateDiscoveredPrinter(
+  token: string,
+  deviceId: string,
+  printerId: string,
+): Promise<{ id: string; name: string }> {
+  return request(`/api/v1/backoffice/pos-printers/${deviceId}/printers/${printerId}/activate`, {
+    method: 'PUT',
+  }, token);
+}
