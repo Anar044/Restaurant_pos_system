@@ -109,6 +109,7 @@ app.MapBackOfficeEmployeeEndpoints();
 app.MapBackOfficeDeviceEndpoints();
 app.MapBackOfficePosPrinterEndpoints();
 app.MapBackOfficeFinanceEndpoints();
+app.MapBackOfficeMoneyEndpoints();
 app.MapBackOfficeAdjustmentEndpoints();
 app.MapBackOfficeInventoryEndpoints();
 app.MapBackOfficeNomenclatureEndpoints();
