@@ -54,7 +54,7 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     CategoryId = table.Column<Guid>(type: "uuid", nullable: false),
                     EmployeeId = table.Column<Guid>(type: "uuid", nullable: false),
                     Direction = table.Column<string>(type: "text", nullable: false),
-                    Amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    Amount = table.Column<decimal>(type: "numeric(18,4)", precision: 18, scale: 4, nullable: false),
                     Note = table.Column<string>(type: "text", nullable: true),
                     ReferenceType = table.Column<string>(type: "text", nullable: true),
                     ReferenceId = table.Column<Guid>(type: "uuid", nullable: true),
