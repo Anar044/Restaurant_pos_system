@@ -45,18 +45,13 @@ public static class AccountingAzerbaijanChartMigration
             .Where(x => x.RestaurantId == restaurantId)
             .ToDictionaryAsync(x => x.Id, ct);
 
-        var legacyAccounts = await db.LedgerAccounts
-            .Where(x =>
-                x.RestaurantId == restaurantId &&
-                x.SystemKey != null &&
-                (
-                    x.SystemKey.StartsWith("WAREHOUSE:") ||
-                    x.SystemKey.StartsWith("MONEY:") ||
-                    x.SystemKey.StartsWith("INCOME_CATEGORY:") ||
-                    x.SystemKey.StartsWith("EXPENSE_CATEGORY:") ||
-                    LegacyFixedKeys.Contains(x.SystemKey)
-                ))
+        var allAccounts = await db.LedgerAccounts
+            .Where(x => x.RestaurantId == restaurantId)
             .ToListAsync(ct);
+
+        var legacyAccounts = allAccounts
+            .Where(x => IsLegacyKey(x.SystemKey))
+            .ToList();
 
         foreach (var legacy in legacyAccounts)
         {
@@ -91,6 +86,17 @@ public static class AccountingAzerbaijanChartMigration
         });
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private static bool IsLegacyKey(string? systemKey)
+    {
+        if (systemKey is null) return false;
+
+        return systemKey.StartsWith("WAREHOUSE:", StringComparison.Ordinal) ||
+               systemKey.StartsWith("MONEY:", StringComparison.Ordinal) ||
+               systemKey.StartsWith("INCOME_CATEGORY:", StringComparison.Ordinal) ||
+               systemKey.StartsWith("EXPENSE_CATEGORY:", StringComparison.Ordinal) ||
+               LegacyFixedKeys.Contains(systemKey);
     }
 
     private static string? ResolveTargetKey(
