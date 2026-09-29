@@ -65,6 +65,7 @@ public static class BackOfficeNomenclatureEndpoints
                     unit = x.Unit,
                     minStock = x.MinStock,
                     trackStock = x.TrackStock,
+                    inventoryAccountCode = x.InventoryAccountCode,
                     isSellable = x.IsSellable,
                     isActive = x.IsActive,
                     sortOrder = x.SortOrder,
@@ -95,6 +96,11 @@ public static class BackOfficeNomenclatureEndpoints
             return Results.Ok(new
             {
                 supportedTypes = SupportedTypes,
+                inventoryAccounts = AccountingLedger.InventoryAccountOptions.Select(x => new
+                {
+                    x.Code,
+                    x.Name
+                }),
                 currencyCode = restaurant.CurrencyCode,
                 categories,
                 preparationPlaceTypes,
@@ -126,6 +132,7 @@ public static class BackOfficeNomenclatureEndpoints
                 Unit = validation.Unit!,
                 MinStock = request.MinStock,
                 TrackStock = request.TrackStock,
+                InventoryAccountCode = validation.InventoryAccountCode,
                 IsSellable = request.IsSellable,
                 IsActive = true,
                 SortOrder = request.SortOrder
@@ -210,6 +217,7 @@ public static class BackOfficeNomenclatureEndpoints
             item.Unit = validation.Unit!;
             item.MinStock = request.MinStock;
             item.TrackStock = request.TrackStock;
+            item.InventoryAccountCode = validation.InventoryAccountCode;
             item.IsSellable = request.IsSellable;
             item.IsActive = request.IsActive;
             item.SortOrder = request.SortOrder;
@@ -280,6 +288,7 @@ public static class BackOfficeNomenclatureEndpoints
                 item.Unit,
                 item.MinStock,
                 item.TrackStock,
+                item.InventoryAccountCode,
                 item.IsSellable,
                 item.IsActive
             });
@@ -394,6 +403,9 @@ public static class BackOfficeNomenclatureEndpoints
         var type = request.Type?.Trim().ToUpperInvariant();
         var unit = NormalizeRequired(request.Unit, 20);
         var sku = NormalizeOptional(request.Sku, 100);
+        var inventoryAccountCode = request.TrackStock
+            ? request.InventoryAccountCode?.Trim()
+            : null;
 
         if (name is null)
             return ItemValidationResult.Fail(Results.BadRequest(new { message = "Название обязательно." }));
@@ -405,6 +417,11 @@ public static class BackOfficeNomenclatureEndpoints
             return ItemValidationResult.Fail(Results.BadRequest(new { message = "Минимальный остаток не может быть отрицательным." }));
         if (request.SortOrder < 0)
             return ItemValidationResult.Fail(Results.BadRequest(new { message = "Порядок сортировки не может быть отрицательным." }));
+        if (request.TrackStock && !AccountingLedger.IsSupportedInventoryAccountCode(inventoryAccountCode))
+            return ItemValidationResult.Fail(Results.BadRequest(new
+            {
+                message = "Для складской позиции выберите счёт 201-1, 201-2, 201-3 или 205."
+            }));
 
         if (!string.IsNullOrWhiteSpace(sku))
         {
@@ -438,7 +455,7 @@ public static class BackOfficeNomenclatureEndpoints
                 return ItemValidationResult.Fail(Results.BadRequest(new { message = "Тип места приготовления не найден." }));
         }
 
-        return ItemValidationResult.Ok(name, sku, type, unit);
+        return ItemValidationResult.Ok(name, sku, type, unit, inventoryAccountCode);
     }
 
     private static bool WouldCreateRecipeCycle(
@@ -534,13 +551,19 @@ public static class BackOfficeNomenclatureEndpoints
         string? Sku,
         string? Type,
         string? Unit,
+        string? InventoryAccountCode,
         IResult? Error)
     {
-        public static ItemValidationResult Ok(string name, string? sku, string type, string unit) =>
-            new(name, sku, type, unit, null);
+        public static ItemValidationResult Ok(
+            string name,
+            string? sku,
+            string type,
+            string unit,
+            string? inventoryAccountCode) =>
+            new(name, sku, type, unit, inventoryAccountCode, null);
 
         public static ItemValidationResult Fail(IResult error) =>
-            new(null, null, null, null, error);
+            new(null, null, null, null, null, error);
     }
 }
 
@@ -551,6 +574,7 @@ public sealed record UpsertNomenclatureItemRequest(
     string Unit,
     decimal MinStock,
     bool TrackStock,
+    string? InventoryAccountCode,
     bool IsSellable,
     bool IsActive,
     int SortOrder,
