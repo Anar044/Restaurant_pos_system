@@ -425,6 +425,41 @@ public sealed class CashTransaction : Entity
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class MoneyAccount : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public required string Name { get; set; }
+    public MoneyAccountType Type { get; set; } = MoneyAccountType.Cash;
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class MoneyCategory : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public required string Name { get; set; }
+    public MoneyDirection Direction { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class MoneyTransaction : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public Guid AccountId { get; set; }
+    public MoneyAccount? Account { get; set; }
+    public Guid CategoryId { get; set; }
+    public MoneyCategory? Category { get; set; }
+    public Guid EmployeeId { get; set; }
+    public MoneyDirection Direction { get; set; }
+    public decimal Amount { get; set; }
+    public string? Note { get; set; }
+    public string? ReferenceType { get; set; }
+    public Guid? ReferenceId { get; set; }
+    public DateTimeOffset OccurredAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class KitchenTicket : Entity
 {
     public Guid RestaurantId { get; set; }
