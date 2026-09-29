@@ -37,8 +37,10 @@ public static class AccountingAzerbaijanChartMigration
         await db.SaveChangesAsync(ct);
 
         var targets = await db.LedgerAccounts
-            .Where(x => x.RestaurantId == restaurantId)
-            .ToDictionaryAsync(x => x.SystemKey ?? string.Empty, ct);
+            .Where(x =>
+                x.RestaurantId == restaurantId &&
+                x.SystemKey != null)
+            .ToDictionaryAsync(x => x.SystemKey!, ct);
 
         var moneyAccounts = await db.MoneyAccounts
             .AsNoTracking()
