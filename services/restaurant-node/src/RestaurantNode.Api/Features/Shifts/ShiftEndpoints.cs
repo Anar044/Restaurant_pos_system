@@ -206,7 +206,7 @@ public static class ShiftEndpoints
 
             await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
             var cashMoneyAccount = await AccountingLedger.EnsurePaymentMoneyAccountAsync(
-                db, restaurantId, PaymentMethod.Cash, ct);
+                db, restaurantId, PaymentMethod.Cash, shift.DeviceId, ct);
             var cashLedgerAccount = await AccountingLedger.EnsureMoneyAccountAsync(
                 db, restaurantId, cashMoneyAccount, ct);
             var cashClearingAccount = await AccountingLedger.EnsureSystemAccountAsync(
