@@ -518,7 +518,6 @@ export type BackOfficeGroups = {
   types: PreparationPlaceTypeOption[];
   devices: GroupDeviceOption[];
   warehouses: GroupLookupOption[];
-  printers: GroupLookupOption[];
 };
 
 export type PreparationPlaceTypeOption = {
