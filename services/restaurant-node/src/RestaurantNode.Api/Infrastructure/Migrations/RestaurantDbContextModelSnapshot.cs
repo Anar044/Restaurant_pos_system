@@ -578,6 +578,137 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.ToTable("money_transactions", (string)null);
                 });
 
+            modelBuilder.Entity("RestaurantNode.Api.Domain.LedgerAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RestaurantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SystemKey")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RestaurantId", "Code")
+                        .IsUnique();
+
+                    b.HasIndex("RestaurantId", "SystemKey")
+                        .IsUnique()
+                        .HasFilter("\"SystemKey\" IS NOT NULL");
+
+                    b.ToTable("ledger_accounts", (string)null);
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.LedgerEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("EmployeeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ReferenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReferenceType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RestaurantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RestaurantId", "OccurredAt");
+
+                    b.HasIndex("RestaurantId", "ReferenceType", "ReferenceId")
+                        .IsUnique();
+
+                    b.ToTable("ledger_entries", (string)null);
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.LedgerLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Credit")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal>("Debit")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("MoneyAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RestaurantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SupplierId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("WarehouseId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("EntryId");
+
+                    b.HasIndex("RestaurantId", "MoneyAccountId");
+
+                    b.HasIndex("RestaurantId", "SupplierId");
+
+                    b.HasIndex("RestaurantId", "WarehouseId");
+
+                    b.ToTable("ledger_lines", (string)null);
+                });
+
             modelBuilder.Entity("RestaurantNode.Api.Domain.KitchenTicket", b =>
                 {
                     b.Property<Guid>("Id")
@@ -659,6 +790,36 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Navigation("Account");
 
                     b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.LedgerEntry", b =>
+                {
+                    b.HasMany("RestaurantNode.Api.Domain.LedgerLine", "Lines")
+                        .WithOne("Entry")
+                        .HasForeignKey("EntryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.LedgerLine", b =>
+                {
+                    b.HasOne("RestaurantNode.Api.Domain.LedgerAccount", "Account")
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RestaurantNode.Api.Domain.LedgerEntry", "Entry")
+                        .WithMany("Lines")
+                        .HasForeignKey("EntryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+
+                    b.Navigation("Entry");
                 });
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.KitchenTicket", b =>
@@ -2119,6 +2280,11 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                         .IsRequired();
 
                     b.Navigation("Restaurant");
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.LedgerEntry", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.StockDocument", b =>
