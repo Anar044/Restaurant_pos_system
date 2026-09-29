@@ -44,6 +44,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<MoneyAccount> MoneyAccounts => Set<MoneyAccount>();
     public DbSet<MoneyCategory> MoneyCategories => Set<MoneyCategory>();
     public DbSet<MoneyTransaction> MoneyTransactions => Set<MoneyTransaction>();
+    public DbSet<LedgerAccount> LedgerAccounts => Set<LedgerAccount>();
+    public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
+    public DbSet<LedgerLine> LedgerLines => Set<LedgerLine>();
     public DbSet<KitchenTicket> KitchenTickets => Set<KitchenTicket>();
     public DbSet<PrintJob> PrintJobs => Set<PrintJob>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
@@ -92,6 +95,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<MoneyAccount>().ToTable("money_accounts");
         modelBuilder.Entity<MoneyCategory>().ToTable("money_categories");
         modelBuilder.Entity<MoneyTransaction>().ToTable("money_transactions");
+        modelBuilder.Entity<LedgerAccount>().ToTable("ledger_accounts");
+        modelBuilder.Entity<LedgerEntry>().ToTable("ledger_entries");
+        modelBuilder.Entity<LedgerLine>().ToTable("ledger_lines");
         modelBuilder.Entity<KitchenTicket>().ToTable("kitchen_tickets");
         modelBuilder.Entity<PrintJob>().ToTable("print_jobs");
         modelBuilder.Entity<AuditEvent>().ToTable("audit_events");
@@ -107,6 +113,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<MoneyAccount>().Property(x => x.Type).HasConversion<string>();
         modelBuilder.Entity<MoneyCategory>().Property(x => x.Direction).HasConversion<string>();
         modelBuilder.Entity<MoneyTransaction>().Property(x => x.Direction).HasConversion<string>();
+        modelBuilder.Entity<LedgerAccount>().Property(x => x.Type).HasConversion<string>();
         modelBuilder.Entity<Supplier>().Property(x => x.Type).HasConversion<string>();
         modelBuilder.Entity<StockDocument>().Property(x => x.Type).HasConversion<string>();
         modelBuilder.Entity<StockDocument>().Property(x => x.Status).HasConversion<string>();
@@ -166,6 +173,8 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<PaymentRefund>().Property(x => x.Amount).HasPrecision(18, 4);
         modelBuilder.Entity<CashTransaction>().Property(x => x.Amount).HasPrecision(18, 4);
         modelBuilder.Entity<MoneyTransaction>().Property(x => x.Amount).HasPrecision(18, 4);
+        modelBuilder.Entity<LedgerLine>().Property(x => x.Debit).HasPrecision(18, 4);
+        modelBuilder.Entity<LedgerLine>().Property(x => x.Credit).HasPrecision(18, 4);
 
         modelBuilder.Entity<Order>()
             .Property(x => x.DisplayNumber)
@@ -227,6 +236,20 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<MoneyTransaction>().HasIndex(x => new { x.RestaurantId, x.AccountId, x.OccurredAt });
         modelBuilder.Entity<MoneyTransaction>().HasIndex(x => new { x.RestaurantId, x.CategoryId, x.OccurredAt });
         modelBuilder.Entity<MoneyTransaction>().HasIndex(x => new { x.RestaurantId, x.ReferenceType, x.ReferenceId });
+        modelBuilder.Entity<LedgerAccount>().HasIndex(x => new { x.RestaurantId, x.Code }).IsUnique();
+        modelBuilder.Entity<LedgerAccount>()
+            .HasIndex(x => new { x.RestaurantId, x.SystemKey })
+            .IsUnique()
+            .HasFilter("\"SystemKey\" IS NOT NULL");
+        modelBuilder.Entity<LedgerEntry>()
+            .HasIndex(x => new { x.RestaurantId, x.ReferenceType, x.ReferenceId })
+            .IsUnique();
+        modelBuilder.Entity<LedgerEntry>().HasIndex(x => new { x.RestaurantId, x.OccurredAt });
+        modelBuilder.Entity<LedgerLine>().HasIndex(x => x.EntryId);
+        modelBuilder.Entity<LedgerLine>().HasIndex(x => x.AccountId);
+        modelBuilder.Entity<LedgerLine>().HasIndex(x => new { x.RestaurantId, x.SupplierId });
+        modelBuilder.Entity<LedgerLine>().HasIndex(x => new { x.RestaurantId, x.WarehouseId });
+        modelBuilder.Entity<LedgerLine>().HasIndex(x => new { x.RestaurantId, x.MoneyAccountId });
         modelBuilder.Entity<Payment>().HasIndex(x => new { x.RestaurantId, x.ShiftId, x.CreatedAt });
         modelBuilder.Entity<Payment>().HasIndex(x => new { x.OrderId, x.GuestNumber, x.CreatedAt });
         modelBuilder.Entity<PaymentRefund>().HasIndex(x => new { x.RestaurantId, x.ShiftId, x.CreatedAt });
@@ -295,6 +318,18 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .HasOne(x => x.Category)
             .WithMany()
             .HasForeignKey(x => x.CategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<LedgerEntry>()
+            .HasMany(x => x.Lines)
+            .WithOne(x => x.Entry)
+            .HasForeignKey(x => x.EntryId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<LedgerLine>()
+            .HasOne(x => x.Account)
+            .WithMany()
+            .HasForeignKey(x => x.AccountId)
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<StockDocument>()
