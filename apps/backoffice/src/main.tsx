@@ -22,12 +22,13 @@ import { OverviewPage } from './OverviewPage';
 import { GroupsPage } from './GroupsPage';
 import { PrintingPage } from './PrintingPage';
 import { SuppliersPage } from './SuppliersPage';
+import { TaxSettingsPage } from './TaxSettingsPage';
 import { StockInventoryPage, StockTransfersPage, StockWriteOffsPage } from './StockOperationPages';
 import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'accounting' | 'groups' | 'printing' | 'modifiers' | 'nomenclature' | 'inventory' | 'stock-receipts' | 'stock-transfers' | 'stock-writeoffs' | 'stock-inventory' | 'suppliers' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
+type PageKey = 'overview' | 'accounting' | 'groups' | 'printing' | 'taxes' | 'modifiers' | 'nomenclature' | 'inventory' | 'stock-receipts' | 'stock-transfers' | 'stock-writeoffs' | 'stock-inventory' | 'suppliers' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -165,6 +166,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'suppliers', label: 'Поставщики', icon: '◫', ready: true },
     { key: 'groups', label: 'Группы, отделения и залы', icon: '▦', ready: true },
     { key: 'printing', label: 'Печать', icon: '▧', ready: true },
+    { key: 'taxes', label: 'Налоги', icon: '%', ready: true },
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
     { key: 'nomenclature', label: 'Номенклатура', icon: '▤', ready: true },
     { key: 'modifiers', label: 'Группы модификаторов', icon: '±', ready: true },
@@ -178,7 +180,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'roles', label: 'Роли и права', icon: '◉', ready: true },
   ];
 
-  const restaurantSettingsItems: PageKey[] = ['groups', 'printing', 'devices'];
+  const restaurantSettingsItems: PageKey[] = ['groups', 'printing', 'taxes', 'devices'];
   const catalogItems: PageKey[] = ['nomenclature', 'modifiers', 'inventory', 'stock-receipts', 'stock-transfers', 'stock-writeoffs', 'stock-inventory'];
   const employeeItems: PageKey[] = ['employees', 'roles'];
 
@@ -378,6 +380,11 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             />
           ) : page === 'devices' ? (
             <DevicesPage token={session.token} />
+          ) : page === 'taxes' ? (
+            <TaxSettingsPage
+              token={session.token}
+              canManage={(session.permissions ?? []).includes('restaurant.manage')}
+            />
           ) : page === 'finance' ? (
             <FinancePage
               token={session.token}
