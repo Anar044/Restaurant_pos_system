@@ -110,6 +110,8 @@ public sealed class Category : Entity
 public sealed class RestaurantGroup : Entity
 {
     public Guid RestaurantId { get; set; }
+    public Guid? DefaultPrecheckPrinterId { get; set; }
+    public Printer? DefaultPrecheckPrinter { get; set; }
     public required string Name { get; set; }
     public bool IsActive { get; set; } = true;
 }
