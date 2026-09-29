@@ -48,7 +48,7 @@ public static class BackOfficeMoneyEndpoints
                 .ThenBy(x => x.Name)
                 .ToListAsync(ct);
 
-            await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+            await AccountingLegacyBackfill.EnsureAsync(db, restaurantId, ct);
 
             var accountBalances = await db.LedgerLines
                 .AsNoTracking()
