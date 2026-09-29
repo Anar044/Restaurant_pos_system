@@ -36,6 +36,16 @@ public static class AccountingLedger
     public const string InventoryLossKey = OtherOperatingExpenseKey;
     public const string CashClearingKey = CashEquivalentKey;
 
+    public sealed record InventoryAccountOption(string Code, string Name, string SystemKey);
+
+    public static IReadOnlyList<InventoryAccountOption> InventoryAccountOptions { get; } =
+    [
+        new("201-1", "Xammal", InventoryRawMaterialsKey),
+        new("201-2", "Materiallar", InventoryMaterialsKey),
+        new("201-3", "Qablaşdırma materialları", InventoryPackagingKey),
+        new("205", "Mallar", GoodsInventoryKey)
+    ];
+
     public sealed record LineDraft(
         LedgerAccount Account,
         decimal Debit = 0m,
@@ -165,6 +175,37 @@ public static class AccountingLedger
         db.LedgerAccounts.Add(account);
         return account;
     }
+
+    public static bool IsSupportedInventoryAccountCode(string? code) =>
+        InventoryAccountOptions.Any(x => x.Code == code?.Trim());
+
+    public static string NormalizeInventoryAccountCode(string? code) =>
+        IsSupportedInventoryAccountCode(code) ? code!.Trim() : "201-1";
+
+    public static Task<LedgerAccount> EnsureInventoryAccountAsync(
+        RestaurantDbContext db,
+        Guid restaurantId,
+        string? code,
+        CancellationToken ct)
+    {
+        var normalized = NormalizeInventoryAccountCode(code);
+        var option = InventoryAccountOptions.First(x => x.Code == normalized);
+        return EnsureSystemAccountAsync(
+            db,
+            restaurantId,
+            option.SystemKey,
+            option.Code,
+            option.Name,
+            LedgerAccountType.Asset,
+            ct);
+    }
+
+    public static Task<LedgerAccount> EnsureProductInventoryAccountAsync(
+        RestaurantDbContext db,
+        Guid restaurantId,
+        Product product,
+        CancellationToken ct) =>
+        EnsureInventoryAccountAsync(db, restaurantId, product.InventoryAccountCode, ct);
 
     public static Task<LedgerAccount> EnsureWarehouseAccountAsync(
         RestaurantDbContext db,
