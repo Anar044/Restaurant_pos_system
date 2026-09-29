@@ -164,7 +164,7 @@ export function GroupsPage({ token }: { token: string }) {
                   <div className="group-section-head">
                     <div>
                       <strong>Отделения группы</strong>
-                      <span>Для каждого отделения задаются тип места приготовления, склад списания и принтер кухни/бара.</span>
+                      <span>Здесь задаются структура, тип приготовления и склад списания. Принтеры настраиваются отдельно в разделе «Печать».</span>
                     </div>
                     <div className="heading-actions">
                       <button className="secondary-button compact" onClick={() => setEditor({ kind: 'type-create' })}>+ Тип приготовления</button>
@@ -182,7 +182,7 @@ export function GroupsPage({ token }: { token: string }) {
                         <div className="department-lines">
                           <span><b>Тип приготовления:</b> {department.preparationPlaceTypeName ?? '—'}</span>
                           <span><b>Склад списания:</b> {department.warehouseName ?? '—'}</span>
-                          <span><b>Принтер:</b> {department.printerName ?? '—'}</span>
+                          <span><b>Печать:</b> {department.printerName ?? 'Не настроено'} · раздел «Печать»</span>
                         </div>
                       </button>
                     ))}
@@ -196,7 +196,7 @@ export function GroupsPage({ token }: { token: string }) {
                   <div className="group-section-head">
                     <div>
                       <strong>Залы и столы группы</strong>
-                      <span>Каждый зал принадлежит группе, имеет свои столы и может использовать отдельный принтер пречека.</span>
+                      <span>Каждый зал принадлежит группе и имеет свои столы. Маршрутизация предчеков настраивается в разделе «Печать».</span>
                     </div>
                     <button className="primary-button compact" onClick={() => setEditor({ kind: 'hall-create', groupId: group.id })}>+ Зал</button>
                   </div>
@@ -211,7 +211,7 @@ export function GroupsPage({ token }: { token: string }) {
                               <span className={'badge ' + (hall.isActive ? 'success' : 'neutral')}>{hall.isActive ? 'Активно' : 'Отключено'}</span>
                             </div>
                             <div className="department-lines compact-lines">
-                              <span><b>Принтер пречека:</b> {hall.precheckPrinterName ?? '—'}</span>
+                              <span><b>Предчек:</b> {hall.precheckPrinterName ?? (group.defaultPrecheckPrinterName ? 'По умолчанию · ' + group.defaultPrecheckPrinterName : 'Не настроено')}</span>
                               <span><b>Столов:</b> {hall.tables.length}</span>
                               <span><b>Порядок:</b> {hall.sortOrder}</span>
                             </div>
@@ -351,7 +351,6 @@ function EditorModal({
   const [name, setName] = useState(table?.name ?? department?.name ?? hall?.name ?? group?.name ?? '');
   const [preparationPlaceTypeId, setPreparationPlaceTypeId] = useState(department?.preparationPlaceTypeId ?? '');
   const [warehouseId, setWarehouseId] = useState(department?.warehouseId ?? '');
-  const [printerId, setPrinterId] = useState(department?.printerId ?? hall?.precheckPrinterId ?? '');
   const [sortOrder, setSortOrder] = useState(table?.sortOrder ?? hall?.sortOrder ?? 0);
   const [seats, setSeats] = useState(table?.seats ?? 4);
   const [hallId, setHallId] = useState(table?.hallId ?? hall?.id ?? '');
@@ -380,27 +379,27 @@ function EditorModal({
           name: name.trim(),
           preparationPlaceTypeId: preparationPlaceTypeId || null,
           warehouseId: warehouseId || null,
-          printerId: printerId || null,
+          printerId: null,
         });
       } else if (editor.kind === 'department-edit') {
         await updateRestaurantDepartment(token, editor.department.groupId, editor.department.id, {
           name: name.trim(),
           preparationPlaceTypeId: preparationPlaceTypeId || null,
           warehouseId: warehouseId || null,
-          printerId: printerId || null,
+          printerId: editor.department.printerId,
           isActive,
         });
       } else if (editor.kind === 'hall-create') {
         await createGroupHall(token, editor.groupId, {
           name: name.trim(),
           sortOrder,
-          precheckPrinterId: printerId || null,
+          precheckPrinterId: null,
         });
       } else if (editor.kind === 'hall-edit') {
         await updateGroupHall(token, editor.hall.groupId, editor.hall.id, {
           name: name.trim(),
           sortOrder,
-          precheckPrinterId: printerId || null,
+          precheckPrinterId: editor.hall.precheckPrinterId,
           isActive,
         });
       } else if (editor.kind === 'table-create') {
@@ -473,13 +472,10 @@ function EditorModal({
               </select>
             </label>
 
-            <label>
-              <span>Принтер печати</span>
-              <select value={printerId} onChange={(e) => setPrinterId(e.target.value)}>
-                <option value="">Не назначен</option>
-                {data.printers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-              </select>
-            </label>
+            <div className="full-field pos-agent-info-box">
+              <strong>Принтер отделения настраивается централизованно</strong>
+              <span>Откройте «Настройки ресторана → Печать», чтобы выбрать принтер кухни или бара.</span>
+            </div>
           </>
         )}
 
@@ -489,14 +485,10 @@ function EditorModal({
               <span>Порядок</span>
               <input type="number" min={0} value={sortOrder} onChange={(e) => setSortOrder(Math.max(0, Number(e.target.value) || 0))} />
             </label>
-            <label>
-              <span>Принтер пречека</span>
-              <select value={printerId} onChange={(e) => setPrinterId(e.target.value)}>
-                <option value="">Не назначен</option>
-                {data.printers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-              </select>
-              <small className="field-hint">Пречек столов этого зала будет направляться на этот принтер через POS Agent.</small>
-            </label>
+            <div className="full-field pos-agent-info-box">
+              <strong>Принтер предчека настраивается в разделе «Печать»</strong>
+              <span>Зал может использовать общий принтер группы или собственное исключение.</span>
+            </div>
           </>
         )}
 
