@@ -156,6 +156,8 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<StockMovement>().Property(x => x.UnitCost).HasPrecision(18, 4);
         modelBuilder.Entity<StockMovement>().Property(x => x.CostDelta).HasPrecision(18, 4);
         modelBuilder.Entity<StockDocument>().Property(x => x.PurchaseSource).HasMaxLength(16).HasDefaultValue("LOCAL");
+        modelBuilder.Entity<StockDocument>().Property(x => x.PurchaseDocumentKind).HasMaxLength(24).HasDefaultValue(TaxPolicy.PurchaseDocumentSupplierInvoice);
+        modelBuilder.Entity<StockDocument>().Property(x => x.PurchaseReferenceNumber).HasMaxLength(120);
         modelBuilder.Entity<StockDocument>().Property(x => x.TaxRegimeSnapshot).HasMaxLength(32).HasDefaultValue(TaxPolicy.UnconfiguredRegime);
         modelBuilder.Entity<StockDocument>().Property(x => x.VatPriceMode).HasMaxLength(16).HasDefaultValue(TaxPolicy.VatPriceIncluded);
         modelBuilder.Entity<StockDocument>().Property(x => x.InputVatCreditStatus).HasMaxLength(32).HasDefaultValue(TaxPolicy.InputVatNotApplicable);
