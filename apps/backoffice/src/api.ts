@@ -465,6 +465,17 @@ export type BackOfficeModifiers = {
   products: ModifierProduct[];
 };
 
+export type CreateModifierGroupInput = {
+  name: string;
+  minSelections: number;
+  maxSelections: number;
+  isRequired: boolean;
+};
+
+export type UpdateModifierGroupInput = CreateModifierGroupInput & {
+  isActive: boolean;
+};
+
 export type RestaurantGroupOption = {
   id: string;
   name: string;
