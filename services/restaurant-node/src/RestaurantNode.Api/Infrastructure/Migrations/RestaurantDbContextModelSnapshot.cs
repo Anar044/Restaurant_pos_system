@@ -1545,6 +1545,33 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
+                    b.Property<string>("OriginDocument")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<bool?>("OwnAgricultureCriteriaMet")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool?>("OwnAgricultureSameTaxpayer")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool?>("OwnAgricultureUnprocessed")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateOnly?>("ProductionOrHarvestDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("ProductionUnit")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("TaxStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasDefaultValue("STANDARD");
+
                     b.Property<decimal>("MinStock")
                         .HasPrecision(18, 3)
                         .HasColumnType("numeric(18,3)");
