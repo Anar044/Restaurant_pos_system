@@ -646,6 +646,53 @@ export type CreateStockMovementInput = {
   note: string | null;
 };
 
+export type MoneyAccount = {
+  id: string;
+  name: string;
+  type: 'CASH' | 'BANK' | 'CARD' | 'OTHER' | string;
+  isActive: boolean;
+  balance: number;
+  createdAt: string;
+};
+
+export type MoneyCategory = {
+  id: string;
+  name: string;
+  direction: 'INCOME' | 'EXPENSE';
+  isActive: boolean;
+  createdAt: string;
+};
+
+export type MoneyTransaction = {
+  id: string;
+  accountId: string;
+  accountName: string;
+  categoryId: string;
+  categoryName: string;
+  employeeId: string;
+  employeeName: string;
+  direction: 'INCOME' | 'EXPENSE';
+  amount: number;
+  note: string | null;
+  referenceType: string | null;
+  referenceId: string | null;
+  occurredAt: string;
+  createdAt: string;
+};
+
+export type BackOfficeMoney = {
+  period: { from: string; to: string };
+  summary: {
+    income: number;
+    expense: number;
+    net: number;
+    totalBalance: number;
+  };
+  accounts: MoneyAccount[];
+  categories: MoneyCategory[];
+  transactions: MoneyTransaction[];
+};
+
 export type RefundPaymentResult = {
   refund: {
     id: string;
@@ -1207,6 +1254,77 @@ export async function closeShiftFromBackOffice(
     },
     token,
   );
+}
+
+export async function getBackOfficeMoney(
+  token: string,
+  from?: string,
+  to?: string,
+): Promise<BackOfficeMoney> {
+  const query = new URLSearchParams();
+  if (from) query.set('from', from);
+  if (to) query.set('to', to);
+  const suffix = query.toString() ? '?' + query.toString() : '';
+  return request<BackOfficeMoney>('/api/v1/backoffice/money' + suffix, {}, token);
+}
+
+export async function createMoneyAccount(
+  token: string,
+  input: { name: string; type: string },
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/money/accounts', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateMoneyAccount(
+  token: string,
+  id: string,
+  input: { name: string; type: string; isActive: boolean },
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/money/accounts/' + id, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createMoneyCategory(
+  token: string,
+  input: { name: string; direction: 'INCOME' | 'EXPENSE' },
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/money/categories', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateMoneyCategory(
+  token: string,
+  id: string,
+  input: { name: string; direction: 'INCOME' | 'EXPENSE'; isActive: boolean },
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/money/categories/' + id, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createMoneyTransaction(
+  token: string,
+  input: {
+    accountId: string;
+    categoryId: string;
+    direction: 'INCOME' | 'EXPENSE';
+    amount: number;
+    note: string | null;
+    occurredAt: string | null;
+  },
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/money/transactions', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
 }
 
 export async function refundPayment(
