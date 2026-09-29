@@ -312,3 +312,30 @@
     flex: 1 1 140px;
   }
 }
+
+
+.receipt-doc-reference {
+  display: block;
+  margin-top: 2px;
+  color: #98a2b3;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.receipt-line-tax-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  background: #f9fafb;
+  color: #475467;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.retail-receipt-note {
+  border-color: #d9e1f2;
+  background: #f7f9ff;
+}
