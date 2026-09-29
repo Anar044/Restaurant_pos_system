@@ -621,6 +621,7 @@ export type InventoryNomenclatureItem = {
   sku: string | null;
   unit: string;
   minStock: number;
+  inventoryAccountCode: string | null;
   isActive: boolean;
   createdAt: string;
   totalStock: number;
