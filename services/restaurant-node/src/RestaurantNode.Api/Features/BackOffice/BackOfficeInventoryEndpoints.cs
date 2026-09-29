@@ -303,6 +303,8 @@ public static class BackOfficeInventoryEndpoints
                 QuantityDelta = delta,
                 UnitCost = averageCost,
                 CostDelta = decimal.Round(delta * averageCost, 4, MidpointRounding.AwayFromZero),
+                ReferenceType = "ADJUSTMENT",
+                ReferenceId = operationId,
                 Note = NormalizeOptional(request.Note, 500)
             };
 
