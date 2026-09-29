@@ -77,3 +77,25 @@
   .recipe-line { grid-template-columns: 1fr 90px 45px; }
   .recipe-line .text-button { grid-column: 1 / -1; justify-self: end; }
 }
+
+
+.inventory-account-help {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: rgba(56, 91, 120, 0.045);
+}
+
+.inventory-account-help strong {
+  font-size: 12px;
+  color: var(--text, #111827);
+}
+
+.inventory-account-help span {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted, #6b7280);
+}
