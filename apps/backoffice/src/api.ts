@@ -1239,6 +1239,20 @@ export async function createStockMovement(
   }, token);
 }
 
+export async function writeOffStock(
+  token: string,
+  input: {
+    warehouseId: string;
+    lines: Array<{ productId: string; quantity: number }>;
+    note: string | null;
+  },
+): Promise<{ operationId: string; lineCount: number }> {
+  return request('/api/v1/backoffice/inventory/write-off', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
 export async function transferStock(
   token: string,
   input: {
