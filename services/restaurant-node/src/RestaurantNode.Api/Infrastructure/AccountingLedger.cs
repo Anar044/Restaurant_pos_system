@@ -363,5 +363,9 @@ public static class AccountingLedger
     }
 
     private static string ShortId(Guid value) =>
-        value.ToString("N")[..8].ToUpperInvariant();
+        // UUIDv7 starts with timestamp bits, so taking the leading characters can
+        // produce identical account codes for entities created close together.
+        // The trailing 12 hex characters come from the random portion and are
+        // stable for the entity while providing enough entropy for account codes.
+        value.ToString("N")[^12..].ToUpperInvariant();
 }
