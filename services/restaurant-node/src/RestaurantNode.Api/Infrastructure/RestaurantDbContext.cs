@@ -138,6 +138,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<PrintJob>().Property(x => x.Status).HasConversion<string>();
 
         modelBuilder.Entity<Product>().Property(x => x.MinStock).HasPrecision(18, 3);
+        modelBuilder.Entity<Product>().Property(x => x.InventoryAccountCode).HasMaxLength(16);
         modelBuilder.Entity<RecipeLine>().Property(x => x.Quantity).HasPrecision(18, 3);
         modelBuilder.Entity<ProductPrice>().Property(x => x.Amount).HasPrecision(18, 4);
         modelBuilder.Entity<StockMovement>().Property(x => x.QuantityDelta).HasPrecision(18, 3);
