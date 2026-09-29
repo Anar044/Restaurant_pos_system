@@ -123,6 +123,9 @@ export function NomenclaturePage({
                   ? `Складской учёт · ${item.inventoryAccountCode ?? '201-1'}`
                   : 'Без складского учёта'}
               </small>
+              {item.taxStatus && item.taxStatus !== 'STANDARD' && (
+                <small>Налог: {taxStatusShortLabel(item.taxStatus)}</small>
+              )}
               {(item.type === 'DISH' || item.type === 'PREPARATION' || item.type === 'MODIFIER') && (
                 <small>Техкарта: {item.recipe.length} поз.</small>
               )}
@@ -145,6 +148,7 @@ export function NomenclaturePage({
           categories={data.categories}
           preparationPlaceTypes={data.preparationPlaceTypes}
           inventoryAccounts={data.inventoryAccounts}
+          productTaxStatuses={data.productTaxStatuses}
           currencyCode={data.currencyCode}
           token={token}
           canManage={canManage}
@@ -165,6 +169,7 @@ function NomenclatureEditor({
   categories,
   preparationPlaceTypes,
   inventoryAccounts,
+  productTaxStatuses,
   currencyCode,
   token,
   canManage,
@@ -176,6 +181,7 @@ function NomenclatureEditor({
   categories: BackOfficeNomenclature['categories'];
   preparationPlaceTypes: BackOfficeNomenclature['preparationPlaceTypes'];
   inventoryAccounts: BackOfficeNomenclature['inventoryAccounts'];
+  productTaxStatuses: BackOfficeNomenclature['productTaxStatuses'];
   currencyCode: string;
   token: string;
   canManage: boolean;
@@ -191,6 +197,23 @@ function NomenclatureEditor({
   const [minStock, setMinStock] = useState(String(item?.minStock ?? 0));
   const [trackStock, setTrackStock] = useState(item?.trackStock ?? true);
   const [inventoryAccountCode, setInventoryAccountCode] = useState(item?.inventoryAccountCode ?? '201-1');
+  const [taxStatus, setTaxStatus] = useState(item?.taxStatus ?? 'STANDARD');
+  const [agricultureDetailsEnabled, setAgricultureDetailsEnabled] = useState(
+    Boolean(
+      item?.ownAgricultureSameTaxpayer !== null && item?.ownAgricultureSameTaxpayer !== undefined ||
+      item?.ownAgricultureCriteriaMet !== null && item?.ownAgricultureCriteriaMet !== undefined ||
+      item?.ownAgricultureUnprocessed !== null && item?.ownAgricultureUnprocessed !== undefined ||
+      item?.productionUnit ||
+      item?.originDocument ||
+      item?.productionOrHarvestDate
+    ),
+  );
+  const [ownAgricultureSameTaxpayer, setOwnAgricultureSameTaxpayer] = useState(item?.ownAgricultureSameTaxpayer ?? false);
+  const [ownAgricultureCriteriaMet, setOwnAgricultureCriteriaMet] = useState(item?.ownAgricultureCriteriaMet ?? false);
+  const [ownAgricultureUnprocessed, setOwnAgricultureUnprocessed] = useState(item?.ownAgricultureUnprocessed ?? false);
+  const [productionUnit, setProductionUnit] = useState(item?.productionUnit ?? '');
+  const [originDocument, setOriginDocument] = useState(item?.originDocument ?? '');
+  const [productionOrHarvestDate, setProductionOrHarvestDate] = useState(item?.productionOrHarvestDate ?? '');
   const [isActive, setIsActive] = useState(item?.isActive ?? true);
   const [isSellable, setIsSellable] = useState(item?.isSellable ?? false);
   const [price, setPrice] = useState(item?.currentPrice?.toString() ?? '0');
@@ -245,6 +268,31 @@ function NomenclatureEditor({
         minStock: min,
         trackStock,
         inventoryAccountCode: trackStock ? inventoryAccountCode : null,
+        taxStatus,
+        ownAgricultureSameTaxpayer:
+          taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' && agricultureDetailsEnabled
+            ? ownAgricultureSameTaxpayer
+            : null,
+        ownAgricultureCriteriaMet:
+          taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' && agricultureDetailsEnabled
+            ? ownAgricultureCriteriaMet
+            : null,
+        ownAgricultureUnprocessed:
+          taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' && agricultureDetailsEnabled
+            ? ownAgricultureUnprocessed
+            : null,
+        productionUnit:
+          taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' && agricultureDetailsEnabled
+            ? productionUnit.trim() || null
+            : null,
+        originDocument:
+          taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' && agricultureDetailsEnabled
+            ? originDocument.trim() || null
+            : null,
+        productionOrHarvestDate:
+          taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' && agricultureDetailsEnabled
+            ? productionOrHarvestDate || null
+            : null,
         isSellable,
         isActive,
         sortOrder: item?.sortOrder ?? 0,
@@ -373,6 +421,110 @@ function NomenclatureEditor({
               <input type="checkbox" checked={isSellable} onChange={(e) => setIsSellable(e.target.checked)} disabled={!canManage} />
             </label>
 
+            <div className="tax-status-section">
+              <label>
+                <span>Налоговый статус продажи</span>
+                <select
+                  value={taxStatus}
+                  onChange={(e) => {
+                    setTaxStatus(e.target.value);
+                    if (e.target.value !== 'VAT_EXEMPT_OWN_AGRICULTURE') {
+                      setAgricultureDetailsEnabled(false);
+                    }
+                  }}
+                  disabled={!canManage || !isSellable}
+                >
+                  {productTaxStatuses.map((status) => (
+                    <option key={status.code} value={status.code}>
+                      {status.name}
+                    </option>
+                  ))}
+                </select>
+                <small className="field-help">
+                  {productTaxStatuses.find((status) => status.code === taxStatus)?.description}
+                </small>
+              </label>
+
+              {taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' && (
+                <div className="agriculture-tax-box">
+                  <label className="toggle-row">
+                    <span>
+                      <strong>Дополнительные подтверждающие сведения</strong>
+                      <small>Необязательно. Клиент может заполнить их для внутреннего учёта и подтверждающих документов.</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={agricultureDetailsEnabled}
+                      onChange={(e) => setAgricultureDetailsEnabled(e.target.checked)}
+                      disabled={!canManage}
+                    />
+                  </label>
+
+                  {agricultureDetailsEnabled && (
+                    <div className="agriculture-details">
+                      <label className="optional-check-row">
+                        <input
+                          type="checkbox"
+                          checked={ownAgricultureSameTaxpayer}
+                          onChange={(e) => setOwnAgricultureSameTaxpayer(e.target.checked)}
+                          disabled={!canManage}
+                        />
+                        <span>Произведено этим же налогоплательщиком</span>
+                      </label>
+                      <label className="optional-check-row">
+                        <input
+                          type="checkbox"
+                          checked={ownAgricultureCriteriaMet}
+                          onChange={(e) => setOwnAgricultureCriteriaMet(e.target.checked)}
+                          disabled={!canManage}
+                        />
+                        <span>Продажа соответствует критериям сельхозпродукции</span>
+                      </label>
+                      <label className="optional-check-row">
+                        <input
+                          type="checkbox"
+                          checked={ownAgricultureUnprocessed}
+                          onChange={(e) => setOwnAgricultureUnprocessed(e.target.checked)}
+                          disabled={!canManage}
+                        />
+                        <span>Не является переработанным продуктом</span>
+                      </label>
+
+                      <div className="form-grid agriculture-fields">
+                        <label>
+                          <span>Производственное подразделение / хозяйство</span>
+                          <input
+                            value={productionUnit}
+                            onChange={(e) => setProductionUnit(e.target.value)}
+                            maxLength={200}
+                            disabled={!canManage}
+                          />
+                        </label>
+                        <label>
+                          <span>Документ происхождения</span>
+                          <input
+                            value={originDocument}
+                            onChange={(e) => setOriginDocument(e.target.value)}
+                            maxLength={300}
+                            disabled={!canManage}
+                          />
+                        </label>
+                        <label>
+                          <span>Дата производства / урожая</span>
+                          <input
+                            type="date"
+                            value={productionOrHarvestDate}
+                            onChange={(e) => setProductionOrHarvestDate(e.target.value)}
+                            disabled={!canManage}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="form-grid">
               <label>
                 <span>{type === 'MODIFIER' ? 'Изменение цены' : 'Цена продажи'}</span>
@@ -499,6 +651,15 @@ function normalizeRecipe(lines: Array<{ ingredientProductId: string; quantity: s
     ingredientProductId: line.ingredientProductId,
     quantity: Number(line.quantity.replace(',', '.')),
   })).filter((line) => line.ingredientProductId && Number.isFinite(line.quantity) && line.quantity > 0);
+}
+
+function taxStatusShortLabel(status: string) {
+  return ({
+    VAT_EXEMPT_OWN_AGRICULTURE: 'ƏDV-dən azad',
+    VAT_AGRI_MARGIN: 'ƏDV с наценки',
+    VAT_ZERO_RATE: '0%',
+    VAT_EXEMPT_OTHER: 'Освобождение',
+  } as Record<string, string>)[status] ?? status;
 }
 
 function unitLabel(unit: string) {
