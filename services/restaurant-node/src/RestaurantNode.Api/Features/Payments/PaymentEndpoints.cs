@@ -214,7 +214,7 @@ public static class PaymentEndpoints
 
             await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
             var settlementMoneyAccount = await AccountingLedger.EnsurePaymentMoneyAccountAsync(
-                db, restaurantId, payment.Method, ct);
+                db, restaurantId, payment.Method, shift.DeviceId, ct);
             var settlementLedgerAccount = await AccountingLedger.EnsureMoneyAccountAsync(
                 db, restaurantId, settlementMoneyAccount, ct);
             var salesAccount = await AccountingLedger.EnsureSystemAccountAsync(
@@ -394,7 +394,7 @@ public static class PaymentEndpoints
 
             await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
             var refundMoneyAccount = await AccountingLedger.EnsurePaymentMoneyAccountAsync(
-                db, restaurantId, payment.Method, ct);
+                db, restaurantId, payment.Method, shift.DeviceId, ct);
             var refundLedgerAccount = await AccountingLedger.EnsureMoneyAccountAsync(
                 db, restaurantId, refundMoneyAccount, ct);
             var refundSalesAccount = await AccountingLedger.EnsureSystemAccountAsync(
