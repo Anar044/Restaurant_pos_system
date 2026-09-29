@@ -24,7 +24,7 @@ public static class BackOfficeAccountingEndpoints
             if (!TryClaims(user, out var restaurantId, out _))
                 return Results.Unauthorized();
 
-            await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+            await AccountingLegacyBackfill.EnsureAsync(db, restaurantId, ct);
 
             var now = DateTimeOffset.UtcNow;
             var periodTo = to ?? now.AddMinutes(1);
@@ -223,7 +223,7 @@ public static class BackOfficeAccountingEndpoints
             if (moneyAccount is null)
                 return Results.BadRequest(new { message = "Активный денежный счёт не найден." });
 
-            await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+            await AccountingLegacyBackfill.EnsureAsync(db, restaurantId, ct);
 
             var payableAccount = await AccountingLedger.EnsureSystemAccountAsync(
                 db, restaurantId, AccountingLedger.SupplierPayableKey,
