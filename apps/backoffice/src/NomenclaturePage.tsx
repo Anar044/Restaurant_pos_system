@@ -111,7 +111,11 @@ export function NomenclaturePage({
             <strong>{item.name}</strong>
             <span>{item.sku ? 'SKU ' + item.sku + ' · ' : ''}{unitLabel(item.unit)}</span>
             <div className="nomenclature-card-meta">
-              <small>{item.trackStock ? 'Складской учёт' : 'Без складского учёта'}</small>
+              <small>
+                {item.trackStock
+                  ? `Складской учёт · ${item.inventoryAccountCode ?? '201-1'}`
+                  : 'Без складского учёта'}
+              </small>
               {(item.type === 'DISH' || item.type === 'PREPARATION' || item.type === 'MODIFIER') && (
                 <small>Техкарта: {item.recipe.length} поз.</small>
               )}
@@ -133,6 +137,7 @@ export function NomenclaturePage({
           allItems={data.items}
           categories={data.categories}
           preparationPlaceTypes={data.preparationPlaceTypes}
+          inventoryAccounts={data.inventoryAccounts}
           currencyCode={data.currencyCode}
           token={token}
           canManage={canManage}
@@ -152,6 +157,7 @@ function NomenclatureEditor({
   allItems,
   categories,
   preparationPlaceTypes,
+  inventoryAccounts,
   currencyCode,
   token,
   canManage,
@@ -162,6 +168,7 @@ function NomenclatureEditor({
   allItems: NomenclatureItem[];
   categories: BackOfficeNomenclature['categories'];
   preparationPlaceTypes: BackOfficeNomenclature['preparationPlaceTypes'];
+  inventoryAccounts: BackOfficeNomenclature['inventoryAccounts'];
   currencyCode: string;
   token: string;
   canManage: boolean;
@@ -176,6 +183,7 @@ function NomenclatureEditor({
   const [unit, setUnit] = useState(item?.unit ?? 'pcs');
   const [minStock, setMinStock] = useState(String(item?.minStock ?? 0));
   const [trackStock, setTrackStock] = useState(item?.trackStock ?? (item?.type === 'GOODS' || item?.type === 'PREPARATION'));
+  const [inventoryAccountCode, setInventoryAccountCode] = useState(item?.inventoryAccountCode ?? '201-1');
   const [isActive, setIsActive] = useState(item?.isActive ?? true);
   const [isSellable, setIsSellable] = useState(item?.isSellable ?? false);
   const [price, setPrice] = useState(item?.currentPrice?.toString() ?? '0');
@@ -229,6 +237,7 @@ function NomenclatureEditor({
         unit,
         minStock: min,
         trackStock,
+        inventoryAccountCode: trackStock ? inventoryAccountCode : null,
         isSellable,
         isActive,
         sortOrder: item?.sortOrder ?? 0,
@@ -306,6 +315,25 @@ function NomenclatureEditor({
               <span><strong>Вести складской учёт</strong><small>Остатки и движения будут учитываться по этой позиции.</small></span>
               <input type="checkbox" checked={trackStock} onChange={(e) => setTrackStock(e.target.checked)} disabled={!canManage} />
             </label>
+            {trackStock && (
+              <label>
+                <span>Счёт складского учёта</span>
+                <select
+                  value={inventoryAccountCode}
+                  onChange={(e) => setInventoryAccountCode(e.target.value)}
+                  disabled={!canManage}
+                >
+                  {inventoryAccounts.map((account) => (
+                    <option key={account.code} value={account.code}>
+                      {account.code} · {account.name}
+                    </option>
+                  ))}
+                </select>
+                <small className="field-help">
+                  Все движения этой позиции будут автоматически отражаться по выбранному счёту.
+                </small>
+              </label>
+            )}
             {item && (
               <label className="toggle-row">
                 <span><strong>Позиция активна</strong><small>Отключённая позиция не используется в новых операциях.</small></span>
