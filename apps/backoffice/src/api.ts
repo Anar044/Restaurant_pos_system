@@ -799,8 +799,11 @@ export type LedgerEntryLine = {
   debit: number;
   credit: number;
   supplierId: string | null;
+  supplierName: string | null;
   warehouseId: string | null;
+  warehouseName: string | null;
   moneyAccountId: string | null;
+  moneyAccountName: string | null;
 };
 
 export type LedgerEntry = {
@@ -830,6 +833,7 @@ export type AccountingMoneyAccount = {
 };
 
 export type BackOfficeAccounting = {
+  chartProfile: string;
   period: { from: string; to: string };
   accounts: LedgerAccount[];
   entries: LedgerEntry[];
