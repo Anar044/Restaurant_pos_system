@@ -103,8 +103,11 @@ public static class BackOfficeInventoryEndpoints
                         ? movementItem.Unit
                         : string.Empty,
                     employeeId = movement.EmployeeId,
+                    operationId = movement.OperationId,
                     type = movement.Type,
                     quantityDelta = movement.QuantityDelta,
+                    referenceType = movement.ReferenceType,
+                    referenceId = movement.ReferenceId,
                     note = movement.Note,
                     createdAt = movement.CreatedAt
                 })
@@ -251,12 +254,14 @@ public static class BackOfficeInventoryEndpoints
                 });
             }
 
+            var operationId = Guid.NewGuid();
             var movement = new StockMovement
             {
                 RestaurantId = restaurantId,
                 WarehouseId = request.WarehouseId,
                 ProductId = request.ProductId,
                 EmployeeId = employeeId,
+                OperationId = operationId,
                 Type = type,
                 QuantityDelta = delta,
                 Note = NormalizeOptional(request.Note, 500)
@@ -276,6 +281,7 @@ public static class BackOfficeInventoryEndpoints
             return Results.Created($"/api/v1/backoffice/inventory/movements/{movement.Id}", new
             {
                 id = movement.Id,
+                movement.OperationId,
                 movement.WarehouseId,
                 productId = movement.ProductId,
                 movement.EmployeeId,
@@ -286,7 +292,238 @@ public static class BackOfficeInventoryEndpoints
             });
         }).RequireAuthorization(Permissions.InventoryManage);
 
+        group.MapPost("/transfer", async (
+            TransferStockRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryGetRestaurantId(user, out var restaurantId) ||
+                !Guid.TryParse(user.FindFirstValue("employee_id"), out var employeeId))
+            {
+                return Results.Unauthorized();
+            }
+
+            if (request.FromWarehouseId == request.ToWarehouseId)
+                return Results.BadRequest(new { message = "Склад-источник и склад-получатель должны отличаться." });
+
+            var lines = NormalizeLines(request.Lines);
+            if (lines.Error is not null) return lines.Error;
+
+            var warehouseIds = new[] { request.FromWarehouseId, request.ToWarehouseId };
+            var warehouses = await db.Warehouses
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && x.IsActive && warehouseIds.Contains(x.Id))
+                .Select(x => x.Id)
+                .ToArrayAsync(ct);
+            if (warehouses.Length != 2)
+                return Results.BadRequest(new { message = "Один из складов не найден или отключён." });
+
+            var productIds = lines.Lines!.Select(x => x.ProductId).ToArray();
+            var products = await db.Products
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && x.IsActive && x.TrackStock && productIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.Name, x.Unit })
+                .ToDictionaryAsync(x => x.Id, ct);
+            if (products.Count != productIds.Length)
+                return Results.BadRequest(new { message = "Одна или несколько позиций не найдены или складской учёт у них отключён." });
+
+            var sourceBalances = await db.StockMovements
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.WarehouseId == request.FromWarehouseId &&
+                    productIds.Contains(x.ProductId))
+                .GroupBy(x => x.ProductId)
+                .Select(group => new { ProductId = group.Key, Quantity = group.Sum(x => x.QuantityDelta) })
+                .ToDictionaryAsync(x => x.ProductId, x => x.Quantity, ct);
+
+            foreach (var line in lines.Lines)
+            {
+                var available = sourceBalances.GetValueOrDefault(line.ProductId);
+                if (available < line.Quantity)
+                {
+                    var product = products[line.ProductId];
+                    return Results.BadRequest(new
+                    {
+                        message = $"Недостаточно остатка '{product.Name}'. Доступно: {available:0.###} {product.Unit}."
+                    });
+                }
+            }
+
+            var operationId = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow;
+            var note = NormalizeOptional(request.Note, 500);
+
+            foreach (var line in lines.Lines)
+            {
+                db.StockMovements.AddRange(
+                    new StockMovement
+                    {
+                        RestaurantId = restaurantId,
+                        WarehouseId = request.FromWarehouseId,
+                        ProductId = line.ProductId,
+                        EmployeeId = employeeId,
+                        OperationId = operationId,
+                        Type = "TRANSFER_OUT",
+                        QuantityDelta = -line.Quantity,
+                        ReferenceType = "TRANSFER",
+                        ReferenceId = operationId,
+                        Note = note,
+                        CreatedAt = now
+                    },
+                    new StockMovement
+                    {
+                        RestaurantId = restaurantId,
+                        WarehouseId = request.ToWarehouseId,
+                        ProductId = line.ProductId,
+                        EmployeeId = employeeId,
+                        OperationId = operationId,
+                        Type = "TRANSFER_IN",
+                        QuantityDelta = line.Quantity,
+                        ReferenceType = "TRANSFER",
+                        ReferenceId = operationId,
+                        Note = note,
+                        CreatedAt = now
+                    });
+            }
+
+            AddAudit(db, user, restaurantId, "STOCK_TRANSFER_CREATED", "StockOperation", operationId, new
+            {
+                operationId,
+                request.FromWarehouseId,
+                request.ToWarehouseId,
+                lines = lines.Lines.Select(x => new { x.ProductId, x.Quantity }),
+                note
+            });
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { operationId, lineCount = lines.Lines.Count });
+        }).RequireAuthorization(Permissions.InventoryManage);
+
+        group.MapPost("/inventory-count", async (
+            InventoryCountRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryGetRestaurantId(user, out var restaurantId) ||
+                !Guid.TryParse(user.FindFirstValue("employee_id"), out var employeeId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var lines = NormalizeCountLines(request.Lines);
+            if (lines.Error is not null) return lines.Error;
+
+            var warehouseExists = await db.Warehouses.AnyAsync(x =>
+                x.Id == request.WarehouseId &&
+                x.RestaurantId == restaurantId &&
+                x.IsActive, ct);
+            if (!warehouseExists)
+                return Results.BadRequest(new { message = "Активный склад не найден." });
+
+            var productIds = lines.Lines!.Select(x => x.ProductId).ToArray();
+            var products = await db.Products
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && x.IsActive && x.TrackStock && productIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.Name, x.Unit })
+                .ToDictionaryAsync(x => x.Id, ct);
+            if (products.Count != productIds.Length)
+                return Results.BadRequest(new { message = "Одна или несколько позиций не найдены или складской учёт у них отключён." });
+
+            var balances = await db.StockMovements
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.WarehouseId == request.WarehouseId &&
+                    productIds.Contains(x.ProductId))
+                .GroupBy(x => x.ProductId)
+                .Select(group => new { ProductId = group.Key, Quantity = group.Sum(x => x.QuantityDelta) })
+                .ToDictionaryAsync(x => x.ProductId, x => x.Quantity, ct);
+
+            var operationId = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow;
+            var note = NormalizeOptional(request.Note, 500);
+            var adjusted = 0;
+
+            foreach (var line in lines.Lines)
+            {
+                var current = balances.GetValueOrDefault(line.ProductId);
+                var delta = line.CountedQuantity - current;
+                if (delta == 0m) continue;
+
+                db.StockMovements.Add(new StockMovement
+                {
+                    RestaurantId = restaurantId,
+                    WarehouseId = request.WarehouseId,
+                    ProductId = line.ProductId,
+                    EmployeeId = employeeId,
+                    OperationId = operationId,
+                    Type = delta > 0 ? "INVENTORY_GAIN" : "INVENTORY_LOSS",
+                    QuantityDelta = delta,
+                    ReferenceType = "INVENTORY",
+                    ReferenceId = operationId,
+                    Note = note,
+                    CreatedAt = now
+                });
+                adjusted++;
+            }
+
+            AddAudit(db, user, restaurantId, "STOCK_INVENTORY_COUNTED", "StockOperation", operationId, new
+            {
+                operationId,
+                request.WarehouseId,
+                adjusted,
+                lines = lines.Lines.Select(x => new
+                {
+                    x.ProductId,
+                    currentQuantity = balances.GetValueOrDefault(x.ProductId),
+                    x.CountedQuantity
+                }),
+                note
+            });
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { operationId, lineCount = lines.Lines.Count, adjustedCount = adjusted });
+        }).RequireAuthorization(Permissions.InventoryManage);
+
         return app;
+    }
+
+    private sealed record NormalizedLines(List<StockOperationLineRequest>? Lines, IResult? Error);
+    private sealed record NormalizedCountLines(List<InventoryCountLineRequest>? Lines, IResult? Error);
+
+    private static NormalizedLines NormalizeLines(IReadOnlyList<StockOperationLineRequest>? source)
+    {
+        var lines = (source ?? [])
+            .Where(x => x.ProductId != Guid.Empty)
+            .GroupBy(x => x.ProductId)
+            .Select(group => new StockOperationLineRequest(group.Key, group.Sum(x => x.Quantity)))
+            .ToList();
+
+        if (lines.Count == 0)
+            return new(null, Results.BadRequest(new { message = "Добавьте хотя бы одну позицию." }));
+        if (lines.Any(x => x.Quantity <= 0 || x.Quantity > 1_000_000m))
+            return new(null, Results.BadRequest(new { message = "Количество каждой позиции должно быть больше нуля." }));
+
+        return new(lines, null);
+    }
+
+    private static NormalizedCountLines NormalizeCountLines(IReadOnlyList<InventoryCountLineRequest>? source)
+    {
+        var rows = (source ?? [])
+            .Where(x => x.ProductId != Guid.Empty)
+            .ToList();
+
+        if (rows.Count == 0)
+            return new(null, Results.BadRequest(new { message = "Добавьте хотя бы одну позицию." }));
+        if (rows.GroupBy(x => x.ProductId).Any(group => group.Count() > 1))
+            return new(null, Results.BadRequest(new { message = "Одна позиция не может повторяться в инвентаризации." }));
+        if (rows.Any(x => x.CountedQuantity < 0 || x.CountedQuantity > 1_000_000m))
+            return new(null, Results.BadRequest(new { message = "Фактический остаток не может быть отрицательным." }));
+
+        return new(rows, null);
     }
 
     private static bool TryGetRestaurantId(ClaimsPrincipal user, out Guid restaurantId) =>
@@ -340,4 +577,15 @@ public sealed record CreateStockMovementRequest(
     Guid ProductId,
     string Type,
     decimal Quantity,
+    string? Note);
+public sealed record StockOperationLineRequest(Guid ProductId, decimal Quantity);
+public sealed record TransferStockRequest(
+    Guid FromWarehouseId,
+    Guid ToWarehouseId,
+    IReadOnlyList<StockOperationLineRequest>? Lines,
+    string? Note);
+public sealed record InventoryCountLineRequest(Guid ProductId, decimal CountedQuantity);
+public sealed record InventoryCountRequest(
+    Guid WarehouseId,
+    IReadOnlyList<InventoryCountLineRequest>? Lines,
     string? Note);
