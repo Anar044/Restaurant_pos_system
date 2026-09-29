@@ -71,7 +71,7 @@ export function MoneyPage({
         <div>
           <div className="eyebrow">ФИНАНСЫ</div>
           <h1>Денежный учёт</h1>
-          <p>Счета денег, доходы и расходы ресторана. Кассовые смены и продажи POS остаются в разделе «Кассы и смены».</p>
+          <p>Фактическое движение денег по счетам: POS-оплаты, возвраты, поставщики, кассовые внесения/изъятия и ручные операции. Детали смен остаются в «Кассы и смены».</p>
         </div>
         <div className="heading-actions">
           <button className="secondary-button" onClick={() => void load()} disabled={loading}>Обновить</button>
@@ -88,9 +88,9 @@ export function MoneyPage({
       </div>
 
       <div className="stats-grid money-stats">
-        <MoneyStat label="Доходы" value={money(data?.summary.income ?? 0)} />
-        <MoneyStat label="Расходы" value={money(data?.summary.expense ?? 0)} warning={(data?.summary.expense ?? 0) > 0} />
-        <MoneyStat label="Результат периода" value={signedMoney(data?.summary.net ?? 0)} warning={(data?.summary.net ?? 0) < 0} />
+        <MoneyStat label="Приход денег" value={money(data?.summary.income ?? 0)} />
+        <MoneyStat label="Расход денег" value={money(data?.summary.expense ?? 0)} warning={(data?.summary.expense ?? 0) > 0} />
+        <MoneyStat label="Денежный поток" value={signedMoney(data?.summary.net ?? 0)} warning={(data?.summary.net ?? 0) < 0} />
         <MoneyStat label="Баланс счетов" value={money(data?.summary.totalBalance ?? 0)} />
       </div>
 
