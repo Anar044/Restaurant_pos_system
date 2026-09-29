@@ -139,7 +139,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
 
         modelBuilder.Entity<Product>().Property(x => x.MinStock).HasPrecision(18, 3);
         modelBuilder.Entity<Product>().Property(x => x.InventoryAccountCode).HasMaxLength(16);
-        modelBuilder.Entity<Product>().Property(x => x.TaxStatus).HasMaxLength(64);
+        modelBuilder.Entity<Product>().Property(x => x.TaxStatus)
+            .HasMaxLength(64)
+            .HasDefaultValue(TaxPolicy.Standard);
         modelBuilder.Entity<Product>().Property(x => x.ProductionUnit).HasMaxLength(200);
         modelBuilder.Entity<Product>().Property(x => x.OriginDocument).HasMaxLength(300);
         modelBuilder.Entity<RecipeLine>().Property(x => x.Quantity).HasPrecision(18, 3);
