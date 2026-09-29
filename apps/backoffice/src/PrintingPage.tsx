@@ -239,7 +239,7 @@ export function PrintingPage({ token }: { token: string }) {
                       label={device.name}
                       detail={group.mainCashRegisterId === device.id ? 'Главная касса' : 'POS терминал'}
                       value={device.receiptPrinterId ?? ''}
-                      printers={printers}
+                      printers={printers.filter((printer) => printer.deviceId === device.id)}
                       saving={savingKey === 'receipt:' + device.id}
                       emptyLabel="Не назначен"
                       onChange={(value) => void setReceipt(device.id, value)}
