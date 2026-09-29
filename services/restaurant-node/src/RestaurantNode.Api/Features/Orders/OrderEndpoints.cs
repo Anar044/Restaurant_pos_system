@@ -1851,27 +1851,61 @@ public static class OrderEndpoints
                 .ToList();
 
             if (newItems.Count == 0)
-                return Results.Conflict(new { message = "There are no new items to send to the kitchen." });
+                return Results.Conflict(new { message = "There are no new items to send." });
 
             var groupId = await ResolveOrderGroupIdAsync(db, order, restaurantId, ct);
             if (!groupId.HasValue)
                 return Results.Conflict(new { message = "Order group cannot be resolved." });
 
             var productIds = newItems.Select(x => x.ProductId).Distinct().ToArray();
-            var routing = await ResolveDepartmentRoutesAsync(
-                db,
-                restaurantId,
-                groupId.Value,
-                productIds,
-                ct);
+            var products = await db.Products
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && productIds.Contains(x.Id))
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Type,
+                    x.PreparationPlaceTypeId
+                })
+                .ToDictionaryAsync(x => x.Id, ct);
+
+            var missingProduct = newItems.FirstOrDefault(x => !products.ContainsKey(x.ProductId));
+            if (missingProduct is not null)
+            {
+                return Results.Conflict(new
+                {
+                    message = $"Product '{missingProduct.ProductNameSnapshot}' no longer exists in nomenclature."
+                });
+            }
+
+            var kitchenProductIds = products.Values
+                .Where(x =>
+                    !string.Equals(x.Type, "GOODS", StringComparison.OrdinalIgnoreCase) ||
+                    x.PreparationPlaceTypeId.HasValue)
+                .Select(x => x.Id)
+                .ToArray();
+
+            var routing = kitchenProductIds.Length == 0
+                ? new Dictionary<Guid, PreparationDepartmentRoute>()
+                : await ResolveDepartmentRoutesAsync(
+                    db,
+                    restaurantId,
+                    groupId.Value,
+                    kitchenProductIds,
+                    ct);
 
             foreach (var item in newItems)
             {
-                if (!routing.ContainsKey(item.ProductId))
+                var product = products[item.ProductId];
+                var requiresKitchenRoute =
+                    !string.Equals(product.Type, "GOODS", StringComparison.OrdinalIgnoreCase) ||
+                    product.PreparationPlaceTypeId.HasValue;
+
+                if (requiresKitchenRoute && !routing.ContainsKey(item.ProductId))
                 {
                     return Results.Conflict(new
                     {
-                        message = $"Product '{item.ProductNameSnapshot}' has no preparation type or department configured for this group."
+                        message = $"Product '{item.ProductNameSnapshot}' requires preparation but has no preparation department configured for this group."
                     });
                 }
             }
