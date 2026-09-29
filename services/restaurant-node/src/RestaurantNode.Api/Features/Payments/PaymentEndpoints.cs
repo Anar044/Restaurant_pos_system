@@ -398,8 +398,9 @@ public static class PaymentEndpoints
             var refundLedgerAccount = await AccountingLedger.EnsureMoneyAccountAsync(
                 db, restaurantId, refundMoneyAccount, ct);
             var refundSalesAccount = await AccountingLedger.EnsureSystemAccountAsync(
-                db, restaurantId, AccountingLedger.SalesRevenueKey,
-                "4.10", "Выручка от продаж", LedgerAccountType.Income, ct);
+                db, restaurantId, AccountingLedger.SalesReturnsKey,
+                "602", "Satılmış malların qaytarılması və ucuzlaşdırılması",
+                LedgerAccountType.Income, ct);
 
             await AccountingLedger.PostAsync(
                 db,
