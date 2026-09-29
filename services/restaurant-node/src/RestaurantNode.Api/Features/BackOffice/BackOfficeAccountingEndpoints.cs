@@ -113,8 +113,19 @@ public static class BackOfficeAccountingEndpoints
                 .ThenBy(x => x.Name)
                 .ToListAsync(ct);
 
+            var warehouses = await db.Warehouses
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId)
+                .OrderBy(x => x.Name)
+                .ToListAsync(ct);
+
+            var supplierLookup = suppliers.ToDictionary(x => x.Id, x => x.Name);
+            var warehouseLookup = warehouses.ToDictionary(x => x.Id, x => x.Name);
+            var moneyAccountLookup = moneyAccounts.ToDictionary(x => x.Id, x => x.Name);
+
             return Results.Ok(new
             {
+                chartProfile = "AZ_KOS_IFRS_SME",
                 period = new { from = periodFrom, to = periodTo },
                 accounts = accounts.Select(account =>
                 {
@@ -162,8 +173,17 @@ public static class BackOfficeAccountingEndpoints
                                 line.Debit,
                                 line.Credit,
                                 line.SupplierId,
+                                supplierName = line.SupplierId.HasValue
+                                    ? supplierLookup.GetValueOrDefault(line.SupplierId.Value)
+                                    : null,
                                 line.WarehouseId,
-                                line.MoneyAccountId
+                                warehouseName = line.WarehouseId.HasValue
+                                    ? warehouseLookup.GetValueOrDefault(line.WarehouseId.Value)
+                                    : null,
+                                line.MoneyAccountId,
+                                moneyAccountName = line.MoneyAccountId.HasValue
+                                    ? moneyAccountLookup.GetValueOrDefault(line.MoneyAccountId.Value)
+                                    : null
                             };
                         })
                 }),
