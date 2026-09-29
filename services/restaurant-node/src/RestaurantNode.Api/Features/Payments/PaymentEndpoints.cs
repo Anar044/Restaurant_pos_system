@@ -212,6 +212,35 @@ public static class PaymentEndpoints
             order.Version++;
             order.UpdatedAt = DateTimeOffset.UtcNow;
 
+            await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+            var settlementMoneyAccount = await AccountingLedger.EnsurePaymentMoneyAccountAsync(
+                db, restaurantId, payment.Method, ct);
+            var settlementLedgerAccount = await AccountingLedger.EnsureMoneyAccountAsync(
+                db, restaurantId, settlementMoneyAccount, ct);
+            var salesAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                db, restaurantId, AccountingLedger.SalesRevenueKey,
+                "4.10", "Выручка от продаж", LedgerAccountType.Income, ct);
+
+            await AccountingLedger.PostAsync(
+                db,
+                restaurantId,
+                "POS_PAYMENT",
+                payment.Id,
+                payment.CreatedAt,
+                $"Оплата заказа №{order.DisplayNumber}",
+                employeeId,
+                new[]
+                {
+                    new AccountingLedger.LineDraft(
+                        settlementLedgerAccount,
+                        Debit: payment.Amount,
+                        MoneyAccountId: settlementMoneyAccount.Id),
+                    new AccountingLedger.LineDraft(
+                        salesAccount,
+                        Credit: payment.Amount)
+                },
+                ct);
+
             db.AuditEvents.Add(Audit(
                 restaurantId,
                 employeeId,
@@ -362,6 +391,35 @@ public static class PaymentEndpoints
             var refundedTotal = Money(alreadyRefunded + amount);
             if (refundedTotal >= payment.Amount)
                 payment.Status = PaymentStatus.Refunded;
+
+            await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+            var refundMoneyAccount = await AccountingLedger.EnsurePaymentMoneyAccountAsync(
+                db, restaurantId, payment.Method, ct);
+            var refundLedgerAccount = await AccountingLedger.EnsureMoneyAccountAsync(
+                db, restaurantId, refundMoneyAccount, ct);
+            var refundSalesAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                db, restaurantId, AccountingLedger.SalesRevenueKey,
+                "4.10", "Выручка от продаж", LedgerAccountType.Income, ct);
+
+            await AccountingLedger.PostAsync(
+                db,
+                restaurantId,
+                "POS_REFUND",
+                refund.Id,
+                refund.CreatedAt,
+                "Возврат оплаты заказа",
+                employeeId,
+                new[]
+                {
+                    new AccountingLedger.LineDraft(
+                        refundSalesAccount,
+                        Debit: refund.Amount),
+                    new AccountingLedger.LineDraft(
+                        refundLedgerAccount,
+                        Credit: refund.Amount,
+                        MoneyAccountId: refundMoneyAccount.Id)
+                },
+                ct);
 
             db.AuditEvents.Add(Audit(
                 restaurantId,
