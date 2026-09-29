@@ -870,7 +870,19 @@ export type LedgerAccountMovement = {
   credit: number;
   balanceAfter: number;
   analytics: string | null;
+  analyticsKind: 'WAREHOUSE' | 'SUPPLIER' | 'MONEY_ACCOUNT' | null;
+  analyticsId: string | null;
   correspondents: LedgerAccountMovementCorrespondent[];
+};
+
+export type LedgerAccountAnalytic = {
+  kind: 'WAREHOUSE' | 'SUPPLIER' | 'MONEY_ACCOUNT' | string;
+  id: string;
+  name: string;
+  openingBalance: number;
+  periodDebit: number;
+  periodCredit: number;
+  closingBalance: number;
 };
 
 export type LedgerAccountDetails = {
@@ -885,6 +897,7 @@ export type LedgerAccountDetails = {
   periodDebit: number;
   periodCredit: number;
   closingBalance: number;
+  analytics: LedgerAccountAnalytic[];
   movements: LedgerAccountMovement[];
 };
 
