@@ -12,6 +12,7 @@ public static class AccountingLegacyBackfill
         Guid restaurantId,
         CancellationToken ct)
     {
+        await AccountingAzerbaijanChartMigration.EnsureAsync(db, restaurantId, ct);
         await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
 
         var alreadyCompleted = await db.AuditEvents
