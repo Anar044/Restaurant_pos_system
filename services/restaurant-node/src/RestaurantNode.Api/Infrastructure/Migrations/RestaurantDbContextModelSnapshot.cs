@@ -1824,8 +1824,27 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Property<DateTimeOffset>("DocumentDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("EInvoiceNumber")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
                     b.Property<Guid?>("FromWarehouseId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("InputVatCreditStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("NOT_APPLICABLE");
+
+                    b.Property<decimal>("InventoryCostAmount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal>("NetAmount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
 
                     b.Property<string>("Number")
                         .IsRequired()
@@ -1837,6 +1856,13 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Property<DateTimeOffset?>("PostedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("PurchaseSource")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("LOCAL");
+
                     b.Property<Guid>("RestaurantId")
                         .HasColumnType("uuid");
 
@@ -1846,6 +1872,13 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
 
                     b.Property<Guid?>("SupplierId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("TaxRegimeSnapshot")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("UNCONFIGURED");
 
                     b.Property<Guid?>("ToWarehouseId")
                         .HasColumnType("uuid");
@@ -1857,6 +1890,17 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<decimal>("VatAmount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("VatPriceMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("INCLUDED");
 
                     b.Property<Guid?>("WarehouseId")
                         .HasColumnType("uuid");
@@ -1892,6 +1936,14 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Property<Guid>("DocumentId")
                         .HasColumnType("uuid");
 
+                    b.Property<decimal>("InventoryCostAmount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal>("NetAmount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
 
@@ -1905,6 +1957,17 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Property<decimal>("UnitPrice")
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal>("VatAmount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("VatTaxCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasDefaultValue("NO_VAT");
 
                     b.HasKey("Id");
 
