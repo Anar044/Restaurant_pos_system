@@ -33,6 +33,8 @@ public static class BackOfficeMoneyEndpoints
             if (periodTo - periodFrom > TimeSpan.FromDays(366))
                 return Results.BadRequest(new { message = "Money period cannot exceed 366 days." });
 
+            await AccountingLegacyBackfill.EnsureAsync(db, restaurantId, ct);
+
             var accounts = await db.MoneyAccounts
                 .AsNoTracking()
                 .Where(x => x.RestaurantId == restaurantId)
@@ -47,8 +49,6 @@ public static class BackOfficeMoneyEndpoints
                 .ThenByDescending(x => x.IsActive)
                 .ThenBy(x => x.Name)
                 .ToListAsync(ct);
-
-            await AccountingLegacyBackfill.EnsureAsync(db, restaurantId, ct);
 
             var accountBalances = await db.LedgerLines
                 .AsNoTracking()
