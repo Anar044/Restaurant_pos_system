@@ -110,6 +110,18 @@ public static class AccountingLedger
             LedgerAccountType.Asset,
             ct);
 
+    public static async Task<LedgerAccount> EnsureWarehouseAccountAsync(
+        RestaurantDbContext db,
+        Guid restaurantId,
+        Guid warehouseId,
+        CancellationToken ct)
+    {
+        var warehouse = await db.Warehouses
+            .FirstOrDefaultAsync(x => x.RestaurantId == restaurantId && x.Id == warehouseId, ct)
+            ?? throw new InvalidOperationException("Warehouse was not found for accounting.");
+        return await EnsureWarehouseAccountAsync(db, restaurantId, warehouse, ct);
+    }
+
     public static Task<LedgerAccount> EnsureMoneyAccountAsync(
         RestaurantDbContext db,
         Guid restaurantId,
