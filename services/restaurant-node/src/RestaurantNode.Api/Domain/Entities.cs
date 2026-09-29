@@ -304,6 +304,14 @@ public sealed class StockDocument : Entity
     public Warehouse? ToWarehouse { get; set; }
     public Guid? SupplierId { get; set; }
     public Supplier? Supplier { get; set; }
+    public string PurchaseSource { get; set; } = "LOCAL";
+    public string TaxRegimeSnapshot { get; set; } = "UNCONFIGURED";
+    public string VatPriceMode { get; set; } = "INCLUDED";
+    public string InputVatCreditStatus { get; set; } = "NOT_APPLICABLE";
+    public string? EInvoiceNumber { get; set; }
+    public decimal NetAmount { get; set; }
+    public decimal VatAmount { get; set; }
+    public decimal InventoryCostAmount { get; set; }
     public decimal TotalAmount { get; set; }
     public string? Comment { get; set; }
     public Guid CreatedByEmployeeId { get; set; }
@@ -322,6 +330,10 @@ public sealed class StockDocumentLine : Entity
     public Product? Product { get; set; }
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }
+    public string VatTaxCode { get; set; } = "NO_VAT";
+    public decimal NetAmount { get; set; }
+    public decimal VatAmount { get; set; }
+    public decimal InventoryCostAmount { get; set; }
     public decimal Amount { get; set; }
 }
 
