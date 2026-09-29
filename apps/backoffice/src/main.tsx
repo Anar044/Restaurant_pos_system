@@ -351,6 +351,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             <SuppliersPage
               token={session.token}
               canManage={(session.permissions ?? []).includes('inventory.manage')}
+              canPay={(session.permissions ?? []).includes('finance.manage')}
             />
           ) : page === 'adjustments' ? (
             <AdjustmentsPage
