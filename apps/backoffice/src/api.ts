@@ -731,6 +731,11 @@ export type StockSupplier = {
   createdAt: string;
 };
 
+export type PurchaseVatOption = {
+  code: string;
+  name: string;
+};
+
 export type StockDocumentLine = {
   id: string;
   productId: string;
@@ -738,6 +743,10 @@ export type StockDocumentLine = {
   unit: string;
   quantity: number;
   unitPrice: number;
+  vatTaxCode: string;
+  netAmount: number;
+  vatAmount: number;
+  inventoryCostAmount: number;
   amount: number;
 };
 
@@ -751,6 +760,14 @@ export type StockDocument = {
   warehouseName: string | null;
   supplierId: string | null;
   supplierName: string | null;
+  purchaseSource: string;
+  taxRegimeSnapshot: string;
+  vatPriceMode: string;
+  inputVatCreditStatus: string;
+  eInvoiceNumber: string | null;
+  netAmount: number;
+  vatAmount: number;
+  inventoryCostAmount: number;
   totalAmount: number;
   comment: string | null;
   createdByEmployeeId: string;
@@ -776,6 +793,13 @@ export type StockDocumentItem = {
 
 export type BackOfficeStockDocuments = {
   supportedTypes: string[];
+  taxProfile: {
+    taxRegime: string;
+    vatPriceMode: string;
+  };
+  vatPriceModes: PurchaseVatOption[];
+  purchaseVatCodes: PurchaseVatOption[];
+  inputVatCreditStatuses: PurchaseVatOption[];
   suppliers: StockSupplier[];
   warehouses: StockDocumentWarehouse[];
   items: StockDocumentItem[];
@@ -787,11 +811,15 @@ export type UpsertReceiptDocumentInput = {
   documentDate: string | null;
   warehouseId: string;
   supplierId: string;
+  vatPriceMode: string;
+  inputVatCreditStatus: string | null;
+  eInvoiceNumber: string | null;
   comment: string | null;
   lines: Array<{
     productId: string;
     quantity: number;
     unitPrice: number;
+    vatTaxCode: string;
   }>;
 };
 
