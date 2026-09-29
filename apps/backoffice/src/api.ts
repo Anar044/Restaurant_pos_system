@@ -550,6 +550,12 @@ export type InventoryAccountOption = {
   name: string;
 };
 
+export type ProductTaxStatusOption = {
+  code: string;
+  name: string;
+  description: string;
+};
+
 export type NomenclatureItem = {
   id: string;
   categoryId: string | null;
@@ -562,6 +568,13 @@ export type NomenclatureItem = {
   minStock: number;
   trackStock: boolean;
   inventoryAccountCode: string | null;
+  taxStatus: string;
+  ownAgricultureSameTaxpayer: boolean | null;
+  ownAgricultureCriteriaMet: boolean | null;
+  ownAgricultureUnprocessed: boolean | null;
+  productionUnit: string | null;
+  originDocument: string | null;
+  productionOrHarvestDate: string | null;
   isSellable: boolean;
   isActive: boolean;
   sortOrder: number;
@@ -578,6 +591,7 @@ export type NomenclatureCategoryOption = {
 export type BackOfficeNomenclature = {
   supportedTypes: string[];
   inventoryAccounts: InventoryAccountOption[];
+  productTaxStatuses: ProductTaxStatusOption[];
   currencyCode: string;
   categories: NomenclatureCategoryOption[];
   preparationPlaceTypes: PreparationPlaceTypeOption[];
@@ -592,6 +606,13 @@ export type UpsertNomenclatureItemInput = {
   minStock: number;
   trackStock: boolean;
   inventoryAccountCode: string | null;
+  taxStatus: string | null;
+  ownAgricultureSameTaxpayer: boolean | null;
+  ownAgricultureCriteriaMet: boolean | null;
+  ownAgricultureUnprocessed: boolean | null;
+  productionUnit: string | null;
+  originDocument: string | null;
+  productionOrHarvestDate: string | null;
   isSellable: boolean;
   isActive: boolean;
   sortOrder: number;
