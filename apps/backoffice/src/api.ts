@@ -841,6 +841,45 @@ export type BackOfficeAccounting = {
   moneyAccounts: AccountingMoneyAccount[];
 };
 
+export type LedgerAccountMovementCorrespondent = {
+  id: string;
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+  analytics: string | null;
+};
+
+export type LedgerAccountMovement = {
+  id: string;
+  entryId: string;
+  occurredAt: string;
+  referenceType: string;
+  referenceId: string;
+  description: string;
+  debit: number;
+  credit: number;
+  balanceAfter: number;
+  analytics: string | null;
+  correspondents: LedgerAccountMovementCorrespondent[];
+};
+
+export type LedgerAccountDetails = {
+  period: { from: string; to: string };
+  account: {
+    id: string;
+    code: string;
+    name: string;
+    type: string;
+  };
+  openingBalance: number;
+  periodDebit: number;
+  periodCredit: number;
+  closingBalance: number;
+  movements: LedgerAccountMovement[];
+};
+
 export type SupplierPaymentResult = {
   operationId: string;
   amount: number;
@@ -1497,6 +1536,24 @@ export async function getBackOfficeAccounting(
   const serialized = query.toString();
   const suffix = serialized ? '?' + serialized : '';
   return request<BackOfficeAccounting>('/api/v1/backoffice/accounting' + suffix, {}, token);
+}
+
+export async function getBackOfficeAccountMovements(
+  token: string,
+  accountId: string,
+  from?: string,
+  to?: string,
+): Promise<LedgerAccountDetails> {
+  const query = new URLSearchParams();
+  if (from) query.set('from', from);
+  if (to) query.set('to', to);
+  const serialized = query.toString();
+  const suffix = serialized ? '?' + serialized : '';
+  return request<LedgerAccountDetails>(
+    '/api/v1/backoffice/accounting/accounts/' + accountId + '/movements' + suffix,
+    {},
+    token,
+  );
 }
 
 export async function paySupplier(
