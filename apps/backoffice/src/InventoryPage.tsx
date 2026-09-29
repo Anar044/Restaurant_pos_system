@@ -118,7 +118,7 @@ export function InventoryPage({
                 + Склад
               </button>
               <button className="secondary-button" onClick={() => setEditor({ kind: 'movement' })}>
-                + Приход / списание
+                + Корректировка
               </button>
               <button className="secondary-button" onClick={() => setEditor({ kind: 'transfer' })}>
                 Перемещение
@@ -517,15 +517,15 @@ function MovementEditor({
       <form className="modal-card" onSubmit={submit}>
         <div className="modal-header">
           <div>
-            <div className="eyebrow">ДВИЖЕНИЕ ТОВАРА</div>
-            <h2>{type === 'RECEIPT' ? 'Приход' : 'Списание'}</h2>
+            <div className="eyebrow">КОРРЕКТИРОВКА ОСТАТКА</div>
+            <h2>{type === 'RECEIPT' ? 'Увеличить остаток' : 'Уменьшить остаток'}</h2>
           </div>
           <button type="button" className="close-button" onClick={onClose}>×</button>
         </div>
 
         <div className="inventory-operation-switch">
-          <button type="button" className={type === 'RECEIPT' ? 'active' : ''} onClick={() => setType('RECEIPT')}>Приход</button>
-          <button type="button" className={type === 'WRITE_OFF' ? 'active' : ''} onClick={() => setType('WRITE_OFF')}>Списание</button>
+          <button type="button" className={type === 'RECEIPT' ? 'active' : ''} onClick={() => setType('RECEIPT')}>Увеличить</button>
+          <button type="button" className={type === 'WRITE_OFF' ? 'active' : ''} onClick={() => setType('WRITE_OFF')}>Уменьшить</button>
         </div>
 
         <label>
@@ -554,8 +554,9 @@ function MovementEditor({
         </label>
 
         <label>
-          <span>Комментарий</span>
-          <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Например: поставка №123 или порча" />
+          <span>Причина корректировки</span>
+          <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Например: исправление начального остатка или порча" />
+          <small className="field-hint">Обычный приход от поставщика оформляйте через «Складские документы».</small>
         </label>
 
         {error && <div className="error-box">{error}</div>}
