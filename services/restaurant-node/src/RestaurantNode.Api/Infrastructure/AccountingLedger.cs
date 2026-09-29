@@ -54,7 +54,6 @@ public static class AccountingLedger
         foreach (var category in categories)
             await EnsureCategoryAccountAsync(db, restaurantId, category, ct);
 
-        await db.SaveChangesAsync(ct);
     }
 
     public static async Task<LedgerAccount> EnsureSystemAccountAsync(
@@ -166,17 +165,25 @@ public static class AccountingLedger
             _ => MoneyAccountType.Other
         };
 
-        var account = await db.MoneyAccounts
+        var account = db.MoneyAccounts.Local
             .Where(x => x.RestaurantId == restaurantId && x.IsActive && x.Type == type)
             .OrderBy(x => x.CreatedAt)
-            .FirstOrDefaultAsync(ct);
+            .FirstOrDefault()
+            ?? await db.MoneyAccounts
+                .Where(x => x.RestaurantId == restaurantId && x.IsActive && x.Type == type)
+                .OrderBy(x => x.CreatedAt)
+                .FirstOrDefaultAsync(ct);
 
         if (account is null)
         {
-            account = await db.MoneyAccounts
+            account = db.MoneyAccounts.Local
                 .Where(x => x.RestaurantId == restaurantId && x.Type == type)
                 .OrderBy(x => x.CreatedAt)
-                .FirstOrDefaultAsync(ct);
+                .FirstOrDefault()
+                ?? await db.MoneyAccounts
+                    .Where(x => x.RestaurantId == restaurantId && x.Type == type)
+                    .OrderBy(x => x.CreatedAt)
+                    .FirstOrDefaultAsync(ct);
 
             if (account is not null)
             {
