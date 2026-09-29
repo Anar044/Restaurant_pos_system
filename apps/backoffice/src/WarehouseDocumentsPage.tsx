@@ -283,7 +283,6 @@ function ReceiptEditor({
       : [{ productId: activeItems[0]?.id ?? '', quantity: '', unitPrice: '' }],
   );
   const [saving, setSaving] = useState(false);
-  const [saveAndPost, setSaveAndPost] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const total = useMemo(
@@ -308,8 +307,10 @@ function ReceiptEditor({
     setLines((current) => current.filter((_, lineIndex) => lineIndex !== index));
   }
 
-  async function submit(event: FormEvent) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const shouldPost = submitter?.value === 'post';
 
     const parsedLines = lines
       .filter((line) => line.productId)
@@ -349,7 +350,7 @@ function ReceiptEditor({
         ? await updateReceiptDocument(token, document.id, input)
         : await createReceiptDocument(token, input);
 
-      if (saveAndPost) {
+      if (shouldPost) {
         await postStockDocument(token, saved.id);
       }
 
@@ -358,7 +359,6 @@ function ReceiptEditor({
       setError(e instanceof Error ? e.message : 'Не удалось сохранить приходную накладную');
     } finally {
       setSaving(false);
-      setSaveAndPost(false);
     }
   }
 
@@ -488,17 +488,17 @@ function ReceiptEditor({
             type="submit"
             className="secondary-button"
             disabled={saving || !warehouseId || !supplierId || activeSuppliers.length === 0}
-            onClick={() => setSaveAndPost(false)}
+            value="draft"
           >
-            {saving && !saveAndPost ? 'Сохраняем…' : 'Сохранить черновик'}
+            {saving ? 'Сохраняем…' : 'Сохранить черновик'}
           </button>
           <button
             type="submit"
             className="primary-button"
             disabled={saving || !warehouseId || !supplierId || activeSuppliers.length === 0}
-            onClick={() => setSaveAndPost(true)}
+            value="post"
           >
-            {saving && saveAndPost ? 'Проводим…' : 'Сохранить и провести'}
+            {saving ? 'Проводим…' : 'Сохранить и провести'}
           </button>
         </div>
       </form>
