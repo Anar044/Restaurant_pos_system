@@ -92,6 +92,7 @@ export function ReceiptDocumentsPage({
                   <th>Дата</th>
                   <th>№</th>
                   <th>Поставщик</th>
+                  <th>Документ покупки</th>
                   <th>Склад</th>
                   <th>Без ƏDV</th>
                   <th>ƏDV</th>
@@ -106,6 +107,10 @@ export function ReceiptDocumentsPage({
                     <td>{formatDate(document.documentDate)}</td>
                     <td><strong>{document.number}</strong></td>
                     <td>{document.supplierName ?? '—'}</td>
+                    <td>
+                      <strong>{purchaseDocumentKindLabel(document.purchaseDocumentKind)}</strong>
+                      {document.purchaseReferenceNumber && <small className="receipt-doc-reference">№ {document.purchaseReferenceNumber}</small>}
+                    </td>
                     <td>{document.warehouseName ?? '—'}</td>
                     <td>{money(document.netAmount)}</td>
                     <td>{money(document.vatAmount)}</td>
@@ -181,6 +186,18 @@ function ReceiptEditor({
   );
   const [warehouseId, setWarehouseId] = useState(document?.warehouseId ?? activeWarehouses[0]?.id ?? '');
   const [supplierId, setSupplierId] = useState(document?.supplierId ?? activeSuppliers[0]?.id ?? '');
+  const [purchaseDocumentKind, setPurchaseDocumentKind] = useState(
+    document?.purchaseDocumentKind ?? 'SUPPLIER_INVOICE',
+  );
+  const [purchaseReferenceNumber, setPurchaseReferenceNumber] = useState(
+    document?.purchaseReferenceNumber ?? '',
+  );
+  const [retailVatMode, setRetailVatMode] = useState(
+    document?.purchaseDocumentKind === 'RETAIL_RECEIPT' &&
+    document.lines.some((line) => line.vatTaxCode === 'VAT_18')
+      ? 'VAT_18'
+      : 'NOT_SPECIFIED',
+  );
   const [vatPriceMode, setVatPriceMode] = useState(document?.vatPriceMode ?? 'INCLUDED');
   const [inputVatCreditStatus, setInputVatCreditStatus] = useState(
     document?.inputVatCreditStatus && document.inputVatCreditStatus !== 'NOT_APPLICABLE'
@@ -214,23 +231,43 @@ function ReceiptEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isRetailReceipt = purchaseDocumentKind === 'RETAIL_RECEIPT';
+  const isSupplierInvoice = purchaseDocumentKind === 'SUPPLIER_INVOICE';
+  const effectiveVatPriceMode = isRetailReceipt ? 'INCLUDED' : vatPriceMode;
+  const effectiveInputVatCreditStatus = isRetailReceipt
+    ? 'NON_CREDITABLE'
+    : inputVatCreditStatus;
+
   const previews = useMemo(
     () => lines.map((line) => {
       const quantity = decimal(line.quantity);
       const unitPrice = decimal(line.unitPrice);
+      const effectiveVatTaxCode = isRetailReceipt
+        ? retailVatMode === 'VAT_18' ? 'VAT_18' : 'NO_VAT'
+        : line.vatTaxCode;
+
       return previewPurchaseLine(
         Number.isFinite(quantity) ? quantity : 0,
         Number.isFinite(unitPrice) ? unitPrice : 0,
-        line.vatTaxCode,
-        vatPriceMode,
+        effectiveVatTaxCode,
+        effectiveVatPriceMode,
         data.taxProfile.taxRegime,
-        inputVatCreditStatus,
+        effectiveInputVatCreditStatus,
       );
     }),
-    [lines, vatPriceMode, data.taxProfile.taxRegime, inputVatCreditStatus],
+    [
+      lines,
+      isRetailReceipt,
+      retailVatMode,
+      effectiveVatPriceMode,
+      data.taxProfile.taxRegime,
+      effectiveInputVatCreditStatus,
+    ],
   );
 
-  const hasVat18 = lines.some((line) => line.vatTaxCode === 'VAT_18');
+  const hasVat18 = isRetailReceipt
+    ? retailVatMode === 'VAT_18'
+    : lines.some((line) => line.vatTaxCode === 'VAT_18');
   const totals = useMemo(
     () => previews.reduce(
       (sum, row) => ({
@@ -261,7 +298,9 @@ function ReceiptEditor({
       productId: x.productId,
       quantity: decimal(x.quantity),
       unitPrice: decimal(x.unitPrice),
-      vatTaxCode: x.vatTaxCode,
+      vatTaxCode: isRetailReceipt
+        ? retailVatMode === 'VAT_18' ? 'VAT_18' : 'NO_VAT'
+        : x.vatTaxCode,
     }));
 
     if (
@@ -284,9 +323,15 @@ function ReceiptEditor({
       documentDate: documentDate ? new Date(documentDate + 'T12:00:00').toISOString() : null,
       warehouseId,
       supplierId,
-      vatPriceMode,
-      inputVatCreditStatus: isVatPayer && hasVat18 ? inputVatCreditStatus : null,
-      eInvoiceNumber: eInvoiceNumber.trim() || null,
+      purchaseDocumentKind,
+      purchaseReferenceNumber: purchaseReferenceNumber.trim() || null,
+      retailVatMode: isRetailReceipt ? retailVatMode : null,
+      vatPriceMode: effectiveVatPriceMode,
+      inputVatCreditStatus:
+        !isRetailReceipt && isVatPayer && hasVat18
+          ? inputVatCreditStatus
+          : null,
+      eInvoiceNumber: isSupplierInvoice ? eInvoiceNumber.trim() || null : null,
       comment: comment.trim() || null,
       lines: parsedLines,
     };
@@ -339,7 +384,7 @@ function ReceiptEditor({
 
         <div className="receipt-document-grid">
           <label>
-            <span>Номер документа</span>
+            <span>Внутренний номер документа</span>
             <input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="Сформируется автоматически" />
           </label>
           <label>
@@ -354,30 +399,91 @@ function ReceiptEditor({
             </select>
           </label>
           <label>
-            <span>Поставщик</span>
+            <span>{isRetailReceipt ? 'Магазин / поставщик' : 'Поставщик'}</span>
             <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
               <option value="">Выберите поставщика</option>
               {activeSuppliers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </select>
           </label>
           <label>
-            <span>Как указана цена поставщика</span>
-            <select value={vatPriceMode} onChange={(e) => setVatPriceMode(e.target.value)}>
-              {data.vatPriceModes.map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}
+            <span>Документ покупки</span>
+            <select
+              value={purchaseDocumentKind}
+              onChange={(e) => {
+                const next = e.target.value;
+                setPurchaseDocumentKind(next);
+                if (next === 'RETAIL_RECEIPT') {
+                  setVatPriceMode('INCLUDED');
+                  setInputVatCreditStatus('NON_CREDITABLE');
+                }
+              }}
+            >
+              {data.purchaseDocumentKinds.map((x) => (
+                <option key={x.code} value={x.code}>{x.name}</option>
+              ))}
             </select>
           </label>
           <label>
-            <span>e-Qaimə / документ ƏDV</span>
+            <span>
+              {isRetailReceipt
+                ? '№ кассового чека'
+                : isSupplierInvoice
+                  ? '№ накладной / документа'
+                  : '№ / реквизиты документа'}
+            </span>
             <input
-              value={eInvoiceNumber}
-              onChange={(e) => setEInvoiceNumber(e.target.value)}
+              value={purchaseReferenceNumber}
+              onChange={(e) => setPurchaseReferenceNumber(e.target.value)}
               maxLength={120}
               placeholder="Необязательно"
             />
           </label>
+
+          {isRetailReceipt ? (
+            <label>
+              <span>ƏDV в кассовом чеке</span>
+              <select value={retailVatMode} onChange={(e) => setRetailVatMode(e.target.value)}>
+                {data.retailVatModes.map((x) => (
+                  <option key={x.code} value={x.code}>{x.name}</option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label>
+              <span>Как указана цена поставщика</span>
+              <select value={vatPriceMode} onChange={(e) => setVatPriceMode(e.target.value)}>
+                {data.vatPriceModes.map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}
+              </select>
+            </label>
+          )}
+
+          {isSupplierInvoice && (
+            <label>
+              <span>e-Qaimə / документ ƏDV</span>
+              <input
+                value={eInvoiceNumber}
+                onChange={(e) => setEInvoiceNumber(e.target.value)}
+                maxLength={120}
+                placeholder="Необязательно"
+              />
+            </label>
+          )}
         </div>
 
-        {isVatPayer && hasVat18 ? (
+        {isRetailReceipt ? (
+          <div className="receipt-vat-credit-box muted-box retail-receipt-note">
+            <strong>
+              {retailVatMode === 'VAT_18'
+                ? 'В чеке указан ƏDV 18% — налог будет выделен только для аналитики'
+                : 'ƏDV в чеке не указан — вся сумма будет принята как стоимость покупки'}
+            </strong>
+            <small>
+              {retailVatMode === 'VAT_18'
+                ? 'Для розничного кассового чека система автоматически ставит «Не подлежит əvəzləşdirmə»: на 241-1 сумма не попадёт, а полный итог чека войдёт в стоимость запасов.'
+                : 'ƏDV отдельно не выделяется, 241-1 = 0, а полная сумма покупки увеличивает стоимость запасов.'}
+            </small>
+          </div>
+        ) : isVatPayer && hasVat18 ? (
           <div className="receipt-vat-credit-box">
             <label>
               <span>Статус входного ƏDV</span>
@@ -407,7 +513,11 @@ function ReceiptEditor({
           <div className="receipt-lines-head">
             <div>
               <strong>Позиции</strong>
-              <span>Налоговый статус задаётся по каждой строке документа.</span>
+              <span>
+                {isRetailReceipt
+                  ? 'Для кассового чека налоговый режим применяется ко всем строкам документа.'
+                  : 'Налоговый статус задаётся по каждой строке документа.'}
+              </span>
             </div>
             <button
               type="button"
@@ -426,7 +536,7 @@ function ReceiptEditor({
               <span>Номенклатура</span>
               <span>Количество</span>
               <span>Цена</span>
-              <span>ƏDV</span>
+              <span>{isRetailReceipt ? 'ƏDV в чеке' : 'ƏDV'}</span>
               <span>Без ƏDV</span>
               <span>ƏDV сумма</span>
               <span>Итого</span>
@@ -467,14 +577,20 @@ function ReceiptEditor({
                     placeholder="0.00"
                   />
 
-                  <select
-                    value={line.vatTaxCode}
-                    onChange={(e) => patchLine(index, { vatTaxCode: e.target.value })}
-                  >
-                    {data.purchaseVatCodes.map((x) => (
-                      <option key={x.code} value={x.code}>{x.name}</option>
-                    ))}
-                  </select>
+                  {isRetailReceipt ? (
+                    <span className="receipt-line-tax-label">
+                      {retailVatMode === 'VAT_18' ? 'ƏDV 18%' : 'Не указан'}
+                    </span>
+                  ) : (
+                    <select
+                      value={line.vatTaxCode}
+                      onChange={(e) => patchLine(index, { vatTaxCode: e.target.value })}
+                    >
+                      {data.purchaseVatCodes.map((x) => (
+                        <option key={x.code} value={x.code}>{x.name}</option>
+                      ))}
+                    </select>
+                  )}
 
                   <strong>{money(preview.netAmount)}</strong>
                   <strong>{money(preview.vatAmount)}</strong>
@@ -494,11 +610,11 @@ function ReceiptEditor({
           </div>
 
           <div className="receipt-tax-totals">
-            <div><span>Без ƏDV</span><strong>{money(totals.net)}</strong></div>
+            <div><span>{hasVat18 ? 'Без ƏDV' : 'Стоимость'}</span><strong>{money(totals.net)}</strong></div>
             <div><span>ƏDV</span><strong>{money(totals.vat)}</strong></div>
             <div><span>К оплате поставщику</span><strong>{money(totals.gross)}</strong></div>
             <div><span>На склад</span><strong>{money(totals.inventory)}</strong></div>
-            {isVatPayer && totals.recoverable > 0 && (
+            {!isRetailReceipt && isVatPayer && totals.recoverable > 0 && (
               <div className="accent"><span>На 241-1</span><strong>{money(totals.recoverable)}</strong></div>
             )}
           </div>
@@ -595,6 +711,14 @@ function decimal(value: string) {
 
 function round4(value: number) {
   return Math.round((value + Number.EPSILON) * 10000) / 10000;
+}
+
+function purchaseDocumentKindLabel(value: string) {
+  return ({
+    SUPPLIER_INVOICE: 'Накладная / e-Qaimə',
+    RETAIL_RECEIPT: 'Кассовый чек',
+    OTHER: 'Другой документ',
+  } as Record<string, string>)[value] ?? value;
 }
 
 function taxRegimeLabel(value: string) {
