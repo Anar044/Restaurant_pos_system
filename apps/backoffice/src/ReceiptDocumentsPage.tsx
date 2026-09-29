@@ -4,8 +4,11 @@ import {
   type StockDocument,
   type UpsertReceiptDocumentInput,
   createReceiptDocument,
+  deleteReceiptDocument,
+  duplicateReceiptDocument,
   getBackOfficeStockDocuments,
   postStockDocument,
+  reverseReceiptDocument,
   updateReceiptDocument,
 } from './api';
 import './warehouse-documents.css';
@@ -22,6 +25,7 @@ export function ReceiptDocumentsPage({
   const [data, setData] = useState<BackOfficeStockDocuments | null>(null);
   const [editor, setEditor] = useState<StockDocument | 'new' | null>(null);
   const [postingId, setPostingId] = useState<string | null>(null);
+  const [actionId, setActionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<ReceiptStatusFilter>('ALL');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -56,6 +60,80 @@ export function ReceiptDocumentsPage({
       setError(e instanceof Error ? e.message : 'Не удалось провести документ');
     } finally {
       setPostingId(null);
+    }
+  }
+
+  async function reloadDocuments(openDocumentId?: string) {
+    const next = await getBackOfficeStockDocuments(token);
+    setData(next);
+
+    if (openDocumentId) {
+      const document = next.documents.find((x) => x.id === openDocumentId);
+      if (document) setEditor(document);
+    }
+  }
+
+  async function removeDraft(document: StockDocument) {
+    if (!window.confirm(
+      'Удалить черновик ' + document.number + '? Это действие нельзя отменить.',
+    )) return;
+
+    setActionId('delete:' + document.id);
+    setError(null);
+    try {
+      await deleteReceiptDocument(token, document.id);
+      if (editor !== 'new' && editor?.id === document.id) setEditor(null);
+      await reloadDocuments();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось удалить черновик');
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function duplicateDocument(document: StockDocument) {
+    setActionId('duplicate:' + document.id);
+    setError(null);
+    try {
+      const result = await duplicateReceiptDocument(token, document.id);
+      await reloadDocuments(result.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось дублировать документ');
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function reverseDocument(document: StockDocument, createCorrectionDraft: boolean) {
+    const defaultReason = createCorrectionDraft
+      ? 'Исправление приходной накладной'
+      : 'Отмена приходной накладной';
+    const reason = window.prompt(
+      createCorrectionDraft
+        ? 'Укажите причину исправления. Исходный документ будет сторнирован, а новая копия откроется как черновик.'
+        : 'Укажите причину сторно. Складские движения и бухгалтерские проводки будут отменены.',
+      defaultReason,
+    );
+    if (reason === null) return;
+
+    if (!window.confirm(
+      createCorrectionDraft
+        ? 'Сторнировать ' + document.number + ' и создать исправленную копию?'
+        : 'Сторнировать ' + document.number + '? Это создаст обратные складские и бухгалтерские движения.',
+    )) return;
+
+    setActionId((createCorrectionDraft ? 'correct:' : 'reverse:') + document.id);
+    setError(null);
+    try {
+      const result = await reverseReceiptDocument(token, document.id, {
+        createCorrectionDraft,
+        reason: reason.trim() || null,
+      });
+      await reloadDocuments(result.correctionDocumentId ?? undefined);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось сторнировать документ');
+    } finally {
+      setActionId(null);
     }
   }
 
@@ -186,19 +264,57 @@ export function ReceiptDocumentsPage({
                       </span>
                     </td>
                     <td>
-                      <div className="warehouse-doc-actions">
+                      <div className="warehouse-doc-actions receipt-document-actions">
                         <button className="text-button" onClick={() => setEditor(document)}>
                           {document.status === 'DRAFT' && canManage ? 'Изменить' : 'Просмотр'}
                         </button>
 
-                        {document.status === 'DRAFT' && canManage && (
+                        {canManage && (
                           <button
-                            className="primary-button compact"
-                            disabled={postingId === document.id}
-                            onClick={() => void post(document)}
+                            className="text-button"
+                            disabled={actionId !== null}
+                            onClick={() => void duplicateDocument(document)}
                           >
-                            {postingId === document.id ? 'Проводим…' : 'Провести'}
+                            {actionId === 'duplicate:' + document.id ? 'Копируем…' : 'Дублировать'}
                           </button>
+                        )}
+
+                        {document.status === 'DRAFT' && canManage && (
+                          <>
+                            <button
+                              className="primary-button compact"
+                              disabled={postingId === document.id || actionId !== null}
+                              onClick={() => void post(document)}
+                            >
+                              {postingId === document.id ? 'Проводим…' : 'Провести'}
+                            </button>
+                            <button
+                              className="text-button danger-text-button"
+                              disabled={actionId !== null || postingId !== null}
+                              onClick={() => void removeDraft(document)}
+                            >
+                              {actionId === 'delete:' + document.id ? 'Удаляем…' : 'Удалить'}
+                            </button>
+                          </>
+                        )}
+
+                        {document.status === 'POSTED' && canManage && (
+                          <>
+                            <button
+                              className="primary-button compact"
+                              disabled={actionId !== null || postingId !== null}
+                              onClick={() => void reverseDocument(document, true)}
+                            >
+                              {actionId === 'correct:' + document.id ? 'Готовим…' : 'Исправить'}
+                            </button>
+                            <button
+                              className="text-button danger-text-button"
+                              disabled={actionId !== null || postingId !== null}
+                              onClick={() => void reverseDocument(document, false)}
+                            >
+                              {actionId === 'reverse:' + document.id ? 'Сторнируем…' : 'Сторно'}
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
