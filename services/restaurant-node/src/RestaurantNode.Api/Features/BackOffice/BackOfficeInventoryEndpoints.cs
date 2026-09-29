@@ -80,6 +80,7 @@ public static class BackOfficeInventoryEndpoints
                     type = item.Type,
                     unit = item.Unit,
                     minStock = item.MinStock,
+                    inventoryAccountCode = item.InventoryAccountCode,
                     isActive = item.IsActive,
                     createdAt = DateTimeOffset.MinValue,
                     totalStock = warehouses.Sum(warehouse =>
