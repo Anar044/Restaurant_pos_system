@@ -446,12 +446,12 @@ public static class BackOfficeInventoryEndpoints
                 operationId,
                 request.FromWarehouseId,
                 request.ToWarehouseId,
-                lines = lines.Lines.Select(x => new { x.ProductId, x.Quantity }),
+                lines = lines.Lines!.Select(x => new { x.ProductId, x.Quantity }),
                 note
             });
 
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { operationId, lineCount = lines.Lines.Count });
+            return Results.Ok(new { operationId, lineCount = lines.Lines!.Count });
         }).RequireAuthorization(Permissions.InventoryManage);
 
         group.MapPost("/inventory-count", async (
@@ -505,7 +505,7 @@ public static class BackOfficeInventoryEndpoints
             var note = NormalizeOptional(request.Note, 500);
             var adjusted = 0;
 
-            foreach (var line in lines.Lines)
+            foreach (var line in lines.Lines!)
             {
                 var balance = balances.GetValueOrDefault(line.ProductId);
                 var current = balance?.Quantity ?? 0m;
@@ -541,7 +541,7 @@ public static class BackOfficeInventoryEndpoints
                 operationId,
                 request.WarehouseId,
                 adjusted,
-                lines = lines.Lines.Select(x => new
+                lines = lines.Lines!.Select(x => new
                 {
                     x.ProductId,
                     currentQuantity = balances.GetValueOrDefault(x.ProductId)?.Quantity ?? 0m,
@@ -551,7 +551,7 @@ public static class BackOfficeInventoryEndpoints
             });
 
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { operationId, lineCount = lines.Lines.Count, adjustedCount = adjusted });
+            return Results.Ok(new { operationId, lineCount = lines.Lines!.Count, adjustedCount = adjusted });
         }).RequireAuthorization(Permissions.InventoryManage);
 
         return app;
