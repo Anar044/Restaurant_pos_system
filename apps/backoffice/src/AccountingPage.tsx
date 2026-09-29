@@ -54,8 +54,8 @@ export function AccountingPage({ token }: { token: string }) {
           <div className="eyebrow">ФИНАНСЫ</div>
           <h1>План счетов</h1>
           <p>
-            Единый журнал проводок: склад, поставщики, продажи, возвраты,
-            касса и ручные денежные операции.
+            План счетов Азербайджана для KOS / IFRS for SMEs. Склады, поставщики,
+            кассы и денежные счета ведутся как аналитика внутри официальных счетов.
           </p>
         </div>
         <div className="heading-actions">
@@ -166,6 +166,11 @@ export function AccountingPage({ token }: { token: string }) {
                           <td>
                             <span className="account-code">{line.accountCode}</span>
                             <strong>{line.accountName}</strong>
+                            <AnalyticsLine
+                              supplierName={line.supplierName}
+                              warehouseName={line.warehouseName}
+                              moneyAccountName={line.moneyAccountName}
+                            />
                           </td>
                           <td>{line.debit ? money(line.debit) : '—'}</td>
                           <td>{line.credit ? money(line.credit) : '—'}</td>
@@ -181,6 +186,25 @@ export function AccountingPage({ token }: { token: string }) {
       )}
     </section>
   );
+}
+
+function AnalyticsLine({
+  supplierName,
+  warehouseName,
+  moneyAccountName,
+}: {
+  supplierName: string | null;
+  warehouseName: string | null;
+  moneyAccountName: string | null;
+}) {
+  const parts = [
+    warehouseName ? `Склад: ${warehouseName}` : null,
+    supplierName ? `Поставщик: ${supplierName}` : null,
+    moneyAccountName ? `Деньги: ${moneyAccountName}` : null,
+  ].filter(Boolean);
+
+  if (parts.length === 0) return null;
+  return <small className="account-system">{parts.join(' · ')}</small>;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
