@@ -117,6 +117,10 @@ public static class BackOfficeGroupEndpoints
                     id = g.Id,
                     name = g.Name,
                     isActive = g.IsActive,
+                    defaultPrecheckPrinterId = g.DefaultPrecheckPrinterId,
+                    defaultPrecheckPrinterName = g.DefaultPrecheckPrinterId == null
+                        ? null
+                        : db.Printers.Where(p => p.Id == g.DefaultPrecheckPrinterId).Select(p => p.Name).FirstOrDefault(),
                     deviceIds = links.Where(x => x.GroupId == g.Id).Select(x => x.DeviceId).ToArray(),
                     mainCashRegisterId = links.Where(x => x.GroupId == g.Id && x.IsMainCashRegister)
                         .Select(x => (Guid?)x.DeviceId).FirstOrDefault()
@@ -160,6 +164,31 @@ public static class BackOfficeGroupEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { id = entity.Id });
         }).RequireAuthorization(Permissions.KitchenManage);
+
+        group.MapPut("/{id:guid}/printing", async (Guid id, SetGroupPrintingRequest request, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
+        {
+            if (!TryRestaurantId(user, out var restaurantId)) return Results.Unauthorized();
+
+            var entity = await db.RestaurantGroups.FirstOrDefaultAsync(
+                x => x.Id == id && x.RestaurantId == restaurantId, ct);
+            if (entity is null) return Results.NotFound();
+
+            if (request.DefaultPrecheckPrinterId.HasValue)
+            {
+                var validPrinter = await db.Printers.AnyAsync(x =>
+                    x.Id == request.DefaultPrecheckPrinterId.Value &&
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive &&
+                    x.IsConfigured &&
+                    x.HostDeviceId.HasValue, ct);
+                if (!validPrinter)
+                    return Results.BadRequest(new { message = "Принтер предчека по умолчанию не найден или не привязан к POS Agent." });
+            }
+
+            entity.DefaultPrecheckPrinterId = request.DefaultPrecheckPrinterId;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { id = entity.Id, defaultPrecheckPrinterId = entity.DefaultPrecheckPrinterId });
+        }).RequireAuthorization(Permissions.DevicesManage);
 
         group.MapPut("/{id:guid}/devices", async (Guid id, SetGroupDevicesRequest request, ClaimsPrincipal user, RestaurantDbContext db, CancellationToken ct) =>
         {
@@ -371,6 +400,7 @@ public static class BackOfficeGroupEndpoints
 public sealed record GroupNameRequest(string Name);
 public sealed record GroupUpdateNameRequest(string Name, bool IsActive);
 public sealed record SetGroupDevicesRequest(Guid[]? DeviceIds, Guid? MainCashRegisterId);
+public sealed record SetGroupPrintingRequest(Guid? DefaultPrecheckPrinterId);
 public sealed record UpsertDepartmentRequest(
     string Name,
     Guid? PreparationPlaceTypeId,
