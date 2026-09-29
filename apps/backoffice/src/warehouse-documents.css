@@ -726,3 +726,31 @@
     flex: 1 1 0;
   }
 }
+
+
+.receipt-document-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 310px;
+}
+
+.danger-text-button {
+  color: #b42318;
+}
+
+.danger-text-button:hover:not(:disabled) {
+  color: #912018;
+  background: #fef3f2;
+}
+
+.danger-text-button:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+@media (max-width: 1100px) {
+  .receipt-document-actions {
+    min-width: 0;
+    justify-content: flex-start;
+  }
+}
