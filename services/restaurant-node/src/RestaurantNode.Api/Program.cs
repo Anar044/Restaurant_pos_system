@@ -112,6 +112,7 @@ app.MapBackOfficeFinanceEndpoints();
 app.MapBackOfficeMoneyEndpoints();
 app.MapBackOfficeAdjustmentEndpoints();
 app.MapBackOfficeInventoryEndpoints();
+app.MapBackOfficeStockDocumentEndpoints();
 app.MapBackOfficeNomenclatureEndpoints();
 app.MapBackOfficeGroupEndpoints();
 app.MapHallEndpoints();
