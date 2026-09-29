@@ -5,12 +5,26 @@ namespace RestaurantNode.Api.Infrastructure;
 
 public static class AccountingLegacyBackfill
 {
+    private const string BackfillMarker = "ACCOUNTING_BACKFILL_V1";
+
     public static async Task EnsureAsync(
         RestaurantDbContext db,
         Guid restaurantId,
         CancellationToken ct)
     {
         await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+
+        var alreadyCompleted = await db.AuditEvents
+            .AsNoTracking()
+            .AnyAsync(x =>
+                x.RestaurantId == restaurantId &&
+                x.EventType == BackfillMarker,
+                ct);
+        if (alreadyCompleted)
+        {
+            await db.SaveChangesAsync(ct);
+            return;
+        }
 
         var receipts = await db.StockDocuments
             .AsNoTracking()
@@ -278,6 +292,16 @@ public static class AccountingLegacyBackfill
         }
 
         await BackfillStockOperationsAsync(db, restaurantId, warehouses, ct);
+
+        db.AuditEvents.Add(new AuditEvent
+        {
+            RestaurantId = restaurantId,
+            EventType = BackfillMarker,
+            EntityType = "Accounting",
+            EntityId = restaurantId,
+            PayloadJson = "{\"version\":1}"
+        });
+
         await db.SaveChangesAsync(ct);
     }
 
