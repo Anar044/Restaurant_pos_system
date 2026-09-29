@@ -48,33 +48,50 @@ public static class BackOfficeMoneyEndpoints
                 .ThenBy(x => x.Name)
                 .ToListAsync(ct);
 
-            var accountBalances = await db.MoneyTransactions
-                .AsNoTracking()
-                .Where(x => x.RestaurantId == restaurantId)
-                .GroupBy(x => x.AccountId)
-                .Select(g => new
-                {
-                    AccountId = g.Key,
-                    Balance = g.Sum(x => x.Direction == MoneyDirection.Income ? x.Amount : -x.Amount)
-                })
-                .ToDictionaryAsync(x => x.AccountId, x => x.Balance, ct);
+            await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
 
-            var periodTransactions = await db.MoneyTransactions
+            var accountBalances = await db.LedgerLines
                 .AsNoTracking()
                 .Where(x =>
                     x.RestaurantId == restaurantId &&
-                    x.OccurredAt >= periodFrom &&
-                    x.OccurredAt < periodTo)
-                .OrderByDescending(x => x.OccurredAt)
-                .ThenByDescending(x => x.CreatedAt)
+                    x.MoneyAccountId.HasValue)
+                .GroupBy(x => x.MoneyAccountId!.Value)
+                .Select(g => new
+                {
+                    AccountId = g.Key,
+                    Balance = g.Sum(x => x.Debit - x.Credit)
+                })
+                .ToDictionaryAsync(x => x.AccountId, x => x.Balance, ct);
+
+            var periodMovements = await (
+                from line in db.LedgerLines.AsNoTracking()
+                join entry in db.LedgerEntries.AsNoTracking() on line.EntryId equals entry.Id
+                where line.RestaurantId == restaurantId &&
+                      line.MoneyAccountId.HasValue &&
+                      entry.OccurredAt >= periodFrom &&
+                      entry.OccurredAt < periodTo
+                orderby entry.OccurredAt descending, entry.CreatedAt descending
+                select new
+                {
+                    Id = line.Id,
+                    AccountId = line.MoneyAccountId!.Value,
+                    Direction = line.Debit > 0m ? "INCOME" : "EXPENSE",
+                    Amount = line.Debit > 0m ? line.Debit : line.Credit,
+                    entry.Description,
+                    entry.ReferenceType,
+                    entry.ReferenceId,
+                    entry.OccurredAt,
+                    entry.CreatedAt,
+                    entry.EmployeeId
+                })
                 .Take(500)
                 .ToListAsync(ct);
 
             var accountLookup = accounts.ToDictionary(x => x.Id, x => x.Name);
-            var categoryLookup = categories.ToDictionary(x => x.Id, x => x.Name);
 
-            var employeeIds = periodTransactions
-                .Select(x => x.EmployeeId)
+            var employeeIds = periodMovements
+                .Where(x => x.EmployeeId.HasValue)
+                .Select(x => x.EmployeeId!.Value)
                 .Distinct()
                 .ToArray();
             var employeeLookup = await db.Employees
@@ -82,11 +99,11 @@ public static class BackOfficeMoneyEndpoints
                 .Where(x => x.RestaurantId == restaurantId && employeeIds.Contains(x.Id))
                 .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
 
-            var income = Money(periodTransactions
-                .Where(x => x.Direction == MoneyDirection.Income)
+            var income = Money(periodMovements
+                .Where(x => x.Direction == "INCOME")
                 .Sum(x => x.Amount));
-            var expense = Money(periodTransactions
-                .Where(x => x.Direction == MoneyDirection.Expense)
+            var expense = Money(periodMovements
+                .Where(x => x.Direction == "EXPENSE")
                 .Sum(x => x.Amount));
 
             return Results.Ok(new
@@ -116,18 +133,20 @@ public static class BackOfficeMoneyEndpoints
                     isActive = x.IsActive,
                     createdAt = x.CreatedAt
                 }),
-                transactions = periodTransactions.Select(x => new
+                transactions = periodMovements.Select(x => new
                 {
                     id = x.Id,
                     accountId = x.AccountId,
                     accountName = accountLookup.GetValueOrDefault(x.AccountId) ?? "Счёт",
-                    categoryId = x.CategoryId,
-                    categoryName = categoryLookup.GetValueOrDefault(x.CategoryId) ?? "Категория",
-                    employeeId = x.EmployeeId,
-                    employeeName = employeeLookup.GetValueOrDefault(x.EmployeeId) ?? "Сотрудник",
-                    direction = EnumText(x.Direction),
+                    categoryId = Guid.Empty,
+                    categoryName = x.Description,
+                    employeeId = x.EmployeeId ?? Guid.Empty,
+                    employeeName = x.EmployeeId.HasValue
+                        ? employeeLookup.GetValueOrDefault(x.EmployeeId.Value) ?? "Сотрудник"
+                        : "Система",
+                    direction = x.Direction,
                     amount = x.Amount,
-                    x.Note,
+                    note = x.Description,
                     x.ReferenceType,
                     x.ReferenceId,
                     x.OccurredAt,
