@@ -137,7 +137,12 @@ public static class AccountingLegacyBackfill
 
         var salesAccount = await AccountingLedger.EnsureSystemAccountAsync(
             db, restaurantId, AccountingLedger.SalesRevenueKey,
-            "4.10", "Выручка от продаж", LedgerAccountType.Income, ct);
+            "601-1", "Malların satışı", LedgerAccountType.Income, ct);
+
+        var salesReturnsAccount = await AccountingLedger.EnsureSystemAccountAsync(
+            db, restaurantId, AccountingLedger.SalesReturnsKey,
+            "602", "Satılmış malların qaytarılması və ucuzlaşdırılması",
+            LedgerAccountType.Income, ct);
 
         var payments = await db.Payments
             .AsNoTracking()
@@ -222,7 +227,7 @@ public static class AccountingLegacyBackfill
                 new[]
                 {
                     new AccountingLedger.LineDraft(
-                        salesAccount,
+                        salesReturnsAccount,
                         Debit: refund.Amount),
                     new AccountingLedger.LineDraft(
                         moneyLedger,
