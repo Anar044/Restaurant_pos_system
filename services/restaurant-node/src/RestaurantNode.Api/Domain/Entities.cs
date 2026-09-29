@@ -21,6 +21,9 @@ public sealed class Restaurant : Entity
     public required string Name { get; set; }
     public string CurrencyCode { get; set; } = "AZN";
     public string TimeZone { get; set; } = "Asia/Baku";
+    public string TaxRegime { get; set; } = "UNCONFIGURED";
+    public string VatPriceMode { get; set; } = "INCLUDED";
+    public bool IntegratedPosTaxReliefEnabled { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
