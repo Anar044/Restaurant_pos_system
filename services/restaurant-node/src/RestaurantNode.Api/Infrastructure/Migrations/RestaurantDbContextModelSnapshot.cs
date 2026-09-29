@@ -166,10 +166,12 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
             modelBuilder.Entity("RestaurantNode.Api.Domain.RestaurantGroup", b =>
                 {
                     b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+                    b.Property<Guid?>("DefaultPrecheckPrinterId").HasColumnType("uuid");
                     b.Property<bool>("IsActive").HasColumnType("boolean");
                     b.Property<string>("Name").IsRequired().HasColumnType("text");
                     b.Property<Guid>("RestaurantId").HasColumnType("uuid");
                     b.HasKey("Id");
+                    b.HasIndex("DefaultPrecheckPrinterId");
                     b.HasIndex("RestaurantId", "Name").IsUnique();
                     b.ToTable("restaurant_groups", (string)null);
                 });
@@ -347,6 +349,16 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("halls", (string)null);
+                });
+
+            modelBuilder.Entity("RestaurantNode.Api.Domain.RestaurantGroup", b =>
+                {
+                    b.HasOne("RestaurantNode.Api.Domain.Printer", "DefaultPrecheckPrinter")
+                        .WithMany()
+                        .HasForeignKey("DefaultPrecheckPrinterId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("DefaultPrecheckPrinter");
                 });
 
             modelBuilder.Entity("RestaurantNode.Api.Domain.RestaurantGroupDevice", b =>
