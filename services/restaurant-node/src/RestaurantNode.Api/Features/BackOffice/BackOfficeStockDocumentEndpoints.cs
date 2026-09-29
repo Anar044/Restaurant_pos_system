@@ -548,7 +548,8 @@ public static class BackOfficeStockDocumentEndpoints
 
                     ledgerLines.Add(new AccountingLedger.LineDraft(
                         vatRecoverableAccount,
-                        Debit: recoverableVat));
+                        Debit: recoverableVat,
+                        SupplierId: supplier.Id));
                 }
 
                 ledgerLines.Add(new AccountingLedger.LineDraft(
