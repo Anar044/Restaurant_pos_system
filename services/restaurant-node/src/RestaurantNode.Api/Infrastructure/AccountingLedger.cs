@@ -152,10 +152,18 @@ public static class AccountingLedger
             ct);
     }
 
+    public static Task<MoneyAccount> EnsurePaymentMoneyAccountAsync(
+        RestaurantDbContext db,
+        Guid restaurantId,
+        PaymentMethod method,
+        CancellationToken ct) =>
+        EnsurePaymentMoneyAccountAsync(db, restaurantId, method, null, ct);
+
     public static async Task<MoneyAccount> EnsurePaymentMoneyAccountAsync(
         RestaurantDbContext db,
         Guid restaurantId,
         PaymentMethod method,
+        Guid? deviceId,
         CancellationToken ct)
     {
         var type = method switch
@@ -165,45 +173,90 @@ public static class AccountingLedger
             _ => MoneyAccountType.Other
         };
 
-        var account = db.MoneyAccounts.Local
-            .Where(x => x.RestaurantId == restaurantId && x.IsActive && x.Type == type)
-            .OrderBy(x => x.CreatedAt)
-            .FirstOrDefault()
-            ?? await db.MoneyAccounts
-                .Where(x => x.RestaurantId == restaurantId && x.IsActive && x.Type == type)
-                .OrderBy(x => x.CreatedAt)
-                .FirstOrDefaultAsync(ct);
-
-        if (account is null)
+        string? deviceName = null;
+        if (deviceId.HasValue)
         {
-            account = db.MoneyAccounts.Local
-                .Where(x => x.RestaurantId == restaurantId && x.Type == type)
-                .OrderBy(x => x.CreatedAt)
+            deviceName = db.Devices.Local
+                .Where(x => x.RestaurantId == restaurantId && x.Id == deviceId.Value)
+                .Select(x => x.Name)
                 .FirstOrDefault()
-                ?? await db.MoneyAccounts
-                    .Where(x => x.RestaurantId == restaurantId && x.Type == type)
-                    .OrderBy(x => x.CreatedAt)
+                ?? await db.Devices
+                    .AsNoTracking()
+                    .Where(x => x.RestaurantId == restaurantId && x.Id == deviceId.Value)
+                    .Select(x => x.Name)
                     .FirstOrDefaultAsync(ct);
+        }
 
-            if (account is not null)
-            {
-                account.IsActive = true;
-            }
-            else
+        var baseName = method switch
+        {
+            PaymentMethod.Cash => "Касса",
+            PaymentMethod.Card => "Эквайринг",
+            _ => "Прочие оплаты"
+        };
+        var desiredName = deviceName is null ? baseName : $"{baseName}: {deviceName}";
+
+        MoneyAccount? account;
+        if (deviceId.HasValue && deviceName is not null)
+        {
+            account = db.MoneyAccounts.Local.FirstOrDefault(x =>
+                x.RestaurantId == restaurantId && x.Name == desiredName)
+                ?? await db.MoneyAccounts.FirstOrDefaultAsync(x =>
+                    x.RestaurantId == restaurantId && x.Name == desiredName, ct);
+
+            if (account is null)
             {
                 account = new MoneyAccount
                 {
                     RestaurantId = restaurantId,
-                    Name = method switch
-                    {
-                        PaymentMethod.Cash => "Торговая касса",
-                        PaymentMethod.Card => "Эквайринг",
-                        _ => "Прочие оплаты"
-                    },
+                    Name = desiredName,
                     Type = type,
                     IsActive = true
                 };
                 db.MoneyAccounts.Add(account);
+            }
+            else
+            {
+                account.Type = type;
+                account.IsActive = true;
+            }
+        }
+        else
+        {
+            account = db.MoneyAccounts.Local
+                .Where(x => x.RestaurantId == restaurantId && x.IsActive && x.Type == type)
+                .OrderBy(x => x.CreatedAt)
+                .FirstOrDefault()
+                ?? await db.MoneyAccounts
+                    .Where(x => x.RestaurantId == restaurantId && x.IsActive && x.Type == type)
+                    .OrderBy(x => x.CreatedAt)
+                    .FirstOrDefaultAsync(ct);
+
+            if (account is null)
+            {
+                account = db.MoneyAccounts.Local
+                    .Where(x => x.RestaurantId == restaurantId && x.Type == type)
+                    .OrderBy(x => x.CreatedAt)
+                    .FirstOrDefault()
+                    ?? await db.MoneyAccounts
+                        .Where(x => x.RestaurantId == restaurantId && x.Type == type)
+                        .OrderBy(x => x.CreatedAt)
+                        .FirstOrDefaultAsync(ct);
+
+                if (account is not null)
+                {
+                    account.IsActive = true;
+                }
+                else
+                {
+                    account = new MoneyAccount
+                    {
+                        RestaurantId = restaurantId,
+                        Name = desiredName,
+                        Type = type,
+                        IsActive = true
+                    };
+                    db.MoneyAccounts.Add(account);
+                }
             }
         }
 
