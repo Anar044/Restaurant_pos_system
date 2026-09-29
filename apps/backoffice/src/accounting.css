@@ -24,16 +24,8 @@
   margin-bottom: 18px;
 }
 
-.accounting-tabs {
-  margin-bottom: 14px;
-}
-
-.accounting-panel,
-.accounting-journal {
-  background: var(--surface, #fff);
-  border: 1px solid var(--border, #e5e7eb);
-  border-radius: 16px;
-  overflow: hidden;
+.accounting-stats-five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .accounting-table-wrap {
@@ -84,33 +76,252 @@
   display: block;
   margin-top: 3px;
   color: var(--muted, #6b7280);
+  font-size: 12px;
 }
 
-.journal-entry + .journal-entry {
-  border-top: 1px solid var(--border, #e5e7eb);
+.chart-sections {
+  display: grid;
+  gap: 12px;
 }
 
-.journal-entry-head {
+.chart-section {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.chart-section-head {
+  width: 100%;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 15px 16px;
+  gap: 20px;
+  padding: 15px 18px;
+  border: 0;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chart-section-head:hover {
   background: rgba(15, 23, 42, 0.025);
 }
 
-.journal-entry-head > div {
-  display: grid;
-  gap: 4px;
+.chart-section-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 260px;
 }
 
-.journal-entry-head small,
-.journal-entry-head > span {
+.chart-section-title > div {
+  display: grid;
+  gap: 3px;
+}
+
+.chart-section-title small,
+.chart-section-summary span {
   color: var(--muted, #6b7280);
   font-size: 12px;
 }
 
-.compact-table {
-  min-width: 620px;
+.chart-section-number {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(56, 91, 120, 0.09);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.chart-section-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 18px;
+  white-space: nowrap;
+}
+
+.chart-section-summary b {
+  width: 22px;
+  text-align: center;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.chart-section-body {
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+
+.chart-section-empty {
+  padding: 18px;
+  color: var(--muted, #6b7280);
+  font-size: 13px;
+}
+
+.chart-account-table {
+  min-width: 760px;
+}
+
+.account-drill-row {
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.account-drill-row:hover {
+  background: rgba(56, 91, 120, 0.045);
+}
+
+.account-open-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary, #315b52);
+}
+
+.account-detail {
+  display: grid;
+  gap: 18px;
+}
+
+.account-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 16px;
+}
+
+.account-detail-title > div {
+  display: grid;
+  gap: 3px;
+}
+
+.account-detail-title h2 {
+  margin: 0;
+}
+
+.account-detail-title small {
+  color: var(--muted, #6b7280);
+}
+
+.account-detail-code {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: rgba(56, 91, 120, 0.09);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.account-detail-stats {
+  margin-bottom: 0;
+}
+
+.account-movements-panel {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.account-movements-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.account-movements-head > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.account-movements-head span,
+.account-movement-legend {
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+}
+
+.account-movement-legend {
+  display: flex;
+  gap: 14px;
+}
+
+.movement-table {
+  min-width: 1180px;
+}
+
+.movement-table td {
+  vertical-align: top;
+}
+
+.movement-date {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.movement-analytics {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted, #6b7280);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.correspondents {
+  display: grid;
+  gap: 8px;
+  min-width: 320px;
+}
+
+.correspondent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.correspondent-row > div {
+  display: grid;
+  gap: 2px;
+}
+
+.correspondent-row small {
+  color: var(--muted, #6b7280);
+  font-size: 11px;
+  white-space: normal;
+}
+
+.amount-cell {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.debit-cell {
+  font-weight: 600;
+}
+
+.credit-cell {
+  font-weight: 600;
+}
+
+@media (max-width: 1100px) {
+  .accounting-stats-five {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .chart-section-summary span:nth-child(2),
+  .chart-section-summary span:nth-child(3) {
+    display: none;
+  }
 }
 
 @media (max-width: 760px) {
@@ -121,5 +332,29 @@
 
   .accounting-filter-bar label {
     min-width: 0;
+  }
+
+  .accounting-stats-five {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-section-head,
+  .account-movements-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .chart-section-summary {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .chart-section-title {
+    min-width: 0;
+  }
+
+  .account-movement-legend {
+    display: none;
   }
 }
