@@ -2121,6 +2121,11 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Navigation("Restaurant");
                 });
 
+            modelBuilder.Entity("RestaurantNode.Api.Domain.StockDocument", b =>
+                {
+                    b.Navigation("Lines");
+                });
+
             modelBuilder.Entity("RestaurantNode.Api.Domain.Order", b =>
                 {
                     b.Navigation("Adjustments");
