@@ -164,6 +164,7 @@ export function AccountingPage({ token }: { token: string }) {
 
       {selectedAccount ? (
         <AccountDetails
+          key={selectedAccount.id}
           account={selectedAccount}
           details={accountDetails}
           loading={detailsLoading}
@@ -271,6 +272,8 @@ function AccountDetails({
   details: LedgerAccountDetails | null;
   loading: boolean;
 }) {
+  const [analyticFilter, setAnalyticFilter] = useState<string | null>(null);
+
   if (loading && !details) {
     return <div className="empty-state">Загружаем движения по счёту…</div>;
   }
@@ -278,6 +281,12 @@ function AccountDetails({
   if (!details) {
     return <div className="empty-state">Движения по счёту не загружены.</div>;
   }
+
+  const visibleMovements = analyticFilter
+    ? details.movements.filter((movement) =>
+        movement.analyticsKind && movement.analyticsId &&
+        `${movement.analyticsKind}:${movement.analyticsId}` === analyticFilter)
+    : details.movements;
 
   return (
     <div className="account-detail">
@@ -296,11 +305,71 @@ function AccountDetails({
         <Stat label="Остаток на конец" value={money(details.closingBalance)} />
       </div>
 
+      {details.analytics.length > 0 && (
+        <div className="account-analytics-panel">
+          <div className="account-movements-head">
+            <div>
+              <strong>Аналитика счёта</strong>
+              <span>Склад, касса или поставщик внутри синтетического счёта.</span>
+            </div>
+            {analyticFilter && (
+              <button
+                type="button"
+                className="secondary-button compact"
+                onClick={() => setAnalyticFilter(null)}
+              >
+                Все движения
+              </button>
+            )}
+          </div>
+          <div className="accounting-table-wrap">
+            <table className="accounting-table analytics-table">
+              <thead>
+                <tr>
+                  <th>Аналитика</th>
+                  <th>На начало</th>
+                  <th>Оборот Дт</th>
+                  <th>Оборот Кт</th>
+                  <th>На конец</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {details.analytics.map((row) => {
+                  const key = `${row.kind}:${row.id}`;
+                  const active = analyticFilter === key;
+                  return (
+                    <tr
+                      key={key}
+                      className={active ? 'analytic-row active' : 'analytic-row'}
+                      onClick={() => setAnalyticFilter(active ? null : key)}
+                    >
+                      <td>
+                        <strong>{row.name}</strong>
+                        <small className="account-system">{analyticKindLabel(row.kind)}</small>
+                      </td>
+                      <td>{money(row.openingBalance)}</td>
+                      <td>{money(row.periodDebit)}</td>
+                      <td>{money(row.periodCredit)}</td>
+                      <td><strong>{money(row.closingBalance)}</strong></td>
+                      <td><span className="account-open-link">{active ? 'Показаны движения' : 'Движения →'}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="account-movements-panel">
         <div className="account-movements-head">
           <div>
             <strong>Движения по счёту</strong>
-            <span>{details.movements.length} операций за выбранный период</span>
+            <span>
+              {visibleMovements.length} операций
+              {analyticFilter ? ' по выбранной аналитике' : ' за выбранный период'}
+            </span>
           </div>
           <div className="account-movement-legend">
             <span>Дт — дебет</span>
@@ -308,8 +377,8 @@ function AccountDetails({
           </div>
         </div>
 
-        {details.movements.length === 0 ? (
-          <div className="chart-section-empty">За выбранный период движений нет.</div>
+        {visibleMovements.length === 0 ? (
+          <div className="chart-section-empty">По выбранным условиям движений нет.</div>
         ) : (
           <div className="accounting-table-wrap">
             <table className="accounting-table movement-table">
@@ -324,7 +393,7 @@ function AccountDetails({
                 </tr>
               </thead>
               <tbody>
-                {details.movements.map((movement) => (
+                {visibleMovements.map((movement) => (
                   <tr key={movement.id}>
                     <td>
                       <span className="movement-date">{dateTime(movement.occurredAt)}</span>
@@ -377,6 +446,14 @@ function AccountDetails({
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <div className="stat-card"><span>{label}</span><div><strong>{value}</strong></div></div>;
+}
+
+function analyticKindLabel(value: string) {
+  return ({
+    WAREHOUSE: 'Склад',
+    SUPPLIER: 'Поставщик',
+    MONEY_ACCOUNT: 'Денежный счёт / касса',
+  } as Record<string, string>)[value] ?? value;
 }
 
 function typeLabel(value: string) {
