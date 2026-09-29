@@ -70,6 +70,59 @@ public static class BackOfficeAccountingEndpoints
 
             var accountLookup = accounts.ToDictionary(x => x.Id);
 
+            var analyticTotals = await (
+                from line in db.LedgerLines.AsNoTracking()
+                join entry in db.LedgerEntries.AsNoTracking() on line.EntryId equals entry.Id
+                where line.RestaurantId == restaurantId &&
+                      line.AccountId == accountId &&
+                      entry.OccurredAt < periodTo &&
+                      (line.SupplierId.HasValue ||
+                       line.WarehouseId.HasValue ||
+                       line.MoneyAccountId.HasValue)
+                group line by new
+                {
+                    line.SupplierId,
+                    line.WarehouseId,
+                    line.MoneyAccountId
+                }
+                into g
+                select new
+                {
+                    g.Key.SupplierId,
+                    g.Key.WarehouseId,
+                    g.Key.MoneyAccountId,
+                    Debit = g.Sum(x => x.Debit),
+                    Credit = g.Sum(x => x.Credit)
+                })
+                .ToListAsync(ct);
+
+            var analyticPeriodTotals = await (
+                from line in db.LedgerLines.AsNoTracking()
+                join entry in db.LedgerEntries.AsNoTracking() on line.EntryId equals entry.Id
+                where line.RestaurantId == restaurantId &&
+                      line.AccountId == accountId &&
+                      entry.OccurredAt >= periodFrom &&
+                      entry.OccurredAt < periodTo &&
+                      (line.SupplierId.HasValue ||
+                       line.WarehouseId.HasValue ||
+                       line.MoneyAccountId.HasValue)
+                group line by new
+                {
+                    line.SupplierId,
+                    line.WarehouseId,
+                    line.MoneyAccountId
+                }
+                into g
+                select new
+                {
+                    g.Key.SupplierId,
+                    g.Key.WarehouseId,
+                    g.Key.MoneyAccountId,
+                    Debit = g.Sum(x => x.Debit),
+                    Credit = g.Sum(x => x.Credit)
+                })
+                .ToListAsync(ct);
+
             var entries = await db.LedgerEntries
                 .AsNoTracking()
                 .Include(x => x.Lines)
@@ -288,18 +341,21 @@ public static class BackOfficeAccountingEndpoints
                 .SelectMany(x => x.Lines)
                 .Where(x => x.SupplierId.HasValue)
                 .Select(x => x.SupplierId!.Value)
+                .Concat(analyticTotals.Where(x => x.SupplierId.HasValue).Select(x => x.SupplierId!.Value))
                 .Distinct()
                 .ToArray();
             var warehouseIds = entries
                 .SelectMany(x => x.Lines)
                 .Where(x => x.WarehouseId.HasValue)
                 .Select(x => x.WarehouseId!.Value)
+                .Concat(analyticTotals.Where(x => x.WarehouseId.HasValue).Select(x => x.WarehouseId!.Value))
                 .Distinct()
                 .ToArray();
             var moneyAccountIds = entries
                 .SelectMany(x => x.Lines)
                 .Where(x => x.MoneyAccountId.HasValue)
                 .Select(x => x.MoneyAccountId!.Value)
+                .Concat(analyticTotals.Where(x => x.MoneyAccountId.HasValue).Select(x => x.MoneyAccountId!.Value))
                 .Distinct()
                 .ToArray();
 
@@ -398,6 +454,59 @@ public static class BackOfficeAccountingEndpoints
                 }
             }
 
+            var analytics = analyticTotals
+                .Select(total =>
+                {
+                    var period = analyticPeriodTotals.FirstOrDefault(x =>
+                        x.SupplierId == total.SupplierId &&
+                        x.WarehouseId == total.WarehouseId &&
+                        x.MoneyAccountId == total.MoneyAccountId);
+
+                    var periodDebitValue = period?.Debit ?? 0m;
+                    var periodCreditValue = period?.Credit ?? 0m;
+                    var openingDebitValue = total.Debit - periodDebitValue;
+                    var openingCreditValue = total.Credit - periodCreditValue;
+
+                    string kind;
+                    Guid id;
+                    string name;
+
+                    if (total.WarehouseId.HasValue)
+                    {
+                        kind = "WAREHOUSE";
+                        id = total.WarehouseId.Value;
+                        name = warehouseLookup.GetValueOrDefault(id) ?? "Склад";
+                    }
+                    else if (total.SupplierId.HasValue)
+                    {
+                        kind = "SUPPLIER";
+                        id = total.SupplierId.Value;
+                        name = supplierLookup.GetValueOrDefault(id) ?? "Поставщик";
+                    }
+                    else
+                    {
+                        kind = "MONEY_ACCOUNT";
+                        id = total.MoneyAccountId!.Value;
+                        name = moneyAccountLookup.GetValueOrDefault(id) ?? "Денежный счёт";
+                    }
+
+                    return new
+                    {
+                        kind,
+                        id,
+                        name,
+                        openingBalance = AccountingLedger.NaturalBalance(
+                            account.Type, openingDebitValue, openingCreditValue),
+                        periodDebit = Money(periodDebitValue),
+                        periodCredit = Money(periodCreditValue),
+                        closingBalance = AccountingLedger.NaturalBalance(
+                            account.Type, total.Debit, total.Credit)
+                    };
+                })
+                .OrderBy(x => x.kind)
+                .ThenBy(x => x.name)
+                .ToArray();
+
             return Results.Ok(new
             {
                 period = new { from = periodFrom, to = periodTo },
@@ -415,6 +524,7 @@ public static class BackOfficeAccountingEndpoints
                     account.Type,
                     openingDebit + periodDebit,
                     openingCredit + periodCredit)),
+                analytics,
                 movements = movements.AsEnumerable().Reverse()
             });
         });
