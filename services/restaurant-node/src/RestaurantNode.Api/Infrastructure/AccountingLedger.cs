@@ -9,14 +9,21 @@ public static class AccountingLedger
     // Restaurant-specific dimensions (warehouse, supplier, cash register, bank account)
     // are stored on LedgerLine and do not create separate synthetic accounts.
     public const string InventoryRawMaterialsKey = "AZ_201_1_RAW_MATERIALS";
+    public const string InventoryMaterialsKey = "AZ_201_2_MATERIALS";
+    public const string InventoryPackagingKey = "AZ_201_3_PACKAGING";
+    public const string GoodsInventoryKey = "AZ_205_GOODS";
     public const string CashKey = "AZ_221_CASH";
     public const string TransitKey = "AZ_222_TRANSIT";
     public const string BankKey = "AZ_223_BANK";
     public const string CashEquivalentKey = "AZ_225_CASH_EQUIVALENTS";
+    public const string VatRecoverableKey = "AZ_241_1_VAT_RECOVERABLE";
 
     public const string SupplierPayableKey = "SUPPLIER_PAYABLE";
     public const string SupplierAdvanceKey = "SUPPLIER_ADVANCE";
     public const string SalesRevenueKey = "SALES_REVENUE";
+    public const string SalesReturnsKey = "AZ_602_SALES_RETURNS";
+    public const string DiscountsKey = "AZ_603_DISCOUNTS";
+    public const string TaxLiabilityKey = "AZ_521_TAX_LIABILITY";
     public const string CostOfGoodsSoldKey = "COGS";
 
     public const string OtherOperatingIncomeKey = "AZ_611_10_OTHER_OPERATING_INCOME";
@@ -47,6 +54,18 @@ public static class AccountingLedger
             "201-1", "Xammal", LedgerAccountType.Asset, ct);
 
         await EnsureSystemAccountAsync(
+            db, restaurantId, InventoryMaterialsKey,
+            "201-2", "Materiallar", LedgerAccountType.Asset, ct);
+
+        await EnsureSystemAccountAsync(
+            db, restaurantId, InventoryPackagingKey,
+            "201-3", "Qablaşdırma materialları", LedgerAccountType.Asset, ct);
+
+        await EnsureSystemAccountAsync(
+            db, restaurantId, GoodsInventoryKey,
+            "205", "Mallar", LedgerAccountType.Asset, ct);
+
+        await EnsureSystemAccountAsync(
             db, restaurantId, CashKey,
             "221", "Kassa", LedgerAccountType.Asset, ct);
 
@@ -63,8 +82,16 @@ public static class AccountingLedger
             "225", "Pul vəsaitlərinin ekvivalentləri", LedgerAccountType.Asset, ct);
 
         await EnsureSystemAccountAsync(
+            db, restaurantId, VatRecoverableKey,
+            "241-1", "Əvəzləşdirilən əlavə dəyər vergisi", LedgerAccountType.Asset, ct);
+
+        await EnsureSystemAccountAsync(
             db, restaurantId, SupplierAdvanceKey,
             "243", "Verilmiş qısamüddətli avanslar", LedgerAccountType.Asset, ct);
+
+        await EnsureSystemAccountAsync(
+            db, restaurantId, TaxLiabilityKey,
+            "521", "Vergi öhdəlikləri", LedgerAccountType.Liability, ct);
 
         await EnsureSystemAccountAsync(
             db, restaurantId, SupplierPayableKey,
@@ -74,6 +101,15 @@ public static class AccountingLedger
         await EnsureSystemAccountAsync(
             db, restaurantId, SalesRevenueKey,
             "601-1", "Malların satışı", LedgerAccountType.Income, ct);
+
+        await EnsureSystemAccountAsync(
+            db, restaurantId, SalesReturnsKey,
+            "602", "Satılmış malların qaytarılması və ucuzlaşdırılması",
+            LedgerAccountType.Income, ct);
+
+        await EnsureSystemAccountAsync(
+            db, restaurantId, DiscountsKey,
+            "603", "Verilmiş güzəştlər", LedgerAccountType.Income, ct);
 
         await EnsureSystemAccountAsync(
             db, restaurantId, OtherOperatingIncomeKey,
@@ -414,6 +450,12 @@ public static class AccountingLedger
                 LedgerAccountType.Expense),
             InventoryRawMaterialsKey => new(
                 InventoryRawMaterialsKey, "201-1", "Xammal", LedgerAccountType.Asset),
+            InventoryMaterialsKey => new(
+                InventoryMaterialsKey, "201-2", "Materiallar", LedgerAccountType.Asset),
+            InventoryPackagingKey => new(
+                InventoryPackagingKey, "201-3", "Qablaşdırma materialları", LedgerAccountType.Asset),
+            GoodsInventoryKey => new(
+                GoodsInventoryKey, "205", "Mallar", LedgerAccountType.Asset),
             CashKey => new(
                 CashKey, "221", "Kassa", LedgerAccountType.Asset),
             TransitKey => new(
@@ -422,6 +464,14 @@ public static class AccountingLedger
                 BankKey, "223", "Bank hesablaşma hesabları", LedgerAccountType.Asset),
             CashEquivalentKey => new(
                 CashEquivalentKey, "225", "Pul vəsaitlərinin ekvivalentləri", LedgerAccountType.Asset),
+            VatRecoverableKey => new(
+                VatRecoverableKey, "241-1", "Əvəzləşdirilən əlavə dəyər vergisi", LedgerAccountType.Asset),
+            TaxLiabilityKey => new(
+                TaxLiabilityKey, "521", "Vergi öhdəlikləri", LedgerAccountType.Liability),
+            SalesReturnsKey => new(
+                SalesReturnsKey, "602", "Satılmış malların qaytarılması və ucuzlaşdırılması", LedgerAccountType.Income),
+            DiscountsKey => new(
+                DiscountsKey, "603", "Verilmiş güzəştlər", LedgerAccountType.Income),
             OtherOperatingIncomeKey => new(
                 OtherOperatingIncomeKey, "611-10", "Digər əməliyyat gəlirləri", LedgerAccountType.Income),
             OtherOperatingExpenseKey => new(
