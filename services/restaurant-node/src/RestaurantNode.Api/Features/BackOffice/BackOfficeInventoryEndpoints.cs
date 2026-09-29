@@ -404,7 +404,7 @@ public static class BackOfficeInventoryEndpoints
             var now = DateTimeOffset.UtcNow;
             var note = NormalizeOptional(request.Note, 500);
 
-            foreach (var line in lines.Lines)
+            foreach (var line in lines.Lines!)
             {
                 var balance = sourceBalances.GetValueOrDefault(line.ProductId);
                 var averageCost = balance is null || balance.Quantity == 0m
