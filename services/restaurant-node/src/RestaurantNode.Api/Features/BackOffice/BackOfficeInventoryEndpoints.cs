@@ -86,14 +86,16 @@ public static class BackOfficeInventoryEndpoints
                         balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))?.Quantity ?? 0m),
                     totalStockValue = warehouses.Sum(warehouse =>
                         balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))?.StockValue ?? 0m),
-                    averageCost = (() =>
-                    {
-                        var quantity = warehouses.Sum(warehouse =>
-                            balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))?.Quantity ?? 0m);
-                        var value = warehouses.Sum(warehouse =>
-                            balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))?.StockValue ?? 0m);
-                        return quantity == 0m ? 0m : decimal.Round(value / quantity, 4, MidpointRounding.AwayFromZero);
-                    })(),
+                    averageCost = warehouses.Sum(warehouse =>
+                        balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))?.Quantity ?? 0m) == 0m
+                        ? 0m
+                        : decimal.Round(
+                            warehouses.Sum(warehouse =>
+                                balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))?.StockValue ?? 0m) /
+                            warehouses.Sum(warehouse =>
+                                balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))?.Quantity ?? 0m),
+                            4,
+                            MidpointRounding.AwayFromZero),
                     warehouseBalances = warehouses.Select(warehouse =>
                     {
                         var balance = balanceLookup.GetValueOrDefault((warehouse.Id, item.Id));
