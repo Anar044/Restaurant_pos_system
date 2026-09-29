@@ -270,16 +270,22 @@ function NomenclatureEditor({
         inventoryAccountCode: trackStock ? inventoryAccountCode : null,
         taxStatus,
         ownAgricultureSameTaxpayer:
-          taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' && agricultureDetailsEnabled
-            ? ownAgricultureSameTaxpayer
+          taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' &&
+          agricultureDetailsEnabled &&
+          ownAgricultureSameTaxpayer
+            ? true
             : null,
         ownAgricultureCriteriaMet:
-          taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' && agricultureDetailsEnabled
-            ? ownAgricultureCriteriaMet
+          taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' &&
+          agricultureDetailsEnabled &&
+          ownAgricultureCriteriaMet
+            ? true
             : null,
         ownAgricultureUnprocessed:
-          taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' && agricultureDetailsEnabled
-            ? ownAgricultureUnprocessed
+          taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' &&
+          agricultureDetailsEnabled &&
+          ownAgricultureUnprocessed
+            ? true
             : null,
         productionUnit:
           taxStatus === 'VAT_EXEMPT_OWN_AGRICULTURE' && agricultureDetailsEnabled
