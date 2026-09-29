@@ -253,10 +253,12 @@ public static class BackOfficeInventoryEndpoints
             var products = await db.Products
                 .AsNoTracking()
                 .Where(x => x.RestaurantId == restaurantId && x.IsActive && x.TrackStock && productIds.Contains(x.Id))
-                .Select(x => new { x.Id, x.Name, x.Unit })
+                .Select(x => new { x.Id, x.Name, x.Unit, x.InventoryAccountCode })
                 .ToDictionaryAsync(x => x.Id, ct);
             if (products.Count != productIds.Length)
                 return Results.BadRequest(new { message = "Одна или несколько позиций не найдены или складской учёт у них отключён." });
+            if (products.Values.Any(x => !AccountingLedger.IsSupportedInventoryAccountCode(x.InventoryAccountCode)))
+                return Results.BadRequest(new { message = "У одной или нескольких позиций не настроен корректный счёт складского учёта." });
 
             var balances = await db.StockMovements
                 .AsNoTracking()
@@ -291,6 +293,7 @@ public static class BackOfficeInventoryEndpoints
             var now = DateTimeOffset.UtcNow;
             var note = NormalizeOptional(request.Note, 500);
             var totalCost = 0m;
+            var costByAccountCode = new Dictionary<string, decimal>();
 
             foreach (var line in lines.Lines!)
             {
@@ -300,6 +303,9 @@ public static class BackOfficeInventoryEndpoints
                     : decimal.Round(balance.StockValue / balance.Quantity, 4, MidpointRounding.AwayFromZero);
                 var cost = decimal.Round(line.Quantity * averageCost, 4, MidpointRounding.AwayFromZero);
                 totalCost += cost;
+                var inventoryAccountCode = products[line.ProductId].InventoryAccountCode!;
+                costByAccountCode[inventoryAccountCode] =
+                    costByAccountCode.GetValueOrDefault(inventoryAccountCode) + cost;
 
                 db.StockMovements.Add(new StockMovement
                 {
@@ -323,11 +329,24 @@ public static class BackOfficeInventoryEndpoints
             if (totalCost > 0m)
             {
                 await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
-                var stockAccount = await AccountingLedger.EnsureWarehouseAccountAsync(
-                    db, restaurantId, request.WarehouseId, ct);
                 var expenseAccount = await AccountingLedger.EnsureSystemAccountAsync(
                     db, restaurantId, AccountingLedger.WriteOffExpenseKey,
-                    "5.20", "Списания и порча", LedgerAccountType.Expense, ct);
+                    "731-10", "Digər əməliyyat xərcləri", LedgerAccountType.Expense, ct);
+
+                var ledgerLines = new List<AccountingLedger.LineDraft>
+                {
+                    new(expenseAccount, Debit: totalCost)
+                };
+
+                foreach (var row in costByAccountCode.Where(x => x.Value > 0m))
+                {
+                    var stockAccount = await AccountingLedger.EnsureInventoryAccountAsync(
+                        db, restaurantId, row.Key, ct);
+                    ledgerLines.Add(new AccountingLedger.LineDraft(
+                        stockAccount,
+                        Credit: AccountingLedger.Money(row.Value),
+                        WarehouseId: request.WarehouseId));
+                }
 
                 await AccountingLedger.PostAsync(
                     db,
@@ -337,14 +356,7 @@ public static class BackOfficeInventoryEndpoints
                     now,
                     "Списание со склада",
                     employeeId,
-                    new[]
-                    {
-                        new AccountingLedger.LineDraft(expenseAccount, Debit: totalCost),
-                        new AccountingLedger.LineDraft(
-                            stockAccount,
-                            Credit: totalCost,
-                            WarehouseId: request.WarehouseId)
-                    },
+                    ledgerLines,
                     ct);
             }
 
@@ -391,10 +403,12 @@ public static class BackOfficeInventoryEndpoints
             var products = await db.Products
                 .AsNoTracking()
                 .Where(x => x.RestaurantId == restaurantId && x.IsActive && x.TrackStock && productIds.Contains(x.Id))
-                .Select(x => new { x.Id, x.Name, x.Unit })
+                .Select(x => new { x.Id, x.Name, x.Unit, x.InventoryAccountCode })
                 .ToDictionaryAsync(x => x.Id, ct);
             if (products.Count != productIds.Length)
                 return Results.BadRequest(new { message = "Одна или несколько позиций не найдены или складской учёт у них отключён." });
+            if (products.Values.Any(x => !AccountingLedger.IsSupportedInventoryAccountCode(x.InventoryAccountCode)))
+                return Results.BadRequest(new { message = "У одной или нескольких позиций не настроен корректный счёт складского учёта." });
 
             var sourceBalances = await db.StockMovements
                 .AsNoTracking()
@@ -429,6 +443,7 @@ public static class BackOfficeInventoryEndpoints
             var now = DateTimeOffset.UtcNow;
             var note = NormalizeOptional(request.Note, 500);
             var transferTotal = 0m;
+            var transferByAccountCode = new Dictionary<string, decimal>();
 
             foreach (var line in lines.Lines!)
             {
@@ -438,6 +453,9 @@ public static class BackOfficeInventoryEndpoints
                     : decimal.Round(balance.StockValue / balance.Quantity, 4, MidpointRounding.AwayFromZero);
                 var transferCost = decimal.Round(line.Quantity * averageCost, 4, MidpointRounding.AwayFromZero);
                 transferTotal += transferCost;
+                var inventoryAccountCode = products[line.ProductId].InventoryAccountCode!;
+                transferByAccountCode[inventoryAccountCode] =
+                    transferByAccountCode.GetValueOrDefault(inventoryAccountCode) + transferCost;
 
                 db.StockMovements.AddRange(
                     new StockMovement
@@ -478,10 +496,21 @@ public static class BackOfficeInventoryEndpoints
             if (transferTotal > 0m)
             {
                 await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
-                var fromAccount = await AccountingLedger.EnsureWarehouseAccountAsync(
-                    db, restaurantId, request.FromWarehouseId, ct);
-                var toAccount = await AccountingLedger.EnsureWarehouseAccountAsync(
-                    db, restaurantId, request.ToWarehouseId, ct);
+                var ledgerLines = new List<AccountingLedger.LineDraft>();
+                foreach (var row in transferByAccountCode.Where(x => x.Value > 0m))
+                {
+                    var stockAccount = await AccountingLedger.EnsureInventoryAccountAsync(
+                        db, restaurantId, row.Key, ct);
+                    var amount = AccountingLedger.Money(row.Value);
+                    ledgerLines.Add(new AccountingLedger.LineDraft(
+                        stockAccount,
+                        Debit: amount,
+                        WarehouseId: request.ToWarehouseId));
+                    ledgerLines.Add(new AccountingLedger.LineDraft(
+                        stockAccount,
+                        Credit: amount,
+                        WarehouseId: request.FromWarehouseId));
+                }
 
                 await AccountingLedger.PostAsync(
                     db,
@@ -491,17 +520,7 @@ public static class BackOfficeInventoryEndpoints
                     now,
                     "Внутреннее перемещение",
                     employeeId,
-                    new[]
-                    {
-                        new AccountingLedger.LineDraft(
-                            toAccount,
-                            Debit: transferTotal,
-                            WarehouseId: request.ToWarehouseId),
-                        new AccountingLedger.LineDraft(
-                            fromAccount,
-                            Credit: transferTotal,
-                            WarehouseId: request.FromWarehouseId)
-                    },
+                    ledgerLines,
                     ct);
             }
 
@@ -544,10 +563,12 @@ public static class BackOfficeInventoryEndpoints
             var products = await db.Products
                 .AsNoTracking()
                 .Where(x => x.RestaurantId == restaurantId && x.IsActive && x.TrackStock && productIds.Contains(x.Id))
-                .Select(x => new { x.Id, x.Name, x.Unit })
+                .Select(x => new { x.Id, x.Name, x.Unit, x.InventoryAccountCode })
                 .ToDictionaryAsync(x => x.Id, ct);
             if (products.Count != productIds.Length)
                 return Results.BadRequest(new { message = "Одна или несколько позиций не найдены или складской учёт у них отключён." });
+            if (products.Values.Any(x => !AccountingLedger.IsSupportedInventoryAccountCode(x.InventoryAccountCode)))
+                return Results.BadRequest(new { message = "У одной или нескольких позиций не настроен корректный счёт складского учёта." });
 
             var balances = await db.StockMovements
                 .AsNoTracking()
@@ -570,6 +591,8 @@ public static class BackOfficeInventoryEndpoints
             var adjusted = 0;
             var gainCost = 0m;
             var lossCost = 0m;
+            var gainByAccountCode = new Dictionary<string, decimal>();
+            var lossByAccountCode = new Dictionary<string, decimal>();
 
             foreach (var line in lines.Lines!)
             {
@@ -582,10 +605,20 @@ public static class BackOfficeInventoryEndpoints
                 var delta = line.CountedQuantity - current;
                 if (delta == 0m) continue;
                 var costDelta = decimal.Round(delta * averageCost, 4, MidpointRounding.AwayFromZero);
+                var inventoryAccountCode = products[line.ProductId].InventoryAccountCode!;
                 if (costDelta > 0m)
+                {
                     gainCost += costDelta;
+                    gainByAccountCode[inventoryAccountCode] =
+                        gainByAccountCode.GetValueOrDefault(inventoryAccountCode) + costDelta;
+                }
                 else if (costDelta < 0m)
-                    lossCost += -costDelta;
+                {
+                    var lossAmount = -costDelta;
+                    lossCost += lossAmount;
+                    lossByAccountCode[inventoryAccountCode] =
+                        lossByAccountCode.GetValueOrDefault(inventoryAccountCode) + lossAmount;
+                }
 
                 db.StockMovements.Add(new StockMovement
                 {
@@ -611,34 +644,38 @@ public static class BackOfficeInventoryEndpoints
             if (gainCost > 0m || lossCost > 0m)
             {
                 await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
-                var stockAccount = await AccountingLedger.EnsureWarehouseAccountAsync(
-                    db, restaurantId, request.WarehouseId, ct);
                 var gainAccount = await AccountingLedger.EnsureSystemAccountAsync(
                     db, restaurantId, AccountingLedger.InventoryGainKey,
-                    "4.20", "Излишки по инвентаризации", LedgerAccountType.Income, ct);
+                    "611-10", "Digər əməliyyat gəlirləri", LedgerAccountType.Income, ct);
                 var lossAccount = await AccountingLedger.EnsureSystemAccountAsync(
                     db, restaurantId, AccountingLedger.InventoryLossKey,
-                    "5.30", "Недостачи по инвентаризации", LedgerAccountType.Expense, ct);
+                    "731-10", "Digər əməliyyat xərcləri", LedgerAccountType.Expense, ct);
 
                 var ledgerLines = new List<AccountingLedger.LineDraft>();
-                if (gainCost > 0m)
+                foreach (var row in gainByAccountCode.Where(x => x.Value > 0m))
                 {
+                    var stockAccount = await AccountingLedger.EnsureInventoryAccountAsync(
+                        db, restaurantId, row.Key, ct);
+                    var amount = AccountingLedger.Money(row.Value);
                     ledgerLines.Add(new AccountingLedger.LineDraft(
                         stockAccount,
-                        Debit: gainCost,
+                        Debit: amount,
                         WarehouseId: request.WarehouseId));
                     ledgerLines.Add(new AccountingLedger.LineDraft(
                         gainAccount,
-                        Credit: gainCost));
+                        Credit: amount));
                 }
-                if (lossCost > 0m)
+                foreach (var row in lossByAccountCode.Where(x => x.Value > 0m))
                 {
+                    var stockAccount = await AccountingLedger.EnsureInventoryAccountAsync(
+                        db, restaurantId, row.Key, ct);
+                    var amount = AccountingLedger.Money(row.Value);
                     ledgerLines.Add(new AccountingLedger.LineDraft(
                         lossAccount,
-                        Debit: lossCost));
+                        Debit: amount));
                     ledgerLines.Add(new AccountingLedger.LineDraft(
                         stockAccount,
-                        Credit: lossCost,
+                        Credit: amount,
                         WarehouseId: request.WarehouseId));
                 }
 
