@@ -3,9 +3,11 @@ import {
   type BackOfficeInventory,
   type InventoryNomenclatureItem,
   type InventoryWarehouse,
+  countInventory,
   createStockMovement,
   createWarehouse,
   getBackOfficeInventory,
+  transferStock,
   updateWarehouse,
 } from './api';
 import './inventory.css';
@@ -14,6 +16,8 @@ type EditorState =
   | { kind: 'warehouse-create' }
   | { kind: 'warehouse-edit'; warehouse: InventoryWarehouse }
   | { kind: 'movement'; item?: InventoryNomenclatureItem }
+  | { kind: 'transfer' }
+  | { kind: 'inventory-count' }
   | null;
 
 const UNIT_OPTIONS = [
@@ -113,8 +117,14 @@ export function InventoryPage({
               <button className="secondary-button" onClick={() => setEditor({ kind: 'warehouse-create' })}>
                 + Склад
               </button>
-              <button className="primary-button" onClick={() => setEditor({ kind: 'movement' })}>
-                + Операция
+              <button className="secondary-button" onClick={() => setEditor({ kind: 'movement' })}>
+                + Приход / списание
+              </button>
+              <button className="secondary-button" onClick={() => setEditor({ kind: 'transfer' })}>
+                Перемещение
+              </button>
+              <button className="primary-button" onClick={() => setEditor({ kind: 'inventory-count' })}>
+                Инвентаризация
               </button>
             </>
           )}
@@ -262,7 +272,7 @@ export function InventoryPage({
                   {movement.quantityDelta >= 0 ? '+' : ''}
                   {formatQuantity(movement.quantityDelta)} {unitLabel(movement.unit)}
                 </div>
-                <span>{movement.note || (movement.type === 'RECEIPT' ? 'Приход' : 'Списание')}</span>
+                <span>{movement.note || movementTypeLabel(movement.type)}</span>
               </div>
             ))}
           </div>
@@ -323,6 +333,30 @@ function InventoryEditor({
       <WarehouseEditor
         editor={editor}
         token={token}
+        onClose={onClose}
+        onSaved={onSaved}
+      />
+    );
+  }
+
+  if (editor.kind === 'transfer') {
+    return (
+      <TransferEditor
+        data={data}
+        token={token}
+        selectedWarehouseId={selectedWarehouseId}
+        onClose={onClose}
+        onSaved={onSaved}
+      />
+    );
+  }
+
+  if (editor.kind === 'inventory-count') {
+    return (
+      <InventoryCountEditor
+        data={data}
+        token={token}
+        selectedWarehouseId={selectedWarehouseId}
         onClose={onClose}
         onSaved={onSaved}
       />
@@ -527,9 +561,308 @@ function MovementEditor({
   );
 }
 
+
+function TransferEditor({
+  data,
+  token,
+  selectedWarehouseId,
+  onClose,
+  onSaved,
+}: {
+  data: BackOfficeInventory;
+  token: string;
+  selectedWarehouseId: string;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const activeWarehouses = data.warehouses.filter((x) => x.isActive);
+  const defaultFrom =
+    selectedWarehouseId !== 'ALL' && activeWarehouses.some((x) => x.id === selectedWarehouseId)
+      ? selectedWarehouseId
+      : activeWarehouses[0]?.id ?? '';
+  const [fromWarehouseId, setFromWarehouseId] = useState(defaultFrom);
+  const [toWarehouseId, setToWarehouseId] = useState(
+    activeWarehouses.find((x) => x.id !== defaultFrom)?.id ?? '',
+  );
+  const [lines, setLines] = useState<Array<{ productId: string; quantity: string }>>([
+    { productId: data.items.find((x) => x.isActive)?.id ?? '', quantity: '' },
+  ]);
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function updateLine(index: number, patch: Partial<{ productId: string; quantity: string }>) {
+    setLines((current) =>
+      current.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line));
+  }
+
+  function addLine() {
+    setLines((current) => [...current, { productId: '', quantity: '' }]);
+  }
+
+  function removeLine(index: number) {
+    setLines((current) => current.filter((_, lineIndex) => lineIndex !== index));
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const payload = lines
+      .filter((line) => line.productId)
+      .map((line) => ({
+        productId: line.productId,
+        quantity: Number(line.quantity.replace(',', '.')),
+      }));
+
+    if (
+      !fromWarehouseId ||
+      !toWarehouseId ||
+      fromWarehouseId === toWarehouseId ||
+      payload.length === 0 ||
+      payload.some((line) => !Number.isFinite(line.quantity) || line.quantity <= 0)
+    ) {
+      setError('Выберите разные склады и укажите корректное количество для каждой позиции.');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await transferStock(token, {
+        fromWarehouseId,
+        toWarehouseId,
+        lines: payload,
+        note: note.trim() || null,
+      });
+      await onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось провести перемещение');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <form className="modal-card inventory-large-modal" onSubmit={submit}>
+        <div className="modal-header">
+          <div><div className="eyebrow">СКЛАД</div><h2>Перемещение</h2></div>
+          <button type="button" className="close-button" onClick={onClose}>×</button>
+        </div>
+
+        <div className="form-grid">
+          <label>
+            <span>Со склада</span>
+            <select value={fromWarehouseId} onChange={(e) => setFromWarehouseId(e.target.value)}>
+              {activeWarehouses.map((warehouse) => (
+                <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>На склад</span>
+            <select value={toWarehouseId} onChange={(e) => setToWarehouseId(e.target.value)}>
+              {activeWarehouses.map((warehouse) => (
+                <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="inventory-document-lines">
+          <div className="inventory-document-head">
+            <strong>Позиции</strong>
+            <button type="button" className="secondary-button compact" onClick={addLine}>+ Строка</button>
+          </div>
+          {lines.map((line, index) => {
+            const item = data.items.find((x) => x.id === line.productId);
+            const available = item ? stockFor(item, fromWarehouseId) : 0;
+            return (
+              <div className="inventory-document-line" key={index}>
+                <select value={line.productId} onChange={(e) => updateLine(index, { productId: e.target.value })}>
+                  <option value="">Выберите позицию</option>
+                  {data.items.filter((x) => x.isActive).map((product) => (
+                    <option key={product.id} value={product.id}>{product.name}</option>
+                  ))}
+                </select>
+                <input
+                  value={line.quantity}
+                  onChange={(e) => updateLine(index, { quantity: e.target.value })}
+                  inputMode="decimal"
+                  placeholder="Количество"
+                />
+                <span>{item ? 'Доступно: ' + formatQuantity(available) + ' ' + unitLabel(item.unit) : ''}</span>
+                <button type="button" className="text-button" onClick={() => removeLine(index)} disabled={lines.length === 1}>Удалить</button>
+              </div>
+            );
+          })}
+        </div>
+
+        <label>
+          <span>Комментарий</span>
+          <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Например: перемещение в бар" />
+        </label>
+
+        {error && <div className="error-box">{error}</div>}
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose}>Отмена</button>
+          <button className="primary-button" disabled={saving || activeWarehouses.length < 2}>
+            {saving ? 'Проводим…' : 'Провести перемещение'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function InventoryCountEditor({
+  data,
+  token,
+  selectedWarehouseId,
+  onClose,
+  onSaved,
+}: {
+  data: BackOfficeInventory;
+  token: string;
+  selectedWarehouseId: string;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const activeWarehouses = data.warehouses.filter((x) => x.isActive);
+  const defaultWarehouse =
+    selectedWarehouseId !== 'ALL' && activeWarehouses.some((x) => x.id === selectedWarehouseId)
+      ? selectedWarehouseId
+      : activeWarehouses[0]?.id ?? '';
+  const [warehouseId, setWarehouseId] = useState(defaultWarehouse);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [note, setNote] = useState('');
+  const [query, setQuery] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const visible = data.items.filter((item) =>
+    item.isActive &&
+    (!query.trim() ||
+      item.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) ||
+      (item.sku ?? '').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const lines = Object.entries(values)
+      .filter(([, value]) => value.trim() !== '')
+      .map(([productId, value]) => ({
+        productId,
+        countedQuantity: Number(value.replace(',', '.')),
+      }));
+
+    if (
+      !warehouseId ||
+      lines.length === 0 ||
+      lines.some((line) => !Number.isFinite(line.countedQuantity) || line.countedQuantity < 0)
+    ) {
+      setError('Введите фактический остаток хотя бы для одной позиции.');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await countInventory(token, {
+        warehouseId,
+        lines,
+        note: note.trim() || null,
+      });
+      await onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось провести инвентаризацию');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <form className="modal-card inventory-count-modal" onSubmit={submit}>
+        <div className="modal-header">
+          <div><div className="eyebrow">СКЛАД</div><h2>Инвентаризация</h2></div>
+          <button type="button" className="close-button" onClick={onClose}>×</button>
+        </div>
+
+        <div className="form-grid">
+          <label>
+            <span>Склад</span>
+            <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+              {activeWarehouses.map((warehouse) => (
+                <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Поиск</span>
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Название или SKU" />
+          </label>
+        </div>
+
+        <div className="inventory-count-list">
+          <div className="inventory-count-row header">
+            <span>Позиция</span><span>По системе</span><span>Фактически</span><span>Разница</span>
+          </div>
+          {visible.map((item) => {
+            const current = stockFor(item, warehouseId);
+            const raw = values[item.id] ?? '';
+            const counted = raw.trim() === '' ? null : Number(raw.replace(',', '.'));
+            const difference = counted !== null && Number.isFinite(counted) ? counted - current : null;
+            return (
+              <div className="inventory-count-row" key={item.id}>
+                <div><strong>{item.name}</strong><small>{unitLabel(item.unit)}</small></div>
+                <span>{formatQuantity(current)}</span>
+                <input
+                  value={raw}
+                  inputMode="decimal"
+                  onChange={(e) => setValues((currentValues) => ({ ...currentValues, [item.id]: e.target.value }))}
+                  placeholder="—"
+                />
+                <span className={difference === null ? '' : difference >= 0 ? 'inventory-movement-plus' : 'inventory-movement-minus'}>
+                  {difference === null ? '—' : (difference >= 0 ? '+' : '') + formatQuantity(difference)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <label>
+          <span>Комментарий</span>
+          <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Например: инвентаризация за 29.09" />
+        </label>
+
+        {error && <div className="error-box">{error}</div>}
+        <div className="modal-actions">
+          <button type="button" className="secondary-button" onClick={onClose}>Отмена</button>
+          <button className="primary-button" disabled={saving || !warehouseId}>
+            {saving ? 'Проводим…' : 'Провести инвентаризацию'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function stockFor(item: InventoryNomenclatureItem, warehouseId: string) {
   if (warehouseId === 'ALL') return item.totalStock;
   return item.warehouseBalances.find((x) => x.warehouseId === warehouseId)?.quantity ?? 0;
+}
+
+function movementTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    RECEIPT: 'Приход',
+    WRITE_OFF: 'Списание',
+    TRANSFER_OUT: 'Перемещение: расход',
+    TRANSFER_IN: 'Перемещение: приход',
+    INVENTORY_GAIN: 'Инвентаризация: излишек',
+    INVENTORY_LOSS: 'Инвентаризация: недостача',
+    SALE: 'Продажа',
+    SALE_RETURN: 'Возврат продажи',
+  };
+  return labels[type] ?? type;
 }
 
 function unitLabel(unit: string) {
