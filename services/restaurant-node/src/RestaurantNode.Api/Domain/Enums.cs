@@ -19,3 +19,7 @@ public enum KitchenTicketStatus { Pending, Printed, Cancelled }
 
 public enum MoneyAccountType { Cash, Bank, Card, Other }
 public enum MoneyDirection { Income, Expense }
+
+public enum SupplierType { External, Internal }
+public enum StockDocumentType { Receipt, WriteOff, Transfer, Inventory }
+public enum StockDocumentStatus { Draft, Posted, Cancelled }
