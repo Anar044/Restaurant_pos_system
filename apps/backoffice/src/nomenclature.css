@@ -45,7 +45,25 @@
 .nomenclature-card > strong { margin-top: 14px; font-size: 15px; }
 .nomenclature-card > span { margin-top: 4px; color: #667085; font-size: 11px; }
 .nomenclature-card-meta { width: 100%; margin-top: auto; padding-top: 13px; display: flex; justify-content: space-between; gap: 8px; color: #98a2b3; }
-.nomenclature-modal { width: min(760px, 100%); }
+.nomenclature-modal {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 44px);
+  max-height: calc(100dvh - 44px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.nomenclature-modal .modal-actions {
+  position: sticky;
+  bottom: -22px;
+  z-index: 4;
+  margin: 8px -22px -22px;
+  padding: 14px 22px 22px;
+  background: white;
+  border-top: 1px solid #eaecf0;
+  box-shadow: 0 -8px 18px rgba(16, 24, 40, .04);
+}
 .nomenclature-editor-tabs { display: flex; gap: 7px; margin-bottom: 18px; }
 .recipe-editor { min-height: 260px; }
 .recipe-editor-head { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
@@ -72,6 +90,11 @@
   font-size: 12px;
 }
 @media (max-width: 700px) {
+  .nomenclature-modal {
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+
   .nomenclature-toolbar { align-items: stretch; flex-direction: column; }
   .nomenclature-toolbar input { width: 100%; }
   .recipe-line { grid-template-columns: 1fr 90px 45px; }
