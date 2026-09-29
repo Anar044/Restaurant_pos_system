@@ -1,0 +1,359 @@
+using System.Security.Claims;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using RestaurantNode.Api.Domain;
+using RestaurantNode.Api.Infrastructure;
+using RestaurantNode.Api.Security;
+
+namespace RestaurantNode.Api.Features.BackOffice;
+
+public static class BackOfficeAccountingEndpoints
+{
+    public static IEndpointRouteBuilder MapBackOfficeAccountingEndpoints(this IEndpointRouteBuilder app)
+    {
+        var group = app.MapGroup("/api/v1/backoffice/accounting")
+            .RequireAuthorization(Permissions.BackOfficeRead);
+
+        group.MapGet("", async (
+            DateTimeOffset? from,
+            DateTimeOffset? to,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out _))
+                return Results.Unauthorized();
+
+            await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+
+            var now = DateTimeOffset.UtcNow;
+            var periodTo = to ?? now.AddMinutes(1);
+            var periodFrom = from ?? periodTo.AddDays(-30);
+            if (periodTo <= periodFrom)
+                return Results.BadRequest(new { message = "Period end must be after period start." });
+            if (periodTo - periodFrom > TimeSpan.FromDays(366))
+                return Results.BadRequest(new { message = "Accounting period cannot exceed 366 days." });
+
+            var accounts = await db.LedgerAccounts
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId)
+                .OrderBy(x => x.Code)
+                .ToListAsync(ct);
+
+            var accountTotals = await (
+                from line in db.LedgerLines.AsNoTracking()
+                join entry in db.LedgerEntries.AsNoTracking() on line.EntryId equals entry.Id
+                where line.RestaurantId == restaurantId && entry.OccurredAt < periodTo
+                group line by line.AccountId into g
+                select new
+                {
+                    AccountId = g.Key,
+                    Debit = g.Sum(x => x.Debit),
+                    Credit = g.Sum(x => x.Credit)
+                })
+                .ToDictionaryAsync(x => x.AccountId, ct);
+
+            var periodTotals = await (
+                from line in db.LedgerLines.AsNoTracking()
+                join entry in db.LedgerEntries.AsNoTracking() on line.EntryId equals entry.Id
+                where line.RestaurantId == restaurantId &&
+                      entry.OccurredAt >= periodFrom &&
+                      entry.OccurredAt < periodTo
+                group line by line.AccountId into g
+                select new
+                {
+                    AccountId = g.Key,
+                    Debit = g.Sum(x => x.Debit),
+                    Credit = g.Sum(x => x.Credit)
+                })
+                .ToDictionaryAsync(x => x.AccountId, ct);
+
+            var accountLookup = accounts.ToDictionary(x => x.Id);
+
+            var entries = await db.LedgerEntries
+                .AsNoTracking()
+                .Include(x => x.Lines)
+                .Where(x => x.RestaurantId == restaurantId &&
+                            x.OccurredAt >= periodFrom &&
+                            x.OccurredAt < periodTo)
+                .OrderByDescending(x => x.OccurredAt)
+                .ThenByDescending(x => x.CreatedAt)
+                .Take(300)
+                .ToListAsync(ct);
+
+            var suppliers = await db.Suppliers
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId)
+                .OrderByDescending(x => x.IsActive)
+                .ThenBy(x => x.Name)
+                .ToListAsync(ct);
+
+            var payable = accounts.First(x => x.SystemKey == AccountingLedger.SupplierPayableKey);
+            var advance = accounts.First(x => x.SystemKey == AccountingLedger.SupplierAdvanceKey);
+
+            var supplierTotals = await db.LedgerLines
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId &&
+                            x.SupplierId.HasValue &&
+                            (x.AccountId == payable.Id || x.AccountId == advance.Id))
+                .GroupBy(x => new { SupplierId = x.SupplierId!.Value, x.AccountId })
+                .Select(g => new
+                {
+                    g.Key.SupplierId,
+                    g.Key.AccountId,
+                    Debit = g.Sum(x => x.Debit),
+                    Credit = g.Sum(x => x.Credit)
+                })
+                .ToListAsync(ct);
+
+            var moneyAccounts = await db.MoneyAccounts
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId)
+                .OrderByDescending(x => x.IsActive)
+                .ThenBy(x => x.Name)
+                .ToListAsync(ct);
+
+            return Results.Ok(new
+            {
+                period = new { from = periodFrom, to = periodTo },
+                accounts = accounts.Select(account =>
+                {
+                    var total = accountTotals.GetValueOrDefault(account.Id);
+                    var period = periodTotals.GetValueOrDefault(account.Id);
+                    return new
+                    {
+                        id = account.Id,
+                        account.Code,
+                        account.Name,
+                        type = EnumText(account.Type),
+                        account.SystemKey,
+                        account.IsSystem,
+                        account.IsActive,
+                        debit = Money(total?.Debit ?? 0m),
+                        credit = Money(total?.Credit ?? 0m),
+                        balance = AccountingLedger.NaturalBalance(
+                            account.Type,
+                            total?.Debit ?? 0m,
+                            total?.Credit ?? 0m),
+                        periodDebit = Money(period?.Debit ?? 0m),
+                        periodCredit = Money(period?.Credit ?? 0m)
+                    };
+                }),
+                entries = entries.Select(entry => new
+                {
+                    id = entry.Id,
+                    entry.OccurredAt,
+                    entry.ReferenceType,
+                    entry.ReferenceId,
+                    entry.Description,
+                    entry.EmployeeId,
+                    entry.CreatedAt,
+                    lines = entry.Lines
+                        .OrderBy(x => x.Id)
+                        .Select(line =>
+                        {
+                            accountLookup.TryGetValue(line.AccountId, out var account);
+                            return new
+                            {
+                                id = line.Id,
+                                line.AccountId,
+                                accountCode = account?.Code ?? "—",
+                                accountName = account?.Name ?? "Счёт",
+                                line.Debit,
+                                line.Credit,
+                                line.SupplierId,
+                                line.WarehouseId,
+                                line.MoneyAccountId
+                            };
+                        })
+                }),
+                suppliers = suppliers.Select(supplier =>
+                {
+                    var payableRow = supplierTotals.FirstOrDefault(x =>
+                        x.SupplierId == supplier.Id && x.AccountId == payable.Id);
+                    var advanceRow = supplierTotals.FirstOrDefault(x =>
+                        x.SupplierId == supplier.Id && x.AccountId == advance.Id);
+                    var payableBalance = Money((payableRow?.Credit ?? 0m) - (payableRow?.Debit ?? 0m));
+                    var advanceBalance = Money((advanceRow?.Debit ?? 0m) - (advanceRow?.Credit ?? 0m));
+                    return new
+                    {
+                        id = supplier.Id,
+                        supplier.Name,
+                        payable = payableBalance,
+                        advance = advanceBalance,
+                        balance = Money(payableBalance - advanceBalance)
+                    };
+                }),
+                moneyAccounts = moneyAccounts.Select(account => new
+                {
+                    id = account.Id,
+                    account.Name,
+                    type = EnumText(account.Type),
+                    account.IsActive
+                })
+            });
+        });
+
+        group.MapPost("/suppliers/{supplierId:guid}/payments", async (
+            Guid supplierId,
+            SupplierPaymentRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            if (request.Amount <= 0m || request.Amount > 1_000_000_000m)
+                return Results.BadRequest(new { message = "Сумма оплаты должна быть больше нуля." });
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            var supplier = await db.Suppliers.FirstOrDefaultAsync(x =>
+                x.Id == supplierId &&
+                x.RestaurantId == restaurantId &&
+                x.IsActive, ct);
+            if (supplier is null)
+                return Results.BadRequest(new { message = "Активный поставщик не найден." });
+
+            var moneyAccount = await db.MoneyAccounts.FirstOrDefaultAsync(x =>
+                x.Id == request.MoneyAccountId &&
+                x.RestaurantId == restaurantId &&
+                x.IsActive, ct);
+            if (moneyAccount is null)
+                return Results.BadRequest(new { message = "Активный денежный счёт не найден." });
+
+            await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+
+            var payableAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                db, restaurantId, AccountingLedger.SupplierPayableKey,
+                "2.10", "Задолженность перед поставщиками", LedgerAccountType.Liability, ct);
+            var advanceAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                db, restaurantId, AccountingLedger.SupplierAdvanceKey,
+                "1.30", "Авансы поставщикам", LedgerAccountType.Asset, ct);
+            var cashAccount = await AccountingLedger.EnsureMoneyAccountAsync(
+                db, restaurantId, moneyAccount, ct);
+
+            var payableTotals = await db.LedgerLines
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId &&
+                            x.SupplierId == supplierId &&
+                            x.AccountId == payableAccount.Id)
+                .GroupBy(_ => 1)
+                .Select(g => new { Debit = g.Sum(x => x.Debit), Credit = g.Sum(x => x.Credit) })
+                .FirstOrDefaultAsync(ct);
+
+            var outstanding = Money((payableTotals?.Credit ?? 0m) - (payableTotals?.Debit ?? 0m));
+            var amount = Money(request.Amount);
+            var appliedToDebt = Money(Math.Min(amount, Math.Max(0m, outstanding)));
+            var advancePart = Money(amount - appliedToDebt);
+            var operationId = Guid.NewGuid();
+            var occurredAt = request.OccurredAt ?? DateTimeOffset.UtcNow;
+            var description = $"Оплата поставщику {supplier.Name}";
+
+            var lines = new List<AccountingLedger.LineDraft>();
+            if (appliedToDebt > 0m)
+            {
+                lines.Add(new AccountingLedger.LineDraft(
+                    payableAccount,
+                    Debit: appliedToDebt,
+                    SupplierId: supplier.Id));
+            }
+            if (advancePart > 0m)
+            {
+                lines.Add(new AccountingLedger.LineDraft(
+                    advanceAccount,
+                    Debit: advancePart,
+                    SupplierId: supplier.Id));
+            }
+            lines.Add(new AccountingLedger.LineDraft(
+                cashAccount,
+                Credit: amount,
+                MoneyAccountId: moneyAccount.Id));
+
+            await AccountingLedger.PostAsync(
+                db,
+                restaurantId,
+                "SUPPLIER_PAYMENT",
+                operationId,
+                occurredAt,
+                description,
+                employeeId,
+                lines,
+                ct);
+
+            AddAudit(db, user, restaurantId, "SUPPLIER_PAYMENT_CREATED", "Supplier", supplier.Id, new
+            {
+                supplierId = supplier.Id,
+                supplier.Name,
+                moneyAccountId = moneyAccount.Id,
+                moneyAccount.Name,
+                amount,
+                appliedToDebt,
+                advancePart,
+                outstandingBefore = outstanding,
+                request.Note,
+                occurredAt,
+                operationId
+            });
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+
+            return Results.Ok(new
+            {
+                operationId,
+                amount,
+                appliedToDebt,
+                advance = advancePart,
+                outstandingBefore = outstanding,
+                outstandingAfter = Money(Math.Max(0m, outstanding - appliedToDebt))
+            });
+        }).RequireAuthorization(Permissions.FinanceManage);
+
+        return app;
+    }
+
+    private static bool TryClaims(ClaimsPrincipal user, out Guid restaurantId, out Guid employeeId)
+    {
+        var restaurantOk = Guid.TryParse(user.FindFirstValue("restaurant_id"), out restaurantId);
+        var employeeOk = Guid.TryParse(user.FindFirstValue("employee_id"), out employeeId);
+        return restaurantOk && employeeOk;
+    }
+
+    private static decimal Money(decimal value) =>
+        decimal.Round(value, 4, MidpointRounding.AwayFromZero);
+
+    private static string EnumText<TEnum>(TEnum value) where TEnum : struct, Enum =>
+        System.Text.RegularExpressions.Regex.Replace(value.ToString(), "([a-z0-9])([A-Z])", "$1_$2").ToUpperInvariant();
+
+    private static void AddAudit(
+        RestaurantDbContext db,
+        ClaimsPrincipal user,
+        Guid restaurantId,
+        string eventType,
+        string entityType,
+        Guid entityId,
+        object payload)
+    {
+        Guid? employeeId = Guid.TryParse(user.FindFirstValue("employee_id"), out var parsedEmployeeId)
+            ? parsedEmployeeId
+            : null;
+
+        db.AuditEvents.Add(new AuditEvent
+        {
+            RestaurantId = restaurantId,
+            EmployeeId = employeeId,
+            EventType = eventType,
+            EntityType = entityType,
+            EntityId = entityId,
+            PayloadJson = JsonSerializer.Serialize(payload)
+        });
+    }
+}
+
+public sealed record SupplierPaymentRequest(
+    Guid MoneyAccountId,
+    decimal Amount,
+    DateTimeOffset? OccurredAt,
+    string? Note);
