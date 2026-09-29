@@ -469,6 +469,8 @@ export type RestaurantGroupOption = {
   id: string;
   name: string;
   isActive: boolean;
+  defaultPrecheckPrinterId: string | null;
+  defaultPrecheckPrinterName: string | null;
   deviceIds: string[];
   mainCashRegisterId: string | null;
 };
@@ -965,6 +967,17 @@ export async function setRestaurantGroupDevices(
   return request(`/api/v1/backoffice/groups/${groupId}/devices`, {
     method: 'PUT',
     body: JSON.stringify(input),
+  }, token);
+}
+
+export async function setRestaurantGroupPrinting(
+  token: string,
+  groupId: string,
+  defaultPrecheckPrinterId: string | null,
+): Promise<{ id: string; defaultPrecheckPrinterId: string | null }> {
+  return request(`/api/v1/backoffice/groups/${groupId}/printing`, {
+    method: 'PUT',
+    body: JSON.stringify({ defaultPrecheckPrinterId }),
   }, token);
 }
 
