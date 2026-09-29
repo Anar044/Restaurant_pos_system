@@ -163,6 +163,7 @@ public static class BackOfficeMoneyEndpoints
                 IsActive = true
             };
             db.MoneyAccounts.Add(account);
+            await AccountingLedger.EnsureMoneyAccountAsync(db, restaurantId, account, ct);
             AddAudit(db, user, restaurantId, "MONEY_ACCOUNT_CREATED", "MoneyAccount", account.Id, new
             {
                 account.Name,
@@ -200,6 +201,7 @@ public static class BackOfficeMoneyEndpoints
             account.Name = name;
             account.Type = type;
             account.IsActive = request.IsActive;
+            await AccountingLedger.EnsureMoneyAccountAsync(db, restaurantId, account, ct);
             AddAudit(db, user, restaurantId, "MONEY_ACCOUNT_UPDATED", "MoneyAccount", account.Id, new
             {
                 account.Name,
@@ -237,6 +239,7 @@ public static class BackOfficeMoneyEndpoints
                 IsActive = true
             };
             db.MoneyCategories.Add(category);
+            await AccountingLedger.EnsureCategoryAccountAsync(db, restaurantId, category, ct);
             AddAudit(db, user, restaurantId, "MONEY_CATEGORY_CREATED", "MoneyCategory", category.Id, new
             {
                 category.Name,
@@ -276,6 +279,7 @@ public static class BackOfficeMoneyEndpoints
             category.Name = name;
             category.Direction = direction;
             category.IsActive = request.IsActive;
+            await AccountingLedger.EnsureCategoryAccountAsync(db, restaurantId, category, ct);
             AddAudit(db, user, restaurantId, "MONEY_CATEGORY_UPDATED", "MoneyCategory", category.Id, new
             {
                 category.Name,
@@ -339,6 +343,46 @@ public static class BackOfficeMoneyEndpoints
             };
 
             db.MoneyTransactions.Add(transaction);
+
+            await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+            var moneyLedgerAccount = await AccountingLedger.EnsureMoneyAccountAsync(
+                db, restaurantId, account, ct);
+            var categoryLedgerAccount = await AccountingLedger.EnsureCategoryAccountAsync(
+                db, restaurantId, category, ct);
+
+            var ledgerLines = direction == MoneyDirection.Income
+                ? new[]
+                {
+                    new AccountingLedger.LineDraft(
+                        moneyLedgerAccount,
+                        Debit: transaction.Amount,
+                        MoneyAccountId: account.Id),
+                    new AccountingLedger.LineDraft(
+                        categoryLedgerAccount,
+                        Credit: transaction.Amount)
+                }
+                : new[]
+                {
+                    new AccountingLedger.LineDraft(
+                        categoryLedgerAccount,
+                        Debit: transaction.Amount),
+                    new AccountingLedger.LineDraft(
+                        moneyLedgerAccount,
+                        Credit: transaction.Amount,
+                        MoneyAccountId: account.Id)
+                };
+
+            await AccountingLedger.PostAsync(
+                db,
+                restaurantId,
+                "MONEY_TRANSACTION",
+                transaction.Id,
+                transaction.OccurredAt,
+                category.Name + (transaction.Note is null ? string.Empty : ": " + transaction.Note),
+                employeeId,
+                ledgerLines,
+                ct);
+
             AddAudit(db, user, restaurantId, "MONEY_TRANSACTION_CREATED", "MoneyTransaction", transaction.Id, new
             {
                 transaction.AccountId,
