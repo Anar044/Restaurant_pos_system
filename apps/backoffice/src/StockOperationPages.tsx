@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, type Dispatch, type ReactNode, type SetStateAction, useEffect, useMemo, useState } from 'react';
 import {
   type BackOfficeInventory,
   type InventoryMovement,
@@ -335,7 +335,7 @@ function LinesEditor({
   data: BackOfficeInventory;
   warehouseId: string;
   lines: Array<{ productId: string; quantity: string }>;
-  setLines: React.Dispatch<React.SetStateAction<Array<{ productId: string; quantity: string }>>>;
+  setLines: Dispatch<SetStateAction<Array<{ productId: string; quantity: string }>>>;
 }) {
   function patch(index: number, value: Partial<{ productId: string; quantity: string }>) {
     setLines((current) => current.map((line, i) => i === index ? { ...line, ...value } : line));
@@ -361,7 +361,7 @@ function LinesEditor({
   );
 }
 
-function OperationModal({ title, onClose, wide = false, children }: { title: string; onClose: () => void; wide?: boolean; children: React.ReactNode }) {
+function OperationModal({ title, onClose, wide = false, children }: { title: string; onClose: () => void; wide?: boolean; children: ReactNode }) {
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={'modal-card ' + (wide ? 'stock-op-wide' : 'stock-op-modal')}>
