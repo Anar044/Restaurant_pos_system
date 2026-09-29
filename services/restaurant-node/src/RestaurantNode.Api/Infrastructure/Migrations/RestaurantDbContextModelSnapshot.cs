@@ -1707,6 +1707,9 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("IntegratedPosTaxReliefEnabled")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -1717,9 +1720,23 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("TaxRegime")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("UNCONFIGURED");
+
                     b.Property<string>("TimeZone")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("VatPriceMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("INCLUDED");
 
                     b.HasKey("Id");
 
