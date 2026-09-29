@@ -644,14 +644,6 @@ export type UpdateWarehouseInput = {
   isActive: boolean;
 };
 
-export type CreateStockMovementInput = {
-  warehouseId: string;
-  productId: string;
-  type: 'RECEIPT' | 'WRITE_OFF';
-  quantity: number;
-  note: string | null;
-};
-
 export type StockSupplier = {
   id: string;
   name: string;
@@ -1225,16 +1217,6 @@ export async function updateWarehouse(
 ): Promise<InventoryWarehouse> {
   return request<InventoryWarehouse>(`/api/v1/backoffice/inventory/warehouses/${warehouseId}`, {
     method: 'PUT',
-    body: JSON.stringify(input),
-  }, token);
-}
-
-export async function createStockMovement(
-  token: string,
-  input: CreateStockMovementInput,
-): Promise<InventoryMovement> {
-  return request<InventoryMovement>('/api/v1/backoffice/inventory/movements', {
-    method: 'POST',
     body: JSON.stringify(input),
   }, token);
 }
