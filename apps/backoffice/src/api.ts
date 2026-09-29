@@ -1575,6 +1575,35 @@ export async function postStockDocument(
   }, token);
 }
 
+export async function deleteReceiptDocument(
+  token: string,
+  documentId: string,
+): Promise<void> {
+  await request('/api/v1/backoffice/stock-documents/' + documentId, {
+    method: 'DELETE',
+  }, token);
+}
+
+export async function duplicateReceiptDocument(
+  token: string,
+  documentId: string,
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/stock-documents/' + documentId + '/duplicate', {
+    method: 'POST',
+  }, token);
+}
+
+export async function reverseReceiptDocument(
+  token: string,
+  documentId: string,
+  input: { createCorrectionDraft: boolean; reason: string | null },
+): Promise<{ id: string; status: string; correctionDocumentId: string | null }> {
+  return request('/api/v1/backoffice/stock-documents/' + documentId + '/reverse', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
 export async function getBackOfficeFinance(
   token: string,
   options: {
