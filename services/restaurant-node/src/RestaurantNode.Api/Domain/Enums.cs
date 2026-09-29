@@ -16,3 +16,6 @@ public enum PaymentStatus { Pending, Completed, Cancelled, Refunded }
 public enum CashTransactionType { Deposit, Withdrawal }
 public enum PrintJobStatus { Pending, Printing, Printed, Failed }
 public enum KitchenTicketStatus { Pending, Printed, Cancelled }
+
+public enum MoneyAccountType { Cash, Bank, Card, Other }
+public enum MoneyDirection { Income, Expense }
