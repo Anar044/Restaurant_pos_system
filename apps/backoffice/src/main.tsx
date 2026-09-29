@@ -13,6 +13,7 @@ import { DevicesPage } from './DevicesPage';
 import { EmployeesPage } from './EmployeesPage';
 import { FinancePage } from './FinancePage';
 import { InventoryPage } from './InventoryPage';
+import { WarehouseDocumentsPage } from './WarehouseDocumentsPage';
 import { ModifiersPage } from './ModifiersPage';
 import { MoneyPage } from './MoneyPage';
 import { NomenclaturePage } from './NomenclaturePage';
@@ -23,7 +24,7 @@ import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'groups' | 'printing' | 'modifiers' | 'nomenclature' | 'inventory' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
+type PageKey = 'overview' | 'groups' | 'printing' | 'modifiers' | 'nomenclature' | 'inventory' | 'stock-documents' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -162,14 +163,15 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
     { key: 'nomenclature', label: 'Номенклатура', icon: '▤', ready: true },
     { key: 'modifiers', label: 'Группы модификаторов', icon: '±', ready: true },
-    { key: 'inventory', label: 'Склад', icon: '▥', ready: true },
+    { key: 'inventory', label: 'Остатки на складах', icon: '▥', ready: true },
+    { key: 'stock-documents', label: 'Складские документы', icon: '▣', ready: true },
     { key: 'adjustments', label: 'Скидки и надбавки', icon: '%', ready: true },
     { key: 'employees', label: 'Список сотрудников', icon: '◎', ready: true },
     { key: 'roles', label: 'Роли и права', icon: '◉', ready: true },
   ];
 
   const restaurantSettingsItems: PageKey[] = ['groups', 'printing', 'devices'];
-  const catalogItems: PageKey[] = ['nomenclature', 'modifiers', 'inventory'];
+  const catalogItems: PageKey[] = ['nomenclature', 'modifiers', 'inventory', 'stock-documents'];
   const employeeItems: PageKey[] = ['employees', 'roles'];
 
   function renderNavItem(key: PageKey, nested = false) {
@@ -312,6 +314,11 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             />
           ) : page === 'inventory' ? (
             <InventoryPage
+              token={session.token}
+              canManage={(session.permissions ?? []).includes('inventory.manage')}
+            />
+          ) : page === 'stock-documents' ? (
+            <WarehouseDocumentsPage
               token={session.token}
               canManage={(session.permissions ?? []).includes('inventory.manage')}
             />
