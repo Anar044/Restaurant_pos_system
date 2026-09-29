@@ -38,6 +38,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<PaymentRefund> PaymentRefunds => Set<PaymentRefund>();
     public DbSet<CashTransaction> CashTransactions => Set<CashTransaction>();
+    public DbSet<MoneyAccount> MoneyAccounts => Set<MoneyAccount>();
+    public DbSet<MoneyCategory> MoneyCategories => Set<MoneyCategory>();
+    public DbSet<MoneyTransaction> MoneyTransactions => Set<MoneyTransaction>();
     public DbSet<KitchenTicket> KitchenTickets => Set<KitchenTicket>();
     public DbSet<PrintJob> PrintJobs => Set<PrintJob>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
@@ -80,6 +83,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Payment>().ToTable("payments");
         modelBuilder.Entity<PaymentRefund>().ToTable("payment_refunds");
         modelBuilder.Entity<CashTransaction>().ToTable("cash_transactions");
+        modelBuilder.Entity<MoneyAccount>().ToTable("money_accounts");
+        modelBuilder.Entity<MoneyCategory>().ToTable("money_categories");
+        modelBuilder.Entity<MoneyTransaction>().ToTable("money_transactions");
         modelBuilder.Entity<KitchenTicket>().ToTable("kitchen_tickets");
         modelBuilder.Entity<PrintJob>().ToTable("print_jobs");
         modelBuilder.Entity<AuditEvent>().ToTable("audit_events");
@@ -92,6 +98,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
 
         modelBuilder.Entity<Printer>().Property(x => x.ConnectionType).HasConversion<string>();
         modelBuilder.Entity<Device>().Property(x => x.Type).HasConversion<string>();
+        modelBuilder.Entity<MoneyAccount>().Property(x => x.Type).HasConversion<string>();
+        modelBuilder.Entity<MoneyCategory>().Property(x => x.Direction).HasConversion<string>();
+        modelBuilder.Entity<MoneyTransaction>().Property(x => x.Direction).HasConversion<string>();
         modelBuilder.Entity<Order>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<OrderItem>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<OrderAdjustment>().Property(x => x.Type).HasConversion<string>();
@@ -193,6 +202,11 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<OrderAdjustmentPresetProduct>().HasIndex(x => x.ProductId);
         modelBuilder.Entity<OrderAdjustmentPresetCategory>().HasKey(x => new { x.PresetId, x.CategoryId });
         modelBuilder.Entity<OrderAdjustmentPresetCategory>().HasIndex(x => x.CategoryId);
+        modelBuilder.Entity<MoneyAccount>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<MoneyCategory>().HasIndex(x => new { x.RestaurantId, x.Direction, x.Name }).IsUnique();
+        modelBuilder.Entity<MoneyTransaction>().HasIndex(x => new { x.RestaurantId, x.AccountId, x.OccurredAt });
+        modelBuilder.Entity<MoneyTransaction>().HasIndex(x => new { x.RestaurantId, x.CategoryId, x.OccurredAt });
+        modelBuilder.Entity<MoneyTransaction>().HasIndex(x => new { x.RestaurantId, x.ReferenceType, x.ReferenceId });
         modelBuilder.Entity<Payment>().HasIndex(x => new { x.RestaurantId, x.ShiftId, x.CreatedAt });
         modelBuilder.Entity<Payment>().HasIndex(x => new { x.OrderId, x.GuestNumber, x.CreatedAt });
         modelBuilder.Entity<PaymentRefund>().HasIndex(x => new { x.RestaurantId, x.ShiftId, x.CreatedAt });
@@ -250,6 +264,18 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Order>()
             .Navigation(x => x.Adjustments)
             .AutoInclude();
+
+        modelBuilder.Entity<MoneyTransaction>()
+            .HasOne(x => x.Account)
+            .WithMany()
+            .HasForeignKey(x => x.AccountId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<MoneyTransaction>()
+            .HasOne(x => x.Category)
+            .WithMany()
+            .HasForeignKey(x => x.CategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<StockMovement>()
             .HasOne(x => x.Warehouse)
