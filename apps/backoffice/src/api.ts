@@ -776,6 +776,76 @@ export type BackOfficeMoney = {
   transactions: MoneyTransaction[];
 };
 
+export type LedgerAccount = {
+  id: string;
+  code: string;
+  name: string;
+  type: 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE' | string;
+  systemKey: string | null;
+  isSystem: boolean;
+  isActive: boolean;
+  debit: number;
+  credit: number;
+  balance: number;
+  periodDebit: number;
+  periodCredit: number;
+};
+
+export type LedgerEntryLine = {
+  id: string;
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+  supplierId: string | null;
+  warehouseId: string | null;
+  moneyAccountId: string | null;
+};
+
+export type LedgerEntry = {
+  id: string;
+  occurredAt: string;
+  referenceType: string;
+  referenceId: string;
+  description: string;
+  employeeId: string | null;
+  createdAt: string;
+  lines: LedgerEntryLine[];
+};
+
+export type SupplierAccountingBalance = {
+  id: string;
+  name: string;
+  payable: number;
+  advance: number;
+  balance: number;
+};
+
+export type AccountingMoneyAccount = {
+  id: string;
+  name: string;
+  type: string;
+  isActive: boolean;
+};
+
+export type BackOfficeAccounting = {
+  period: { from: string; to: string };
+  accounts: LedgerAccount[];
+  entries: LedgerEntry[];
+  suppliers: SupplierAccountingBalance[];
+  moneyAccounts: AccountingMoneyAccount[];
+};
+
+export type SupplierPaymentResult = {
+  operationId: string;
+  amount: number;
+  appliedToDebt: number;
+  advance: number;
+  outstandingBefore: number;
+  outstandingAfter: number;
+};
+
 export type RefundPaymentResult = {
   refund: {
     id: string;
@@ -1410,6 +1480,34 @@ export async function getBackOfficeMoney(
   if (to) query.set('to', to);
   const suffix = query.toString() ? '?' + query.toString() : '';
   return request<BackOfficeMoney>('/api/v1/backoffice/money' + suffix, {}, token);
+}
+
+export async function getBackOfficeAccounting(
+  token: string,
+  from?: string,
+  to?: string,
+): Promise<BackOfficeAccounting> {
+  const query = new URLSearchParams();
+  if (from) query.set('from', from);
+  if (to) query.set('to', to);
+  const suffix = query.size ? '?' + query.toString() : '';
+  return request<BackOfficeAccounting>('/api/v1/backoffice/accounting' + suffix, {}, token);
+}
+
+export async function paySupplier(
+  token: string,
+  supplierId: string,
+  input: {
+    moneyAccountId: string;
+    amount: number;
+    occurredAt: string | null;
+    note: string | null;
+  },
+): Promise<SupplierPaymentResult> {
+  return request('/api/v1/backoffice/accounting/suppliers/' + supplierId + '/payments', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
 }
 
 export async function createMoneyAccount(
