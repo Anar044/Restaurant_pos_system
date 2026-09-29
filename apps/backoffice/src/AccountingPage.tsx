@@ -483,6 +483,7 @@ function referenceLabel(value: string) {
     SUPPLIER_PAYMENT: 'Оплата поставщику',
     MONEY_TRANSACTION: 'Денежная операция',
     SHIFT_CASH_TRANSACTION: 'Операция кассовой смены',
+    INVENTORY_ACCOUNT_RECLASS: 'Переклассификация складского счёта',
   } as Record<string, string>)[value] ?? value;
 }
 
