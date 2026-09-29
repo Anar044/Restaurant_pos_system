@@ -426,6 +426,246 @@ public static class BackOfficeStockDocumentEndpoints
             return Results.Ok(new { id = document.Id });
         }).RequireAuthorization(Permissions.InventoryManage);
 
+        group.MapDelete("/{id:guid}", async (
+            Guid id,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out _))
+                return Results.Unauthorized();
+
+            var document = await db.StockDocuments
+                .Include(x => x.Lines)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+            if (document is null) return Results.NotFound();
+            if (document.Status != StockDocumentStatus.Draft)
+                return Results.Conflict(new { message = "Удалить можно только черновик. Проведённый документ нужно сторнировать." });
+
+            AddAudit(db, user, restaurantId, "STOCK_DOCUMENT_DELETED", "StockDocument", document.Id, new
+            {
+                document.Number,
+                type = EnumText(document.Type),
+                lineCount = document.Lines.Count,
+                document.TotalAmount
+            });
+
+            db.StockDocumentLines.RemoveRange(document.Lines);
+            db.StockDocuments.Remove(document);
+            await db.SaveChangesAsync(ct);
+
+            return Results.NoContent();
+        }).RequireAuthorization(Permissions.InventoryManage);
+
+        group.MapPost("/{id:guid}/duplicate", async (
+            Guid id,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            var source = await db.StockDocuments
+                .AsNoTracking()
+                .Include(x => x.Lines)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+            if (source is null) return Results.NotFound();
+            if (source.Type != StockDocumentType.Receipt)
+                return Results.BadRequest(new { message = "Дублирование сейчас поддерживается только для приходных накладных." });
+
+            var copyResult = await CreateReceiptCopyAsync(
+                db,
+                restaurantId,
+                employeeId,
+                source,
+                $"Копия документа {source.Number}",
+                ct);
+            if (copyResult.Error is not null) return copyResult.Error;
+
+            var copy = copyResult.Document!;
+            db.StockDocuments.Add(copy);
+            AddAudit(db, user, restaurantId, "STOCK_DOCUMENT_DUPLICATED", "StockDocument", copy.Id, new
+            {
+                sourceDocumentId = source.Id,
+                source.Number,
+                copy.Number
+            });
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new { id = copy.Id });
+        }).RequireAuthorization(Permissions.InventoryManage);
+
+        group.MapPost("/{id:guid}/reverse", async (
+            Guid id,
+            ReverseReceiptDocumentRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            var document = await db.StockDocuments
+                .Include(x => x.Lines)
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+            if (document is null) return Results.NotFound();
+            if (document.Type != StockDocumentType.Receipt)
+                return Results.BadRequest(new { message = "Сторно сейчас поддерживается только для приходной накладной." });
+            if (document.Status != StockDocumentStatus.Posted)
+                return Results.Conflict(new { message = "Сторнировать можно только проведённый документ." });
+            if (!document.WarehouseId.HasValue)
+                return Results.BadRequest(new { message = "У документа не указан склад." });
+
+            var alreadyReversed = await db.StockMovements.AnyAsync(x =>
+                x.RestaurantId == restaurantId &&
+                x.ReferenceType == "STOCK_DOCUMENT_REVERSAL" &&
+                x.ReferenceId == document.Id, ct);
+            if (alreadyReversed)
+                return Results.Conflict(new { message = "Этот документ уже сторнирован." });
+
+            var postedMovements = await db.StockMovements
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.ReferenceType == "STOCK_DOCUMENT" &&
+                    x.ReferenceId == document.Id)
+                .ToListAsync(ct);
+            if (postedMovements.Count == 0)
+                return Results.Conflict(new { message = "Не найдены исходные складские движения этого документа." });
+
+            var productIds = postedMovements.Select(x => x.ProductId).Distinct().ToArray();
+            var currentBalances = await db.StockMovements
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.WarehouseId == document.WarehouseId.Value &&
+                    productIds.Contains(x.ProductId))
+                .GroupBy(x => x.ProductId)
+                .Select(group => new
+                {
+                    ProductId = group.Key,
+                    Quantity = group.Sum(x => x.QuantityDelta),
+                    StockValue = group.Sum(x => x.CostDelta ?? 0m)
+                })
+                .ToDictionaryAsync(x => x.ProductId, ct);
+
+            var reversalNeeds = postedMovements
+                .GroupBy(x => x.ProductId)
+                .Select(group => new
+                {
+                    ProductId = group.Key,
+                    Quantity = group.Sum(x => x.QuantityDelta),
+                    StockValue = group.Sum(x => x.CostDelta ?? 0m)
+                })
+                .ToList();
+
+            foreach (var need in reversalNeeds)
+            {
+                var balance = currentBalances.GetValueOrDefault(need.ProductId);
+                if ((balance?.Quantity ?? 0m) < need.Quantity ||
+                    (balance?.StockValue ?? 0m) < need.StockValue)
+                {
+                    return Results.Conflict(new
+                    {
+                        message = "Сторно невозможно: часть товара из этой накладной уже израсходована или стоимость остатка недостаточна. Сначала оформите корректирующий складской документ."
+                    });
+                }
+            }
+
+            var reversalOperationId = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow;
+            foreach (var movement in postedMovements)
+            {
+                db.StockMovements.Add(new StockMovement
+                {
+                    RestaurantId = restaurantId,
+                    WarehouseId = movement.WarehouseId,
+                    ProductId = movement.ProductId,
+                    EmployeeId = employeeId,
+                    OperationId = reversalOperationId,
+                    Type = "RECEIPT_REVERSAL",
+                    QuantityDelta = -movement.QuantityDelta,
+                    UnitCost = movement.UnitCost,
+                    CostDelta = movement.CostDelta.HasValue ? -movement.CostDelta.Value : null,
+                    ReferenceType = "STOCK_DOCUMENT_REVERSAL",
+                    ReferenceId = document.Id,
+                    Note = NormalizeOptional(request.Reason, 500) ?? $"Сторно приходной {document.Number}",
+                    CreatedAt = now
+                });
+            }
+
+            var originalLedgerEntry = await db.LedgerEntries
+                .AsNoTracking()
+                .Include(x => x.Lines)
+                .ThenInclude(x => x.Account)
+                .FirstOrDefaultAsync(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.ReferenceType == "STOCK_RECEIPT" &&
+                    x.ReferenceId == document.Id, ct);
+
+            if (originalLedgerEntry is not null)
+            {
+                var reversalLines = originalLedgerEntry.Lines.Select(line =>
+                    new AccountingLedger.LineDraft(
+                        line.Account!,
+                        Debit: line.Credit,
+                        Credit: line.Debit,
+                        SupplierId: line.SupplierId,
+                        WarehouseId: line.WarehouseId,
+                        MoneyAccountId: line.MoneyAccountId));
+
+                await AccountingLedger.PostAsync(
+                    db,
+                    restaurantId,
+                    "STOCK_RECEIPT_REVERSAL",
+                    document.Id,
+                    now,
+                    $"Сторно приходной накладной {document.Number}",
+                    employeeId,
+                    reversalLines,
+                    ct);
+            }
+
+            document.Status = StockDocumentStatus.Cancelled;
+
+            StockDocument? correction = null;
+            if (request.CreateCorrectionDraft)
+            {
+                var copyResult = await CreateReceiptCopyAsync(
+                    db,
+                    restaurantId,
+                    employeeId,
+                    document,
+                    $"Исправление документа {document.Number}",
+                    ct);
+                if (copyResult.Error is not null) return copyResult.Error;
+
+                correction = copyResult.Document!;
+                db.StockDocuments.Add(correction);
+            }
+
+            AddAudit(db, user, restaurantId, "STOCK_DOCUMENT_REVERSED", "StockDocument", document.Id, new
+            {
+                document.Number,
+                reversalOperationId,
+                reason = NormalizeOptional(request.Reason, 500),
+                correctionDocumentId = correction?.Id
+            });
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+
+            return Results.Ok(new
+            {
+                id = document.Id,
+                status = EnumText(document.Status),
+                correctionDocumentId = correction?.Id
+            });
+        }).RequireAuthorization(Permissions.InventoryManage);
+
         group.MapPost("/{id:guid}/post", async (
             Guid id,
             ClaimsPrincipal user,
@@ -639,6 +879,94 @@ public static class BackOfficeStockDocumentEndpoints
         }).RequireAuthorization(Permissions.InventoryManage);
 
         return app;
+    }
+
+    private sealed record ReceiptCopyResult(StockDocument? Document, IResult? Error);
+
+    private static async Task<ReceiptCopyResult> CreateReceiptCopyAsync(
+        RestaurantDbContext db,
+        Guid restaurantId,
+        Guid employeeId,
+        StockDocument source,
+        string commentPrefix,
+        CancellationToken ct)
+    {
+        if (!source.WarehouseId.HasValue || !source.SupplierId.HasValue)
+            return new(null, Results.BadRequest(new { message = "В исходном документе не указан склад или поставщик." }));
+
+        var isRetailReceipt = NormalizePurchaseDocumentKind(source.PurchaseDocumentKind) ==
+                              TaxPolicy.PurchaseDocumentRetailReceipt;
+        var retailVatMode = isRetailReceipt && source.Lines.Any(x => x.VatTaxCode == TaxPolicy.PurchaseVat18)
+            ? TaxPolicy.RetailVat18
+            : TaxPolicy.RetailVatNotSpecified;
+
+        var comment = string.IsNullOrWhiteSpace(source.Comment)
+            ? commentPrefix
+            : $"{commentPrefix}. {source.Comment}";
+
+        var request = new UpsertReceiptDocumentRequest(
+            null,
+            DateTimeOffset.UtcNow,
+            source.WarehouseId.Value,
+            source.SupplierId.Value,
+            source.PurchaseDocumentKind,
+            null,
+            isRetailReceipt ? retailVatMode : null,
+            source.VatPriceMode,
+            source.InputVatCreditStatus,
+            null,
+            NormalizeOptional(comment, 500),
+            source.Lines.Select(line => new ReceiptDocumentLineRequest(
+                line.ProductId,
+                line.Quantity,
+                line.UnitPrice,
+                line.VatTaxCode)).ToList());
+
+        var validation = await ValidateReceiptRequestAsync(db, restaurantId, request, null, ct);
+        if (validation.Error is not null)
+            return new(null, validation.Error);
+
+        var copy = new StockDocument
+        {
+            RestaurantId = restaurantId,
+            Type = StockDocumentType.Receipt,
+            Status = StockDocumentStatus.Draft,
+            Number = CreateNumber("PR", DateTimeOffset.UtcNow),
+            DocumentDate = request.DocumentDate ?? DateTimeOffset.UtcNow,
+            WarehouseId = request.WarehouseId,
+            SupplierId = request.SupplierId,
+            PurchaseSource = "LOCAL",
+            PurchaseDocumentKind = NormalizePurchaseDocumentKind(request.PurchaseDocumentKind),
+            PurchaseReferenceNumber = null,
+            TaxRegimeSnapshot = validation.TaxRegime!,
+            VatPriceMode = validation.VatPriceMode!,
+            InputVatCreditStatus = validation.InputVatCreditStatus!,
+            EInvoiceNumber = null,
+            Comment = NormalizeOptional(request.Comment, 500),
+            CreatedByEmployeeId = employeeId,
+            NetAmount = Money(validation.Lines!.Sum(x => x.NetAmount)),
+            VatAmount = Money(validation.Lines!.Sum(x => x.VatAmount)),
+            InventoryCostAmount = Money(validation.Lines!.Sum(x => x.InventoryCostAmount)),
+            TotalAmount = Money(validation.Lines!.Sum(x => x.Amount))
+        };
+
+        foreach (var line in validation.Lines!)
+        {
+            copy.Lines.Add(new StockDocumentLine
+            {
+                RestaurantId = restaurantId,
+                ProductId = line.ProductId,
+                Quantity = line.Quantity,
+                UnitPrice = line.UnitPrice,
+                VatTaxCode = line.VatTaxCode,
+                NetAmount = line.NetAmount,
+                VatAmount = line.VatAmount,
+                InventoryCostAmount = line.InventoryCostAmount,
+                Amount = line.Amount
+            });
+        }
+
+        return new(copy, null);
     }
 
     private sealed record ValidatedReceiptLine(
@@ -885,7 +1213,7 @@ public static class BackOfficeStockDocumentEndpoints
     }
 }
 
-public sealed record UpsertSupplierRequest(string Name, string Type, string? TaxId, string? Phone);
+public sealed record ReverseReceiptDocumentRequest(bool CreateCorrectionDraft, string? Reason);\npublic sealed record UpsertSupplierRequest(string Name, string Type, string? TaxId, string? Phone);
 public sealed record UpdateSupplierRequest(string Name, string Type, string? TaxId, string? Phone, bool IsActive);
 public sealed record ReceiptDocumentLineRequest(
     Guid ProductId,
