@@ -1387,6 +1387,9 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.Property<Guid>("EmployeeId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Note")
                         .HasColumnType("text");
 
@@ -1396,6 +1399,12 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.Property<decimal>("QuantityDelta")
                         .HasPrecision(18, 3)
                         .HasColumnType("numeric(18,3)");
+
+                    b.Property<Guid?>("ReferenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReferenceType")
+                        .HasColumnType("text");
 
                     b.Property<Guid>("RestaurantId")
                         .HasColumnType("uuid");
@@ -1412,6 +1421,10 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                     b.HasIndex("ProductId");
 
                     b.HasIndex("WarehouseId");
+
+                    b.HasIndex("RestaurantId", "OperationId");
+
+                    b.HasIndex("RestaurantId", "ReferenceType", "ReferenceId");
 
                     b.HasIndex("RestaurantId", "WarehouseId", "ProductId", "CreatedAt");
 
