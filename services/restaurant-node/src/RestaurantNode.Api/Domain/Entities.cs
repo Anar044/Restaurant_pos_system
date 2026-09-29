@@ -161,6 +161,13 @@ public sealed class Product : Entity
     public decimal MinStock { get; set; }
     public bool TrackStock { get; set; }
     public string? InventoryAccountCode { get; set; }
+    public string TaxStatus { get; set; } = "STANDARD";
+    public bool? OwnAgricultureSameTaxpayer { get; set; }
+    public bool? OwnAgricultureCriteriaMet { get; set; }
+    public bool? OwnAgricultureUnprocessed { get; set; }
+    public string? ProductionUnit { get; set; }
+    public string? OriginDocument { get; set; }
+    public DateOnly? ProductionOrHarvestDate { get; set; }
     public bool IsSellable { get; set; } = true;
     public bool IsActive { get; set; } = true;
     public int SortOrder { get; set; }
