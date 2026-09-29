@@ -131,6 +131,11 @@ public static class AccountingLegacyBackfill
                 (x.Status == PaymentStatus.Completed || x.Status == PaymentStatus.Refunded))
             .ToListAsync(ct);
 
+        var shiftDevices = await db.Shifts
+            .AsNoTracking()
+            .Where(x => x.RestaurantId == restaurantId)
+            .ToDictionaryAsync(x => x.Id, x => x.DeviceId, ct);
+
         var orderNumbers = await db.Orders
             .AsNoTracking()
             .Where(x => x.RestaurantId == restaurantId)
@@ -138,8 +143,13 @@ public static class AccountingLegacyBackfill
 
         foreach (var payment in payments)
         {
+            shiftDevices.TryGetValue(payment.ShiftId, out var paymentDeviceId);
             var moneyAccount = await AccountingLedger.EnsurePaymentMoneyAccountAsync(
-                db, restaurantId, payment.Method, ct);
+                db,
+                restaurantId,
+                payment.Method,
+                paymentDeviceId == Guid.Empty ? null : paymentDeviceId,
+                ct);
             var moneyLedger = await AccountingLedger.EnsureMoneyAccountAsync(
                 db, restaurantId, moneyAccount, ct);
             orderNumbers.TryGetValue(payment.OrderId, out var orderNumber);
@@ -176,8 +186,13 @@ public static class AccountingLegacyBackfill
             if (!paymentLookup.TryGetValue(refund.PaymentId, out var payment))
                 continue;
 
+            shiftDevices.TryGetValue(refund.ShiftId, out var refundDeviceId);
             var moneyAccount = await AccountingLedger.EnsurePaymentMoneyAccountAsync(
-                db, restaurantId, payment.Method, ct);
+                db,
+                restaurantId,
+                payment.Method,
+                refundDeviceId == Guid.Empty ? null : refundDeviceId,
+                ct);
             var moneyLedger = await AccountingLedger.EnsureMoneyAccountAsync(
                 db, restaurantId, moneyAccount, ct);
 
@@ -209,16 +224,22 @@ public static class AccountingLegacyBackfill
 
         if (cashEntries.Count > 0)
         {
-            var cashMoneyAccount = await AccountingLedger.EnsurePaymentMoneyAccountAsync(
-                db, restaurantId, PaymentMethod.Cash, ct);
-            var cashLedger = await AccountingLedger.EnsureMoneyAccountAsync(
-                db, restaurantId, cashMoneyAccount, ct);
             var cashClearing = await AccountingLedger.EnsureSystemAccountAsync(
                 db, restaurantId, AccountingLedger.CashClearingKey,
                 "3.90", "Кассовые внесения и изъятия", LedgerAccountType.Equity, ct);
 
             foreach (var entry in cashEntries)
             {
+                shiftDevices.TryGetValue(entry.ShiftId, out var cashDeviceId);
+                var cashMoneyAccount = await AccountingLedger.EnsurePaymentMoneyAccountAsync(
+                    db,
+                    restaurantId,
+                    PaymentMethod.Cash,
+                    cashDeviceId == Guid.Empty ? null : cashDeviceId,
+                    ct);
+                var cashLedger = await AccountingLedger.EnsureMoneyAccountAsync(
+                    db, restaurantId, cashMoneyAccount, ct);
+
                 var lines = entry.Type == CashTransactionType.Deposit
                     ? new[]
                     {
