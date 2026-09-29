@@ -150,6 +150,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Payment>().Property(x => x.ChangeAmount).HasPrecision(18, 4);
         modelBuilder.Entity<PaymentRefund>().Property(x => x.Amount).HasPrecision(18, 4);
         modelBuilder.Entity<CashTransaction>().Property(x => x.Amount).HasPrecision(18, 4);
+        modelBuilder.Entity<MoneyTransaction>().Property(x => x.Amount).HasPrecision(18, 4);
 
         modelBuilder.Entity<Order>()
             .Property(x => x.DisplayNumber)
