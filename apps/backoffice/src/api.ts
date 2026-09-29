@@ -761,6 +761,8 @@ export type StockDocument = {
   supplierId: string | null;
   supplierName: string | null;
   purchaseSource: string;
+  purchaseDocumentKind: string;
+  purchaseReferenceNumber: string | null;
   taxRegimeSnapshot: string;
   vatPriceMode: string;
   inputVatCreditStatus: string;
@@ -797,6 +799,8 @@ export type BackOfficeStockDocuments = {
     taxRegime: string;
     vatPriceMode: string;
   };
+  purchaseDocumentKinds: PurchaseVatOption[];
+  retailVatModes: PurchaseVatOption[];
   vatPriceModes: PurchaseVatOption[];
   purchaseVatCodes: PurchaseVatOption[];
   inputVatCreditStatuses: PurchaseVatOption[];
@@ -811,6 +815,9 @@ export type UpsertReceiptDocumentInput = {
   documentDate: string | null;
   warehouseId: string;
   supplierId: string;
+  purchaseDocumentKind: string;
+  purchaseReferenceNumber: string | null;
+  retailVatMode: string | null;
   vatPriceMode: string;
   inputVatCreditStatus: string | null;
   eInvoiceNumber: string | null;
