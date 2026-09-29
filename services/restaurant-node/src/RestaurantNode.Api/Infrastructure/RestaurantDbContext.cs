@@ -174,6 +174,8 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<ProductPrice>().HasIndex(x => new { x.ProductId, x.ValidFrom });
         modelBuilder.Entity<Warehouse>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<StockMovement>().HasIndex(x => new { x.RestaurantId, x.WarehouseId, x.ProductId, x.CreatedAt });
+        modelBuilder.Entity<StockMovement>().HasIndex(x => new { x.RestaurantId, x.OperationId });
+        modelBuilder.Entity<StockMovement>().HasIndex(x => new { x.RestaurantId, x.ReferenceType, x.ReferenceId });
         modelBuilder.Entity<Shift>().HasIndex(x => new { x.RestaurantId, x.DeviceId, x.Status, x.OpenedAt });
         modelBuilder.Entity<Shift>()
             .HasIndex(x => new { x.RestaurantId, x.DeviceId })
