@@ -214,6 +214,211 @@ public static class BackOfficeAccountingEndpoints
             });
         });
 
+        group.MapGet("/accounts/{accountId:guid}/movements", async (
+            Guid accountId,
+            DateTimeOffset? from,
+            DateTimeOffset? to,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out _))
+                return Results.Unauthorized();
+
+            await AccountingLegacyBackfill.EnsureAsync(db, restaurantId, ct);
+
+            var now = DateTimeOffset.UtcNow;
+            var periodTo = to ?? now.AddMinutes(1);
+            var periodFrom = from ?? periodTo.AddDays(-30);
+            if (periodTo <= periodFrom)
+                return Results.BadRequest(new { message = "Period end must be after period start." });
+            if (periodTo - periodFrom > TimeSpan.FromDays(366))
+                return Results.BadRequest(new { message = "Accounting period cannot exceed 366 days." });
+
+            var account = await db.LedgerAccounts
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x =>
+                    x.Id == accountId &&
+                    x.RestaurantId == restaurantId,
+                    ct);
+
+            if (account is null)
+                return Results.NotFound(new { message = "Счёт не найден." });
+
+            var openingTotals = await (
+                from line in db.LedgerLines.AsNoTracking()
+                join entry in db.LedgerEntries.AsNoTracking() on line.EntryId equals entry.Id
+                where line.RestaurantId == restaurantId &&
+                      line.AccountId == accountId &&
+                      entry.OccurredAt < periodFrom
+                group line by line.AccountId into g
+                select new
+                {
+                    Debit = g.Sum(x => x.Debit),
+                    Credit = g.Sum(x => x.Credit)
+                })
+                .FirstOrDefaultAsync(ct);
+
+            var entries = await db.LedgerEntries
+                .AsNoTracking()
+                .Include(x => x.Lines)
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.OccurredAt >= periodFrom &&
+                    x.OccurredAt < periodTo &&
+                    x.Lines.Any(line => line.AccountId == accountId))
+                .OrderBy(x => x.OccurredAt)
+                .ThenBy(x => x.CreatedAt)
+                .Take(1000)
+                .ToListAsync(ct);
+
+            var accountIds = entries
+                .SelectMany(x => x.Lines)
+                .Select(x => x.AccountId)
+                .Append(accountId)
+                .Distinct()
+                .ToArray();
+
+            var accountLookup = await db.LedgerAccounts
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && accountIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, ct);
+
+            var supplierIds = entries
+                .SelectMany(x => x.Lines)
+                .Where(x => x.SupplierId.HasValue)
+                .Select(x => x.SupplierId!.Value)
+                .Distinct()
+                .ToArray();
+            var warehouseIds = entries
+                .SelectMany(x => x.Lines)
+                .Where(x => x.WarehouseId.HasValue)
+                .Select(x => x.WarehouseId!.Value)
+                .Distinct()
+                .ToArray();
+            var moneyAccountIds = entries
+                .SelectMany(x => x.Lines)
+                .Where(x => x.MoneyAccountId.HasValue)
+                .Select(x => x.MoneyAccountId!.Value)
+                .Distinct()
+                .ToArray();
+
+            var supplierLookup = await db.Suppliers
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && supplierIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+            var warehouseLookup = await db.Warehouses
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && warehouseIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+            var moneyAccountLookup = await db.MoneyAccounts
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && moneyAccountIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+
+            string? Analytics(LedgerLine line)
+            {
+                var parts = new List<string>(3);
+                if (line.WarehouseId.HasValue &&
+                    warehouseLookup.TryGetValue(line.WarehouseId.Value, out var warehouseName))
+                    parts.Add("Склад: " + warehouseName);
+                if (line.SupplierId.HasValue &&
+                    supplierLookup.TryGetValue(line.SupplierId.Value, out var supplierName))
+                    parts.Add("Поставщик: " + supplierName);
+                if (line.MoneyAccountId.HasValue &&
+                    moneyAccountLookup.TryGetValue(line.MoneyAccountId.Value, out var moneyName))
+                    parts.Add("Деньги: " + moneyName);
+                return parts.Count == 0 ? null : string.Join(" · ", parts);
+            }
+
+            var openingDebit = openingTotals?.Debit ?? 0m;
+            var openingCredit = openingTotals?.Credit ?? 0m;
+            var openingBalance = AccountingLedger.NaturalBalance(
+                account.Type, openingDebit, openingCredit);
+
+            var runningBalance = openingBalance;
+            var movements = new List<object>();
+            decimal periodDebit = 0m;
+            decimal periodCredit = 0m;
+
+            foreach (var entry in entries)
+            {
+                var targetLines = entry.Lines
+                    .Where(x => x.AccountId == accountId)
+                    .OrderBy(x => x.Id)
+                    .ToList();
+
+                foreach (var line in targetLines)
+                {
+                    periodDebit += line.Debit;
+                    periodCredit += line.Credit;
+
+                    runningBalance = AccountingLedger.NaturalBalance(
+                        account.Type,
+                        account.Type is LedgerAccountType.Asset or LedgerAccountType.Expense
+                            ? runningBalance + line.Debit
+                            : line.Debit,
+                        account.Type is LedgerAccountType.Asset or LedgerAccountType.Expense
+                            ? line.Credit
+                            : runningBalance + line.Credit);
+
+                    var correspondents = entry.Lines
+                        .Where(x => x.Id != line.Id)
+                        .OrderBy(x => x.Id)
+                        .Select(other =>
+                        {
+                            accountLookup.TryGetValue(other.AccountId, out var otherAccount);
+                            return new
+                            {
+                                id = other.Id,
+                                accountId = other.AccountId,
+                                accountCode = otherAccount?.Code ?? "—",
+                                accountName = otherAccount?.Name ?? "Счёт",
+                                debit = Money(other.Debit),
+                                credit = Money(other.Credit),
+                                analytics = Analytics(other)
+                            };
+                        })
+                        .ToArray();
+
+                    movements.Add(new
+                    {
+                        id = line.Id,
+                        entryId = entry.Id,
+                        entry.OccurredAt,
+                        entry.ReferenceType,
+                        entry.ReferenceId,
+                        entry.Description,
+                        debit = Money(line.Debit),
+                        credit = Money(line.Credit),
+                        balanceAfter = Money(runningBalance),
+                        analytics = Analytics(line),
+                        correspondents
+                    });
+                }
+            }
+
+            return Results.Ok(new
+            {
+                period = new { from = periodFrom, to = periodTo },
+                account = new
+                {
+                    id = account.Id,
+                    account.Code,
+                    account.Name,
+                    type = EnumText(account.Type)
+                },
+                openingBalance = Money(openingBalance),
+                periodDebit = Money(periodDebit),
+                periodCredit = Money(periodCredit),
+                closingBalance = Money(AccountingLedger.NaturalBalance(
+                    account.Type,
+                    openingDebit + periodDebit,
+                    openingCredit + periodCredit)),
+                movements = movements.AsEnumerable().Reverse()
+            });
+        });
+
         group.MapPost("/suppliers/{supplierId:guid}/payments", async (
             Guid supplierId,
             SupplierPaymentRequest request,
