@@ -190,6 +190,44 @@ public static class BackOfficePosPrinterEndpoints
             return Results.Created($"/api/v1/backoffice/pos-printers/{deviceId}/printers/{printer.Id}", new { id = printer.Id });
         }).RequireAuthorization(Permissions.DevicesManage);
 
+        group.MapPut("/{deviceId:guid}/printers/{printerId:guid}/activate", async (
+            Guid deviceId,
+            Guid printerId,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryGetRestaurantId(user, out var restaurantId))
+                return Results.Unauthorized();
+
+            var printer = await db.Printers.FirstOrDefaultAsync(
+                x => x.Id == printerId &&
+                     x.RestaurantId == restaurantId &&
+                     x.HostDeviceId == deviceId &&
+                     x.IsActive,
+                ct);
+            if (printer is null)
+                return Results.NotFound(new { message = "Printer was not found on this POS." });
+
+            if (printer.ConnectionType != PrinterConnectionType.WindowsQueue && !printer.IsConfigured)
+                return Results.BadRequest(new { message = "Network printers must be added manually with IP and port." });
+
+            printer.IsConfigured = true;
+            if (string.IsNullOrWhiteSpace(printer.Name))
+                printer.Name = printer.Address;
+
+            AddAudit(db, user, restaurantId, "POS_PRINTER_ACTIVATED", "Printer", printer.Id, new
+            {
+                posDeviceId = deviceId,
+                printer.Name,
+                connectionType = printer.ConnectionType.ToString(),
+                printer.Address
+            });
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { id = printer.Id, name = printer.Name });
+        }).RequireAuthorization(Permissions.DevicesManage);
+
         group.MapPut("/{deviceId:guid}/receipt-printer", async (
             Guid deviceId,
             SetPosReceiptPrinterRequest request,
