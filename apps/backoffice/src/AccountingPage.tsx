@@ -292,7 +292,7 @@ function AccountDetails({
   const selectedAnalytic = analyticFilter
     ? details.analytics.find((row) => `${row.kind}:${row.id}` === analyticFilter) ?? null
     : null;
-  const displayMovements = analyticFilter
+  const displayMovements: DisplayMovement[] = analyticFilter
     ? visibleMovements
     : collapseInternalTransfers(visibleMovements, account);
   const analyticBalances = new Map<string, number>();
