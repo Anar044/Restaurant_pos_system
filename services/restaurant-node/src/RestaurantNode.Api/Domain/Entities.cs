@@ -275,8 +275,11 @@ public sealed class StockMovement : Entity
     public Guid ProductId { get; set; }
     public Product? Product { get; set; }
     public Guid EmployeeId { get; set; }
+    public Guid OperationId { get; set; }
     public string Type { get; set; } = "RECEIPT";
     public decimal QuantityDelta { get; set; }
+    public string? ReferenceType { get; set; }
+    public Guid? ReferenceId { get; set; }
     public string? Note { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
