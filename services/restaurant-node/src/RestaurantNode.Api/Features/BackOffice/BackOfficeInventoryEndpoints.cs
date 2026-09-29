@@ -290,6 +290,7 @@ public static class BackOfficeInventoryEndpoints
             var operationId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
             var note = NormalizeOptional(request.Note, 500);
+            var totalCost = 0m;
 
             foreach (var line in lines.Lines!)
             {
@@ -298,6 +299,7 @@ public static class BackOfficeInventoryEndpoints
                     ? 0m
                     : decimal.Round(balance.StockValue / balance.Quantity, 4, MidpointRounding.AwayFromZero);
                 var cost = decimal.Round(line.Quantity * averageCost, 4, MidpointRounding.AwayFromZero);
+                totalCost += cost;
 
                 db.StockMovements.Add(new StockMovement
                 {
@@ -315,6 +317,35 @@ public static class BackOfficeInventoryEndpoints
                     Note = note,
                     CreatedAt = now
                 });
+            }
+
+            totalCost = AccountingLedger.Money(totalCost);
+            if (totalCost > 0m)
+            {
+                await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+                var stockAccount = await AccountingLedger.EnsureWarehouseAccountAsync(
+                    db, restaurantId, request.WarehouseId, ct);
+                var expenseAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                    db, restaurantId, AccountingLedger.WriteOffExpenseKey,
+                    "5.20", "Списания и порча", LedgerAccountType.Expense, ct);
+
+                await AccountingLedger.PostAsync(
+                    db,
+                    restaurantId,
+                    "STOCK_WRITE_OFF",
+                    operationId,
+                    now,
+                    "Списание со склада",
+                    employeeId,
+                    new[]
+                    {
+                        new AccountingLedger.LineDraft(expenseAccount, Debit: totalCost),
+                        new AccountingLedger.LineDraft(
+                            stockAccount,
+                            Credit: totalCost,
+                            WarehouseId: request.WarehouseId)
+                    },
+                    ct);
             }
 
             AddAudit(db, user, restaurantId, "STOCK_WRITE_OFF_CREATED", "StockOperation", operationId, new
@@ -397,6 +428,7 @@ public static class BackOfficeInventoryEndpoints
             var operationId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
             var note = NormalizeOptional(request.Note, 500);
+            var transferTotal = 0m;
 
             foreach (var line in lines.Lines!)
             {
@@ -405,6 +437,7 @@ public static class BackOfficeInventoryEndpoints
                     ? 0m
                     : decimal.Round(balance.StockValue / balance.Quantity, 4, MidpointRounding.AwayFromZero);
                 var transferCost = decimal.Round(line.Quantity * averageCost, 4, MidpointRounding.AwayFromZero);
+                transferTotal += transferCost;
 
                 db.StockMovements.AddRange(
                     new StockMovement
@@ -439,6 +472,37 @@ public static class BackOfficeInventoryEndpoints
                         Note = note,
                         CreatedAt = now
                     });
+            }
+
+            transferTotal = AccountingLedger.Money(transferTotal);
+            if (transferTotal > 0m)
+            {
+                await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+                var fromAccount = await AccountingLedger.EnsureWarehouseAccountAsync(
+                    db, restaurantId, request.FromWarehouseId, ct);
+                var toAccount = await AccountingLedger.EnsureWarehouseAccountAsync(
+                    db, restaurantId, request.ToWarehouseId, ct);
+
+                await AccountingLedger.PostAsync(
+                    db,
+                    restaurantId,
+                    "STOCK_TRANSFER",
+                    operationId,
+                    now,
+                    "Внутреннее перемещение",
+                    employeeId,
+                    new[]
+                    {
+                        new AccountingLedger.LineDraft(
+                            toAccount,
+                            Debit: transferTotal,
+                            WarehouseId: request.ToWarehouseId),
+                        new AccountingLedger.LineDraft(
+                            fromAccount,
+                            Credit: transferTotal,
+                            WarehouseId: request.FromWarehouseId)
+                    },
+                    ct);
             }
 
             AddAudit(db, user, restaurantId, "STOCK_TRANSFER_CREATED", "StockOperation", operationId, new
@@ -504,6 +568,8 @@ public static class BackOfficeInventoryEndpoints
             var now = DateTimeOffset.UtcNow;
             var note = NormalizeOptional(request.Note, 500);
             var adjusted = 0;
+            var gainCost = 0m;
+            var lossCost = 0m;
 
             foreach (var line in lines.Lines!)
             {
@@ -516,6 +582,10 @@ public static class BackOfficeInventoryEndpoints
                 var delta = line.CountedQuantity - current;
                 if (delta == 0m) continue;
                 var costDelta = decimal.Round(delta * averageCost, 4, MidpointRounding.AwayFromZero);
+                if (costDelta > 0m)
+                    gainCost += costDelta;
+                else if (costDelta < 0m)
+                    lossCost += -costDelta;
 
                 db.StockMovements.Add(new StockMovement
                 {
@@ -534,6 +604,54 @@ public static class BackOfficeInventoryEndpoints
                     CreatedAt = now
                 });
                 adjusted++;
+            }
+
+            gainCost = AccountingLedger.Money(gainCost);
+            lossCost = AccountingLedger.Money(lossCost);
+            if (gainCost > 0m || lossCost > 0m)
+            {
+                await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+                var stockAccount = await AccountingLedger.EnsureWarehouseAccountAsync(
+                    db, restaurantId, request.WarehouseId, ct);
+                var gainAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                    db, restaurantId, AccountingLedger.InventoryGainKey,
+                    "4.20", "Излишки по инвентаризации", LedgerAccountType.Income, ct);
+                var lossAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                    db, restaurantId, AccountingLedger.InventoryLossKey,
+                    "5.30", "Недостачи по инвентаризации", LedgerAccountType.Expense, ct);
+
+                var ledgerLines = new List<AccountingLedger.LineDraft>();
+                if (gainCost > 0m)
+                {
+                    ledgerLines.Add(new AccountingLedger.LineDraft(
+                        stockAccount,
+                        Debit: gainCost,
+                        WarehouseId: request.WarehouseId));
+                    ledgerLines.Add(new AccountingLedger.LineDraft(
+                        gainAccount,
+                        Credit: gainCost));
+                }
+                if (lossCost > 0m)
+                {
+                    ledgerLines.Add(new AccountingLedger.LineDraft(
+                        lossAccount,
+                        Debit: lossCost));
+                    ledgerLines.Add(new AccountingLedger.LineDraft(
+                        stockAccount,
+                        Credit: lossCost,
+                        WarehouseId: request.WarehouseId));
+                }
+
+                await AccountingLedger.PostAsync(
+                    db,
+                    restaurantId,
+                    "STOCK_INVENTORY",
+                    operationId,
+                    now,
+                    "Инвентаризация склада",
+                    employeeId,
+                    ledgerLines,
+                    ct);
             }
 
             AddAudit(db, user, restaurantId, "STOCK_INVENTORY_COUNTED", "StockOperation", operationId, new
