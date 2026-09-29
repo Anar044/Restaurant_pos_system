@@ -1695,15 +1695,17 @@ public static class OrderEndpoints
             var place = await (
                 from table in db.DiningTables.AsNoTracking()
                 join hall in db.Halls.AsNoTracking() on table.HallId equals hall.Id
+                join restaurantGroup in db.RestaurantGroups.AsNoTracking() on hall.GroupId equals restaurantGroup.Id
                 where table.Id == order.TableId.Value &&
                       table.RestaurantId == restaurantId &&
-                      hall.RestaurantId == restaurantId
+                      hall.RestaurantId == restaurantId &&
+                      restaurantGroup.RestaurantId == restaurantId
                 select new
                 {
                     HallId = hall.Id,
                     HallName = hall.Name,
                     TableName = table.Name,
-                    hall.PrecheckPrinterId
+                    PrecheckPrinterId = hall.PrecheckPrinterId ?? restaurantGroup.DefaultPrecheckPrinterId
                 })
                 .FirstOrDefaultAsync(ct);
 
@@ -1713,7 +1715,7 @@ public static class OrderEndpoints
             if (!place.PrecheckPrinterId.HasValue)
                 return Results.Conflict(new
                 {
-                    message = $"Hall '{place.HallName}' has no precheck printer assigned. Configure it in BackOffice > Groups > Halls."
+                    message = $"Hall '{place.HallName}' has no precheck printer. Configure the group default or hall override in BackOffice > Printing."
                 });
 
             var printer = await db.Printers
