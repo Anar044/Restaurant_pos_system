@@ -29,6 +29,13 @@ const UNIT_OPTIONS = [
   ['ml', 'мл'],
 ] as const;
 
+const INVENTORY_ACCOUNT_HELP: Record<string, string> = {
+  '201-1': 'Сырьё и продукты, которые используются для приготовления блюд и заготовок.',
+  '201-2': 'Вспомогательные материалы, которые используются в работе ресторана.',
+  '201-3': 'Упаковка: контейнеры, коробки, пакеты и другие упаковочные материалы.',
+  '205': 'Товары для перепродажи без переработки или приготовления.',
+};
+
 export function NomenclaturePage({
   token,
   canManage,
@@ -332,6 +339,17 @@ function NomenclatureEditor({
                 <small className="field-help">
                   Все движения этой позиции будут автоматически отражаться по выбранному счёту.
                 </small>
+                <div className="inventory-account-help">
+                  <strong>
+                    {inventoryAccounts.find((account) => account.code === inventoryAccountCode)?.code}
+                    {' · '}
+                    {inventoryAccounts.find((account) => account.code === inventoryAccountCode)?.name}
+                  </strong>
+                  <span>
+                    {INVENTORY_ACCOUNT_HELP[inventoryAccountCode] ??
+                      'Складской счёт для этой позиции.'}
+                  </span>
+                </div>
               </label>
             )}
             {item && (
