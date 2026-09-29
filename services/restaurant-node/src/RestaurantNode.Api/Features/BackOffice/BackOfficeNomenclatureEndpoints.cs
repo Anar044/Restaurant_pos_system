@@ -209,6 +209,111 @@ public static class BackOfficeNomenclatureEndpoints
                 });
             }
 
+            var previousInventoryAccountCode = item.TrackStock
+                ? AccountingLedger.NormalizeInventoryAccountCode(item.InventoryAccountCode)
+                : null;
+            var nextInventoryAccountCode = request.TrackStock
+                ? validation.InventoryAccountCode
+                : null;
+
+            if (item.TrackStock &&
+                (!request.TrackStock ||
+                 previousInventoryAccountCode != nextInventoryAccountCode))
+            {
+                var stockByWarehouse = await db.StockMovements
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.RestaurantId == restaurantId &&
+                        x.ProductId == item.Id)
+                    .GroupBy(x => x.WarehouseId)
+                    .Select(g => new
+                    {
+                        WarehouseId = g.Key,
+                        Quantity = g.Sum(x => x.QuantityDelta),
+                        StockValue = g.Sum(x => x.CostDelta ?? 0m)
+                    })
+                    .ToListAsync(ct);
+
+                var hasOpenStock = stockByWarehouse.Any(x =>
+                    x.Quantity != 0m || x.StockValue != 0m);
+
+                if (!request.TrackStock && hasOpenStock)
+                {
+                    return Results.Conflict(new
+                    {
+                        message = "Нельзя отключить складской учёт, пока по позиции есть остаток или складская стоимость. Сначала обнулите остатки."
+                    });
+                }
+
+                if (request.TrackStock &&
+                    previousInventoryAccountCode != nextInventoryAccountCode)
+                {
+                    var valuedStock = stockByWarehouse
+                        .Where(x => x.StockValue != 0m)
+                        .ToList();
+
+                    if (valuedStock.Count > 0)
+                    {
+                        await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+                        var oldAccount = await AccountingLedger.EnsureInventoryAccountAsync(
+                            db, restaurantId, previousInventoryAccountCode, ct);
+                        var newAccount = await AccountingLedger.EnsureInventoryAccountAsync(
+                            db, restaurantId, nextInventoryAccountCode, ct);
+
+                        var reclassLines = new List<AccountingLedger.LineDraft>();
+                        foreach (var row in valuedStock)
+                        {
+                            var amount = AccountingLedger.Money(Math.Abs(row.StockValue));
+                            if (amount <= 0m) continue;
+
+                            if (row.StockValue > 0m)
+                            {
+                                reclassLines.Add(new AccountingLedger.LineDraft(
+                                    newAccount,
+                                    Debit: amount,
+                                    WarehouseId: row.WarehouseId));
+                                reclassLines.Add(new AccountingLedger.LineDraft(
+                                    oldAccount,
+                                    Credit: amount,
+                                    WarehouseId: row.WarehouseId));
+                            }
+                            else
+                            {
+                                reclassLines.Add(new AccountingLedger.LineDraft(
+                                    oldAccount,
+                                    Debit: amount,
+                                    WarehouseId: row.WarehouseId));
+                                reclassLines.Add(new AccountingLedger.LineDraft(
+                                    newAccount,
+                                    Credit: amount,
+                                    WarehouseId: row.WarehouseId));
+                            }
+                        }
+
+                        if (reclassLines.Count >= 2)
+                        {
+                            Guid? employeeId = Guid.TryParse(
+                                user.FindFirstValue("employee_id"),
+                                out var parsedEmployeeId)
+                                ? parsedEmployeeId
+                                : null;
+
+                            var reclassId = Guid.NewGuid();
+                            await AccountingLedger.PostAsync(
+                                db,
+                                restaurantId,
+                                "INVENTORY_ACCOUNT_RECLASS",
+                                reclassId,
+                                DateTimeOffset.UtcNow,
+                                $"Переклассификация складского счёта: {item.Name} {previousInventoryAccountCode} → {nextInventoryAccountCode}",
+                                employeeId,
+                                reclassLines,
+                                ct);
+                        }
+                    }
+                }
+            }
+
             item.CategoryId = request.CategoryId;
             item.PreparationPlaceTypeId = request.PreparationPlaceTypeId;
             item.Name = validation.Name!;
