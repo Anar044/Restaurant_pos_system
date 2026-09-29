@@ -76,6 +76,26 @@ public static class AccountingAzerbaijanChartMigration
             db.LedgerAccounts.Remove(legacy);
         }
 
+        if (targets.TryGetValue(AccountingLedger.SalesRevenueKey, out var salesRevenue) &&
+            targets.TryGetValue(AccountingLedger.SalesReturnsKey, out var salesReturns))
+        {
+            var refundEntryIds = db.LedgerEntries
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.ReferenceType == "POS_REFUND")
+                .Select(x => x.Id);
+
+            await db.LedgerLines
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.AccountId == salesRevenue.Id &&
+                    x.Debit > 0m &&
+                    refundEntryIds.Contains(x.EntryId))
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(x => x.AccountId, salesReturns.Id),
+                    ct);
+        }
+
         await db.SaveChangesAsync(ct);
 
         db.AuditEvents.Add(new AuditEvent
