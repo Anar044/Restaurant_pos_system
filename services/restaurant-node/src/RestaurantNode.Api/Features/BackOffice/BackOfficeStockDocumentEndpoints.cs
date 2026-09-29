@@ -350,18 +350,18 @@ public static class BackOfficeStockDocumentEndpoints
             if (document.Lines.Count == 0)
                 return Results.BadRequest(new { message = "В документе нет позиций." });
 
-            var warehouseExists = await db.Warehouses.AnyAsync(x =>
+            var warehouse = await db.Warehouses.FirstOrDefaultAsync(x =>
                 x.Id == document.WarehouseId.Value &&
                 x.RestaurantId == restaurantId &&
                 x.IsActive, ct);
-            if (!warehouseExists)
+            if (warehouse is null)
                 return Results.BadRequest(new { message = "Склад отключён или не найден." });
 
-            var supplierExists = await db.Suppliers.AnyAsync(x =>
+            var supplier = await db.Suppliers.FirstOrDefaultAsync(x =>
                 x.Id == document.SupplierId.Value &&
                 x.RestaurantId == restaurantId &&
                 x.IsActive, ct);
-            if (!supplierExists)
+            if (supplier is null)
                 return Results.BadRequest(new { message = "Поставщик отключён или не найден." });
 
             var productIds = document.Lines.Select(x => x.ProductId).Distinct().ToArray();
@@ -399,6 +399,68 @@ public static class BackOfficeStockDocumentEndpoints
                     Note = document.Comment,
                     CreatedAt = document.DocumentDate
                 });
+            }
+
+            if (document.TotalAmount > 0m)
+            {
+                await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+                var inventoryAccount = await AccountingLedger.EnsureWarehouseAccountAsync(
+                    db, restaurantId, warehouse, ct);
+                var payableAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                    db, restaurantId, AccountingLedger.SupplierPayableKey,
+                    "2.10", "Задолженность перед поставщиками", LedgerAccountType.Liability, ct);
+                var advanceAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                    db, restaurantId, AccountingLedger.SupplierAdvanceKey,
+                    "1.30", "Авансы поставщикам", LedgerAccountType.Asset, ct);
+
+                var advanceTotals = await db.LedgerLines
+                    .AsNoTracking()
+                    .Where(x => x.RestaurantId == restaurantId &&
+                                x.SupplierId == supplier.Id &&
+                                x.AccountId == advanceAccount.Id)
+                    .GroupBy(_ => 1)
+                    .Select(g => new { Debit = g.Sum(x => x.Debit), Credit = g.Sum(x => x.Credit) })
+                    .FirstOrDefaultAsync(ct);
+
+                var availableAdvance = AccountingLedger.Money(
+                    (advanceTotals?.Debit ?? 0m) - (advanceTotals?.Credit ?? 0m));
+                var appliedAdvance = AccountingLedger.Money(
+                    Math.Min(document.TotalAmount, Math.Max(0m, availableAdvance)));
+
+                var ledgerLines = new List<AccountingLedger.LineDraft>
+                {
+                    new(
+                        inventoryAccount,
+                        Debit: document.TotalAmount,
+                        WarehouseId: warehouse.Id),
+                    new(
+                        payableAccount,
+                        Credit: document.TotalAmount,
+                        SupplierId: supplier.Id)
+                };
+
+                if (appliedAdvance > 0m)
+                {
+                    ledgerLines.Add(new AccountingLedger.LineDraft(
+                        payableAccount,
+                        Debit: appliedAdvance,
+                        SupplierId: supplier.Id));
+                    ledgerLines.Add(new AccountingLedger.LineDraft(
+                        advanceAccount,
+                        Credit: appliedAdvance,
+                        SupplierId: supplier.Id));
+                }
+
+                await AccountingLedger.PostAsync(
+                    db,
+                    restaurantId,
+                    "STOCK_RECEIPT",
+                    document.Id,
+                    document.DocumentDate,
+                    $"Приходная накладная {document.Number}",
+                    employeeId,
+                    ledgerLines,
+                    ct);
             }
 
             document.Status = StockDocumentStatus.Posted;
