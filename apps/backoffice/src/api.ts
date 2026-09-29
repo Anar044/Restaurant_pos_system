@@ -33,6 +33,42 @@ export type BackOfficeContext = {
   };
 };
 
+export type RestaurantTaxProfile = {
+  restaurantId: string;
+  taxRegime: 'UNCONFIGURED' | 'VAT_18' | 'SIMPLIFIED_8' | 'SIMPLIFIED_2' | string;
+  vatPriceMode: 'INCLUDED' | 'EXCLUDED' | string;
+  integratedPosTaxReliefEnabled: boolean;
+};
+
+export type RestaurantTaxOption = {
+  code: string;
+  name: string;
+  description: string;
+};
+
+export type BackOfficeTaxSettings = {
+  profile: RestaurantTaxProfile;
+  taxRegimes: RestaurantTaxOption[];
+  vatPriceModes: RestaurantTaxOption[];
+  rates: {
+    vat: number;
+    simplified8: number;
+    simplified8IntegratedPos: number;
+    simplified2: number;
+  };
+  restaurantPosRelief: {
+    from: string;
+    to: string;
+    vatTaxableTurnoverFactor: number;
+  };
+};
+
+export type UpdateRestaurantTaxProfileInput = {
+  taxRegime: string;
+  vatPriceMode: string;
+  integratedPosTaxReliefEnabled: boolean;
+};
+
 export type DiningTable = {
   id: string;
   hallId: string;
@@ -1322,6 +1358,22 @@ export async function updateGroupHall(
   }, token);
 }
 
+
+export async function getBackOfficeTaxSettings(
+  token: string,
+): Promise<BackOfficeTaxSettings> {
+  return request<BackOfficeTaxSettings>('/api/v1/backoffice/tax', {}, token);
+}
+
+export async function updateBackOfficeTaxSettings(
+  token: string,
+  input: UpdateRestaurantTaxProfileInput,
+): Promise<RestaurantTaxProfile> {
+  return request<RestaurantTaxProfile>('/api/v1/backoffice/tax', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
 
 export async function getBackOfficeNomenclature(token: string): Promise<BackOfficeNomenclature> {
   return request<BackOfficeNomenclature>('/api/v1/backoffice/nomenclature', {}, token);
