@@ -365,13 +365,19 @@ public static class BackOfficeStockDocumentEndpoints
                 return Results.BadRequest(new { message = "Поставщик отключён или не найден." });
 
             var productIds = document.Lines.Select(x => x.ProductId).Distinct().ToArray();
-            var validProducts = await db.Products.CountAsync(x =>
-                x.RestaurantId == restaurantId &&
-                x.IsActive &&
-                x.TrackStock &&
-                productIds.Contains(x.Id), ct);
-            if (validProducts != productIds.Length)
+            var products = await db.Products
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.IsActive &&
+                    x.TrackStock &&
+                    productIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.InventoryAccountCode })
+                .ToDictionaryAsync(x => x.Id, ct);
+            if (products.Count != productIds.Length)
                 return Results.BadRequest(new { message = "Одна или несколько позиций больше недоступны для складского учёта." });
+            if (products.Values.Any(x => !AccountingLedger.IsSupportedInventoryAccountCode(x.InventoryAccountCode)))
+                return Results.BadRequest(new { message = "У одной или нескольких позиций не настроен корректный счёт складского учёта." });
 
             var alreadyPosted = await db.StockMovements.AnyAsync(x =>
                 x.RestaurantId == restaurantId &&
@@ -404,14 +410,13 @@ public static class BackOfficeStockDocumentEndpoints
             if (document.TotalAmount > 0m)
             {
                 await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
-                var inventoryAccount = await AccountingLedger.EnsureWarehouseAccountAsync(
-                    db, restaurantId, warehouse, ct);
                 var payableAccount = await AccountingLedger.EnsureSystemAccountAsync(
                     db, restaurantId, AccountingLedger.SupplierPayableKey,
-                    "2.10", "Задолженность перед поставщиками", LedgerAccountType.Liability, ct);
+                    "531", "Malsatan və podratçılara qısamüddətli kreditor borcları",
+                    LedgerAccountType.Liability, ct);
                 var advanceAccount = await AccountingLedger.EnsureSystemAccountAsync(
                     db, restaurantId, AccountingLedger.SupplierAdvanceKey,
-                    "1.30", "Авансы поставщикам", LedgerAccountType.Asset, ct);
+                    "243", "Verilmiş qısamüddətli avanslar", LedgerAccountType.Asset, ct);
 
                 var advanceTotals = await db.LedgerLines
                     .AsNoTracking()
@@ -427,17 +432,25 @@ public static class BackOfficeStockDocumentEndpoints
                 var appliedAdvance = AccountingLedger.Money(
                     Math.Min(document.TotalAmount, Math.Max(0m, availableAdvance)));
 
-                var ledgerLines = new List<AccountingLedger.LineDraft>
+                var ledgerLines = new List<AccountingLedger.LineDraft>();
+                foreach (var accountGroup in document.Lines
+                             .GroupBy(line => products[line.ProductId].InventoryAccountCode!))
                 {
-                    new(
+                    var amount = AccountingLedger.Money(accountGroup.Sum(x => x.Amount));
+                    if (amount <= 0m) continue;
+
+                    var inventoryAccount = await AccountingLedger.EnsureInventoryAccountAsync(
+                        db, restaurantId, accountGroup.Key, ct);
+                    ledgerLines.Add(new AccountingLedger.LineDraft(
                         inventoryAccount,
-                        Debit: document.TotalAmount,
-                        WarehouseId: warehouse.Id),
-                    new(
-                        payableAccount,
-                        Credit: document.TotalAmount,
-                        SupplierId: supplier.Id)
-                };
+                        Debit: amount,
+                        WarehouseId: warehouse.Id));
+                }
+
+                ledgerLines.Add(new AccountingLedger.LineDraft(
+                    payableAccount,
+                    Credit: document.TotalAmount,
+                    SupplierId: supplier.Id));
 
                 if (appliedAdvance > 0m)
                 {
