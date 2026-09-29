@@ -1856,6 +1856,17 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Property<DateTimeOffset?>("PostedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("PurchaseDocumentKind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasDefaultValue("SUPPLIER_INVOICE");
+
+                    b.Property<string>("PurchaseReferenceNumber")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
                     b.Property<string>("PurchaseSource")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
