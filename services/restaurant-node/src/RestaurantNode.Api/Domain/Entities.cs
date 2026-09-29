@@ -267,6 +267,53 @@ public sealed class Warehouse : Entity
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class Supplier : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public required string Name { get; set; }
+    public SupplierType Type { get; set; } = SupplierType.External;
+    public string? TaxId { get; set; }
+    public string? Phone { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class StockDocument : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public StockDocumentType Type { get; set; } = StockDocumentType.Receipt;
+    public StockDocumentStatus Status { get; set; } = StockDocumentStatus.Draft;
+    public required string Number { get; set; }
+    public DateTimeOffset DocumentDate { get; set; } = DateTimeOffset.UtcNow;
+    public Guid? WarehouseId { get; set; }
+    public Warehouse? Warehouse { get; set; }
+    public Guid? FromWarehouseId { get; set; }
+    public Warehouse? FromWarehouse { get; set; }
+    public Guid? ToWarehouseId { get; set; }
+    public Warehouse? ToWarehouse { get; set; }
+    public Guid? SupplierId { get; set; }
+    public Supplier? Supplier { get; set; }
+    public decimal TotalAmount { get; set; }
+    public string? Comment { get; set; }
+    public Guid CreatedByEmployeeId { get; set; }
+    public Guid? PostedByEmployeeId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? PostedAt { get; set; }
+    public List<StockDocumentLine> Lines { get; set; } = [];
+}
+
+public sealed class StockDocumentLine : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public Guid DocumentId { get; set; }
+    public StockDocument? Document { get; set; }
+    public Guid ProductId { get; set; }
+    public Product? Product { get; set; }
+    public decimal Quantity { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal Amount { get; set; }
+}
+
 public sealed class StockMovement : Entity
 {
     public Guid RestaurantId { get; set; }
@@ -278,6 +325,8 @@ public sealed class StockMovement : Entity
     public Guid OperationId { get; set; }
     public string Type { get; set; } = "RECEIPT";
     public decimal QuantityDelta { get; set; }
+    public decimal? UnitCost { get; set; }
+    public decimal? CostDelta { get; set; }
     public string? ReferenceType { get; set; }
     public Guid? ReferenceId { get; set; }
     public string? Note { get; set; }
