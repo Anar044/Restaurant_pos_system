@@ -22,6 +22,16 @@ public static class BackOfficeStockDocumentEndpoints
             if (!TryClaims(user, out var restaurantId, out _))
                 return Results.Unauthorized();
 
+            var taxProfile = await db.Restaurants
+                .AsNoTracking()
+                .Where(x => x.Id == restaurantId)
+                .Select(x => new
+                {
+                    taxRegime = x.TaxRegime,
+                    vatPriceMode = x.VatPriceMode
+                })
+                .FirstAsync(ct);
+
             var suppliers = await db.Suppliers
                 .AsNoTracking()
                 .Where(x => x.RestaurantId == restaurantId)
@@ -83,6 +93,26 @@ public static class BackOfficeStockDocumentEndpoints
             return Results.Ok(new
             {
                 supportedTypes = new[] { "RECEIPT" },
+                taxProfile,
+                vatPriceModes = new[]
+                {
+                    new { code = TaxPolicy.VatPriceIncluded, name = "ƏDV включён в цену" },
+                    new { code = TaxPolicy.VatPriceExcluded, name = "Цена без ƏDV" }
+                },
+                purchaseVatCodes = new[]
+                {
+                    new { code = TaxPolicy.PurchaseVat18, name = "ƏDV 18%" },
+                    new { code = TaxPolicy.PurchaseVatZero, name = "ƏDV 0%" },
+                    new { code = TaxPolicy.PurchaseVatExempt, name = "ƏDV-dən azad" },
+                    new { code = TaxPolicy.PurchaseNoVat, name = "Без ƏDV" }
+                },
+                inputVatCreditStatuses = new[]
+                {
+                    new { code = TaxPolicy.InputVatPending, name = "Ожидает подтверждения" },
+                    new { code = TaxPolicy.InputVatEligible, name = "Можно принять к əvəzləşdirmə" },
+                    new { code = TaxPolicy.InputVatCredited, name = "Əvəzləşdirilib" },
+                    new { code = TaxPolicy.InputVatNonCreditable, name = "Не подлежит əvəzləşdirmə" }
+                },
                 suppliers,
                 warehouses,
                 items,
@@ -101,6 +131,14 @@ public static class BackOfficeStockDocumentEndpoints
                     supplierName = document.SupplierId.HasValue
                         ? supplierLookup.GetValueOrDefault(document.SupplierId.Value)
                         : null,
+                    document.PurchaseSource,
+                    document.TaxRegimeSnapshot,
+                    document.VatPriceMode,
+                    document.InputVatCreditStatus,
+                    document.EInvoiceNumber,
+                    document.NetAmount,
+                    document.VatAmount,
+                    document.InventoryCostAmount,
                     document.TotalAmount,
                     document.Comment,
                     document.CreatedByEmployeeId,
@@ -121,6 +159,10 @@ public static class BackOfficeStockDocumentEndpoints
                                 : "pcs",
                             line.Quantity,
                             line.UnitPrice,
+                            line.VatTaxCode,
+                            line.NetAmount,
+                            line.VatAmount,
+                            line.InventoryCostAmount,
                             line.Amount
                         })
                 })
@@ -233,9 +275,17 @@ public static class BackOfficeStockDocumentEndpoints
                 DocumentDate = request.DocumentDate ?? DateTimeOffset.UtcNow,
                 WarehouseId = request.WarehouseId,
                 SupplierId = request.SupplierId,
+                PurchaseSource = "LOCAL",
+                TaxRegimeSnapshot = validation.TaxRegime!,
+                VatPriceMode = validation.VatPriceMode!,
+                InputVatCreditStatus = validation.InputVatCreditStatus!,
+                EInvoiceNumber = validation.EInvoiceNumber,
                 Comment = NormalizeOptional(request.Comment, 500),
                 CreatedByEmployeeId = employeeId,
-                TotalAmount = validation.Lines!.Sum(x => x.Amount)
+                NetAmount = Money(validation.Lines!.Sum(x => x.NetAmount)),
+                VatAmount = Money(validation.Lines!.Sum(x => x.VatAmount)),
+                InventoryCostAmount = Money(validation.Lines!.Sum(x => x.InventoryCostAmount)),
+                TotalAmount = Money(validation.Lines!.Sum(x => x.Amount))
             };
 
             foreach (var line in validation.Lines!)
@@ -246,6 +296,10 @@ public static class BackOfficeStockDocumentEndpoints
                     ProductId = line.ProductId,
                     Quantity = line.Quantity,
                     UnitPrice = line.UnitPrice,
+                    VatTaxCode = line.VatTaxCode,
+                    NetAmount = line.NetAmount,
+                    VatAmount = line.VatAmount,
+                    InventoryCostAmount = line.InventoryCostAmount,
                     Amount = line.Amount
                 });
             }
@@ -259,6 +313,13 @@ public static class BackOfficeStockDocumentEndpoints
                 document.WarehouseId,
                 document.SupplierId,
                 document.DocumentDate,
+                document.TaxRegimeSnapshot,
+                document.VatPriceMode,
+                document.InputVatCreditStatus,
+                document.EInvoiceNumber,
+                document.NetAmount,
+                document.VatAmount,
+                document.InventoryCostAmount,
                 document.TotalAmount,
                 lineCount = document.Lines.Count
             });
@@ -294,8 +355,16 @@ public static class BackOfficeStockDocumentEndpoints
             document.DocumentDate = request.DocumentDate ?? document.DocumentDate;
             document.WarehouseId = request.WarehouseId;
             document.SupplierId = request.SupplierId;
+            document.PurchaseSource = "LOCAL";
+            document.TaxRegimeSnapshot = validation.TaxRegime!;
+            document.VatPriceMode = validation.VatPriceMode!;
+            document.InputVatCreditStatus = validation.InputVatCreditStatus!;
+            document.EInvoiceNumber = validation.EInvoiceNumber;
             document.Comment = NormalizeOptional(request.Comment, 500);
-            document.TotalAmount = validation.Lines!.Sum(x => x.Amount);
+            document.NetAmount = Money(validation.Lines!.Sum(x => x.NetAmount));
+            document.VatAmount = Money(validation.Lines!.Sum(x => x.VatAmount));
+            document.InventoryCostAmount = Money(validation.Lines!.Sum(x => x.InventoryCostAmount));
+            document.TotalAmount = Money(validation.Lines!.Sum(x => x.Amount));
 
             db.StockDocumentLines.RemoveRange(document.Lines);
             document.Lines.Clear();
@@ -307,6 +376,10 @@ public static class BackOfficeStockDocumentEndpoints
                     ProductId = line.ProductId,
                     Quantity = line.Quantity,
                     UnitPrice = line.UnitPrice,
+                    VatTaxCode = line.VatTaxCode,
+                    NetAmount = line.NetAmount,
+                    VatAmount = line.VatAmount,
+                    InventoryCostAmount = line.InventoryCostAmount,
                     Amount = line.Amount
                 });
             }
@@ -317,6 +390,13 @@ public static class BackOfficeStockDocumentEndpoints
                 document.WarehouseId,
                 document.SupplierId,
                 document.DocumentDate,
+                document.TaxRegimeSnapshot,
+                document.VatPriceMode,
+                document.InputVatCreditStatus,
+                document.EInvoiceNumber,
+                document.NetAmount,
+                document.VatAmount,
+                document.InventoryCostAmount,
                 document.TotalAmount,
                 lineCount = document.Lines.Count
             });
@@ -398,8 +478,10 @@ public static class BackOfficeStockDocumentEndpoints
                     OperationId = document.Id,
                     Type = "RECEIPT",
                     QuantityDelta = line.Quantity,
-                    UnitCost = line.UnitPrice,
-                    CostDelta = line.Amount,
+                    UnitCost = line.Quantity == 0m
+                        ? 0m
+                        : Money(line.InventoryCostAmount / line.Quantity),
+                    CostDelta = line.InventoryCostAmount,
                     ReferenceType = "STOCK_DOCUMENT",
                     ReferenceId = document.Id,
                     Note = document.Comment,
@@ -436,7 +518,7 @@ public static class BackOfficeStockDocumentEndpoints
                 foreach (var accountGroup in document.Lines
                              .GroupBy(line => products[line.ProductId].InventoryAccountCode!))
                 {
-                    var amount = AccountingLedger.Money(accountGroup.Sum(x => x.Amount));
+                    var amount = AccountingLedger.Money(accountGroup.Sum(x => x.InventoryCostAmount));
                     if (amount <= 0m) continue;
 
                     var inventoryAccount = await AccountingLedger.EnsureInventoryAccountAsync(
@@ -445,6 +527,28 @@ public static class BackOfficeStockDocumentEndpoints
                         inventoryAccount,
                         Debit: amount,
                         WarehouseId: warehouse.Id));
+                }
+
+                var recoverableVat = TaxPolicy.IsInputVatRecognizedAsRecoverable(
+                    document.TaxRegimeSnapshot,
+                    document.InputVatCreditStatus)
+                    ? AccountingLedger.Money(document.VatAmount)
+                    : 0m;
+
+                if (recoverableVat > 0m)
+                {
+                    var vatRecoverableAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                        db,
+                        restaurantId,
+                        AccountingLedger.VatRecoverableKey,
+                        "241-1",
+                        "Əvəzləşdirilən əlavə dəyər vergisi",
+                        LedgerAccountType.Asset,
+                        ct);
+
+                    ledgerLines.Add(new AccountingLedger.LineDraft(
+                        vatRecoverableAccount,
+                        Debit: recoverableVat));
                 }
 
                 ledgerLines.Add(new AccountingLedger.LineDraft(
@@ -486,6 +590,13 @@ public static class BackOfficeStockDocumentEndpoints
                 type = EnumText(document.Type),
                 document.WarehouseId,
                 document.SupplierId,
+                document.TaxRegimeSnapshot,
+                document.VatPriceMode,
+                document.InputVatCreditStatus,
+                document.EInvoiceNumber,
+                document.NetAmount,
+                document.VatAmount,
+                document.InventoryCostAmount,
                 document.TotalAmount,
                 lineCount = document.Lines.Count,
                 document.PostedAt
@@ -506,8 +617,23 @@ public static class BackOfficeStockDocumentEndpoints
         return app;
     }
 
-    private sealed record ValidatedReceiptLine(Guid ProductId, decimal Quantity, decimal UnitPrice, decimal Amount);
-    private sealed record ReceiptValidation(List<ValidatedReceiptLine>? Lines, IResult? Error);
+    private sealed record ValidatedReceiptLine(
+        Guid ProductId,
+        decimal Quantity,
+        decimal UnitPrice,
+        string VatTaxCode,
+        decimal NetAmount,
+        decimal VatAmount,
+        decimal InventoryCostAmount,
+        decimal Amount);
+
+    private sealed record ReceiptValidation(
+        List<ValidatedReceiptLine>? Lines,
+        string? TaxRegime,
+        string? VatPriceMode,
+        string? InputVatCreditStatus,
+        string? EInvoiceNumber,
+        IResult? Error);
 
     private static async Task<ReceiptValidation> ValidateReceiptRequestAsync(
         RestaurantDbContext db,
@@ -517,23 +643,49 @@ public static class BackOfficeStockDocumentEndpoints
         CancellationToken ct)
     {
         if (request.WarehouseId == Guid.Empty)
-            return new(null, Results.BadRequest(new { message = "Выберите склад." }));
+            return new(null, null, null, null, null, Results.BadRequest(new { message = "Выберите склад." }));
         if (request.SupplierId == Guid.Empty)
-            return new(null, Results.BadRequest(new { message = "Выберите поставщика." }));
+            return new(null, null, null, null, null, Results.BadRequest(new { message = "Выберите поставщика." }));
 
         var warehouseExists = await db.Warehouses.AnyAsync(x =>
             x.Id == request.WarehouseId &&
             x.RestaurantId == restaurantId &&
             x.IsActive, ct);
         if (!warehouseExists)
-            return new(null, Results.BadRequest(new { message = "Активный склад не найден." }));
+            return new(null, null, null, null, null, Results.BadRequest(new { message = "Активный склад не найден." }));
 
         var supplierExists = await db.Suppliers.AnyAsync(x =>
             x.Id == request.SupplierId &&
             x.RestaurantId == restaurantId &&
             x.IsActive, ct);
         if (!supplierExists)
-            return new(null, Results.BadRequest(new { message = "Активный поставщик не найден." }));
+            return new(null, null, null, null, null, Results.BadRequest(new { message = "Активный поставщик не найден." }));
+
+        var restaurantTax = await db.Restaurants
+            .AsNoTracking()
+            .Where(x => x.Id == restaurantId)
+            .Select(x => new { x.TaxRegime })
+            .FirstAsync(ct);
+
+        var taxRegime = restaurantTax.TaxRegime?.Trim().ToUpperInvariant()
+            ?? TaxPolicy.UnconfiguredRegime;
+        var vatPriceMode = string.IsNullOrWhiteSpace(request.VatPriceMode)
+            ? TaxPolicy.VatPriceIncluded
+            : request.VatPriceMode.Trim().ToUpperInvariant();
+
+        if (!TaxPolicy.IsSupportedVatPriceMode(vatPriceMode))
+            return new(null, null, null, null, null,
+                Results.BadRequest(new { message = "Выберите корректный режим цены ƏDV." }));
+
+        var requestedCreditStatus = string.IsNullOrWhiteSpace(request.InputVatCreditStatus)
+            ? TaxPolicy.InputVatPending
+            : request.InputVatCreditStatus.Trim().ToUpperInvariant();
+
+        if (!TaxPolicy.IsSupportedInputVatCreditStatus(requestedCreditStatus))
+            return new(null, null, null, null, null,
+                Results.BadRequest(new { message = "Выберите корректный статус входного ƏDV." }));
+
+        var eInvoiceNumber = NormalizeOptional(request.EInvoiceNumber, 120);
 
         var number = NormalizeOptional(request.Number, 80);
         if (number is not null && await db.StockDocuments.AnyAsync(x =>
@@ -541,32 +693,56 @@ public static class BackOfficeStockDocumentEndpoints
             x.Id != documentId &&
             x.Number == number, ct))
         {
-            return new(null, Results.Conflict(new { message = "Документ с таким номером уже существует." }));
+            return new(null, null, null, null, null, Results.Conflict(new { message = "Документ с таким номером уже существует." }));
         }
 
         var source = request.Lines ?? [];
         if (source.Count == 0)
-            return new(null, Results.BadRequest(new { message = "Добавьте хотя бы одну позицию." }));
+            return new(null, null, null, null, null, Results.BadRequest(new { message = "Добавьте хотя бы одну позицию." }));
         if (source.GroupBy(x => x.ProductId).Any(x => x.Count() > 1))
-            return new(null, Results.BadRequest(new { message = "Одна позиция не может повторяться в приходной накладной." }));
+            return new(null, null, null, null, null, Results.BadRequest(new { message = "Одна позиция не может повторяться в приходной накладной." }));
 
         var lines = new List<ValidatedReceiptLine>();
         foreach (var sourceLine in source)
         {
             if (sourceLine.ProductId == Guid.Empty)
-                return new(null, Results.BadRequest(new { message = "Выберите номенклатуру во всех строках." }));
+                return new(null, null, null, null, null, Results.BadRequest(new { message = "Выберите номенклатуру во всех строках." }));
             if (sourceLine.Quantity <= 0 || sourceLine.Quantity > 1_000_000m)
-                return new(null, Results.BadRequest(new { message = "Количество должно быть больше нуля." }));
+                return new(null, null, null, null, null, Results.BadRequest(new { message = "Количество должно быть больше нуля." }));
             if (sourceLine.UnitPrice < 0 || sourceLine.UnitPrice > 1_000_000_000m)
-                return new(null, Results.BadRequest(new { message = "Закупочная цена не может быть отрицательной." }));
+                return new(null, null, null, null, null, Results.BadRequest(new { message = "Закупочная цена не может быть отрицательной." }));
 
             var quantity = decimal.Round(sourceLine.Quantity, 3, MidpointRounding.AwayFromZero);
             var unitPrice = Money(sourceLine.UnitPrice);
+            var vatTaxCode = string.IsNullOrWhiteSpace(sourceLine.VatTaxCode)
+                ? TaxPolicy.PurchaseNoVat
+                : sourceLine.VatTaxCode.Trim().ToUpperInvariant();
+
+            if (!TaxPolicy.IsSupportedPurchaseVatCode(vatTaxCode))
+                return new(null, null, null, null, null,
+                    Results.BadRequest(new { message = "Выберите корректный статус ƏDV для всех строк." }));
+
+            var enteredAmount = Money(quantity * unitPrice);
+            var effectiveCreditStatus = taxRegime == TaxPolicy.Vat18Regime
+                ? requestedCreditStatus
+                : TaxPolicy.InputVatNonCreditable;
+
+            var calculation = TaxPolicy.CalculatePurchaseVat(
+                enteredAmount,
+                vatPriceMode,
+                vatTaxCode,
+                taxRegime,
+                effectiveCreditStatus);
+
             lines.Add(new(
                 sourceLine.ProductId,
                 quantity,
                 unitPrice,
-                Money(quantity * unitPrice)));
+                vatTaxCode,
+                calculation.NetAmount,
+                calculation.VatAmount,
+                calculation.InventoryCostAmount,
+                calculation.GrossAmount));
         }
 
         var productIds = lines.Select(x => x.ProductId).ToArray();
@@ -576,9 +752,22 @@ public static class BackOfficeStockDocumentEndpoints
             x.TrackStock &&
             productIds.Contains(x.Id), ct);
         if (validProducts != productIds.Length)
-            return new(null, Results.BadRequest(new { message = "Одна или несколько позиций не найдены или складской учёт у них отключён." }));
+            return new(null, null, null, null, null, Results.BadRequest(new { message = "Одна или несколько позиций не найдены или складской учёт у них отключён." }));
 
-        return new(lines, null);
+        var hasVat18 = lines.Any(x => x.VatTaxCode == TaxPolicy.PurchaseVat18);
+        var inputVatCreditStatus = !hasVat18
+            ? TaxPolicy.InputVatNotApplicable
+            : taxRegime == TaxPolicy.Vat18Regime
+                ? requestedCreditStatus
+                : TaxPolicy.InputVatNonCreditable;
+
+        return new(
+            lines,
+            taxRegime,
+            vatPriceMode,
+            inputVatCreditStatus,
+            eInvoiceNumber,
+            null);
     }
 
     private static string CreateNumber(string prefix, DateTimeOffset now) =>
@@ -639,11 +828,19 @@ public static class BackOfficeStockDocumentEndpoints
 
 public sealed record UpsertSupplierRequest(string Name, string Type, string? TaxId, string? Phone);
 public sealed record UpdateSupplierRequest(string Name, string Type, string? TaxId, string? Phone, bool IsActive);
-public sealed record ReceiptDocumentLineRequest(Guid ProductId, decimal Quantity, decimal UnitPrice);
+public sealed record ReceiptDocumentLineRequest(
+    Guid ProductId,
+    decimal Quantity,
+    decimal UnitPrice,
+    string? VatTaxCode);
+
 public sealed record UpsertReceiptDocumentRequest(
     string? Number,
     DateTimeOffset? DocumentDate,
     Guid WarehouseId,
     Guid SupplierId,
+    string? VatPriceMode,
+    string? InputVatCreditStatus,
+    string? EInvoiceNumber,
     string? Comment,
     IReadOnlyList<ReceiptDocumentLineRequest>? Lines);
