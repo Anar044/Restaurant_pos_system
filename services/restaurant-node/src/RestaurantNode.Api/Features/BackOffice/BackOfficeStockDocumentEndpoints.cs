@@ -78,7 +78,7 @@ public static class BackOfficeStockDocumentEndpoints
 
             var supplierLookup = suppliers.ToDictionary(x => x.id, x => x.name);
             var warehouseLookup = warehouses.ToDictionary(x => x.id, x => x.name);
-            var itemLookup = items.ToDictionary(x => x.id, x => new { x.name, x.unit });
+            var itemLookup = items.ToDictionary(x => x.id, x => new { x.name, unit = x.Unit });
 
             return Results.Ok(new
             {
@@ -238,7 +238,7 @@ public static class BackOfficeStockDocumentEndpoints
                 TotalAmount = validation.Lines!.Sum(x => x.Amount)
             };
 
-            foreach (var line in validation.Lines)
+            foreach (var line in validation.Lines!)
             {
                 document.Lines.Add(new StockDocumentLine
                 {
