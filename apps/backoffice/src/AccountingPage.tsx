@@ -3,6 +3,7 @@ import {
   type BackOfficeAccounting,
   type LedgerAccount,
   type LedgerAccountDetails,
+  type LedgerAccountMovement,
   getBackOfficeAccounting,
   getBackOfficeAccountMovements,
 } from './api';
@@ -291,6 +292,9 @@ function AccountDetails({
   const selectedAnalytic = analyticFilter
     ? details.analytics.find((row) => `${row.kind}:${row.id}` === analyticFilter) ?? null
     : null;
+  const displayMovements = analyticFilter
+    ? visibleMovements
+    : collapseInternalTransfers(visibleMovements, account);
   const analyticBalances = new Map<string, number>();
   if (selectedAnalytic) {
     let running = selectedAnalytic.openingBalance;
@@ -379,7 +383,7 @@ function AccountDetails({
           <div>
             <strong>Движения по счёту</strong>
             <span>
-              {visibleMovements.length} операций
+              {displayMovements.length} операций
               {analyticFilter ? ' по выбранной аналитике' : ' за выбранный период'}
             </span>
           </div>
@@ -389,7 +393,7 @@ function AccountDetails({
           </div>
         </div>
 
-        {visibleMovements.length === 0 ? (
+        {displayMovements.length === 0 ? (
           <div className="chart-section-empty">По выбранным условиям движений нет.</div>
         ) : (
           <div className="accounting-table-wrap">
@@ -405,7 +409,7 @@ function AccountDetails({
                 </tr>
               </thead>
               <tbody>
-                {visibleMovements.map((movement) => (
+                {displayMovements.map((movement) => (
                   <tr key={movement.id}>
                     <td>
                       <span className="movement-date">{dateTime(movement.occurredAt)}</span>
@@ -418,25 +422,40 @@ function AccountDetails({
                       )}
                     </td>
                     <td>
-                      <div className="correspondents">
-                        {movement.correspondents.length === 0 ? (
-                          <span>—</span>
-                        ) : (
-                          movement.correspondents.map((row) => (
-                            <div className="correspondent-row" key={row.id}>
-                              <span className="account-code">{row.accountCode}</span>
-                              <div>
-                                <strong>{row.accountName}</strong>
-                                <small>
-                                  {row.debit > 0 ? 'Дт ' + money(row.debit) : ''}
-                                  {row.credit > 0 ? 'Кт ' + money(row.credit) : ''}
-                                  {row.analytics ? ' · ' + row.analytics : ''}
-                                </small>
-                              </div>
+                      {movement.internalTransfer ? (
+                        <div className="correspondents">
+                          <div className="correspondent-row">
+                            <span className="account-code">{account.code}</span>
+                            <div>
+                              <strong>{account.name}</strong>
+                              <small>
+                                Внутри счёта
+                                {movement.transferLabel ? ' · ' + movement.transferLabel : ''}
+                              </small>
                             </div>
-                          ))
-                        )}
-                      </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="correspondents">
+                          {movement.correspondents.length === 0 ? (
+                            <span>—</span>
+                          ) : (
+                            movement.correspondents.map((row) => (
+                              <div className="correspondent-row" key={row.id}>
+                                <span className="account-code">{row.accountCode}</span>
+                                <div>
+                                  <strong>{row.accountName}</strong>
+                                  <small>
+                                    {row.debit > 0 ? 'Дт ' + money(row.debit) : ''}
+                                    {row.credit > 0 ? 'Кт ' + money(row.credit) : ''}
+                                    {row.analytics ? ' · ' + row.analytics : ''}
+                                  </small>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="amount-cell debit-cell">
                       {movement.debit > 0 ? money(movement.debit) : '—'}
@@ -460,6 +479,94 @@ function AccountDetails({
       </div>
     </div>
   );
+}
+
+type DisplayMovement = LedgerAccountMovement & {
+  internalTransfer?: boolean;
+  transferLabel?: string;
+};
+
+function collapseInternalTransfers(
+  movements: LedgerAccountMovement[],
+  account: LedgerAccount,
+): DisplayMovement[] {
+  const transferGroups = new Map<string, LedgerAccountMovement[]>();
+
+  for (const movement of movements) {
+    if (movement.referenceType !== 'STOCK_TRANSFER') continue;
+    const rows = transferGroups.get(movement.entryId) ?? [];
+    rows.push(movement);
+    transferGroups.set(movement.entryId, rows);
+  }
+
+  const consumed = new Set<string>();
+  const result: DisplayMovement[] = [];
+
+  for (const movement of movements) {
+    if (consumed.has(movement.id)) continue;
+
+    const group = transferGroups.get(movement.entryId);
+    if (!group || group.length < 2) {
+      result.push(movement);
+      continue;
+    }
+
+    const debitRows = group.filter((row) => row.debit > 0);
+    const creditRows = group.filter((row) => row.credit > 0);
+    const totalDebit = debitRows.reduce((sum, row) => sum + row.debit, 0);
+    const totalCredit = creditRows.reduce((sum, row) => sum + row.credit, 0);
+
+    if (
+      debitRows.length === 0 ||
+      creditRows.length === 0 ||
+      Math.abs(totalDebit - totalCredit) > 0.0001
+    ) {
+      result.push(movement);
+      continue;
+    }
+
+    group.forEach((row) => consumed.add(row.id));
+
+    const sources = uniqueAnalytics(creditRows);
+    const destinations = uniqueAnalytics(debitRows);
+    const transferLabel = sources.length || destinations.length
+      ? `${sources.join(', ') || 'Склад'} → ${destinations.join(', ') || 'Склад'}`
+      : null;
+
+    const firstDisplayedRow = group[0];
+    result.push({
+      ...firstDisplayedRow,
+      id: `internal-transfer:${movement.entryId}:${account.id}`,
+      description: 'Внутреннее перемещение',
+      debit: totalDebit,
+      credit: totalCredit,
+      balanceAfter: firstDisplayedRow.balanceAfter,
+      analytics: transferLabel,
+      analyticsKind: null,
+      analyticsId: null,
+      internalTransfer: true,
+      transferLabel: transferLabel ?? undefined,
+    });
+  }
+
+  return result;
+}
+
+function uniqueAnalytics(rows: LedgerAccountMovement[]) {
+  return Array.from(new Set(
+    rows
+      .map((row) => cleanAnalyticsLabel(row.analytics))
+      .filter((value): value is string => Boolean(value)),
+  ));
+}
+
+function cleanAnalyticsLabel(value: string | null) {
+  if (!value) return null;
+  return value
+    .replace(/^Склад:\s*/i, '')
+    .replace(/^Поставщик:\s*/i, '')
+    .replace(/^Деньги:\s*/i, '')
+    .trim();
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
