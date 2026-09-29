@@ -288,6 +288,18 @@ function AccountDetails({
         `${movement.analyticsKind}:${movement.analyticsId}` === analyticFilter)
     : details.movements;
 
+  const selectedAnalytic = analyticFilter
+    ? details.analytics.find((row) => `${row.kind}:${row.id}` === analyticFilter) ?? null
+    : null;
+  const analyticBalances = new Map<string, number>();
+  if (selectedAnalytic) {
+    let running = selectedAnalytic.openingBalance;
+    [...visibleMovements].reverse().forEach((movement) => {
+      running = applyNaturalMovement(account.type, running, movement.debit, movement.credit);
+      analyticBalances.set(movement.id, running);
+    });
+  }
+
   return (
     <div className="account-detail">
       <div className="account-detail-title">
@@ -432,7 +444,13 @@ function AccountDetails({
                     <td className="amount-cell credit-cell">
                       {movement.credit > 0 ? money(movement.credit) : '—'}
                     </td>
-                    <td className="amount-cell"><strong>{money(movement.balanceAfter)}</strong></td>
+                    <td className="amount-cell">
+                      <strong>
+                        {money(selectedAnalytic
+                          ? analyticBalances.get(movement.id) ?? movement.balanceAfter
+                          : movement.balanceAfter)}
+                      </strong>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -485,6 +503,17 @@ function referenceLabel(value: string) {
     SHIFT_CASH_TRANSACTION: 'Операция кассовой смены',
     INVENTORY_ACCOUNT_RECLASS: 'Переклассификация складского счёта',
   } as Record<string, string>)[value] ?? value;
+}
+
+function applyNaturalMovement(
+  type: string,
+  current: number,
+  debit: number,
+  credit: number,
+) {
+  return type === 'ASSET' || type === 'EXPENSE'
+    ? current + debit - credit
+    : current + credit - debit;
 }
 
 function money(value: number) {
