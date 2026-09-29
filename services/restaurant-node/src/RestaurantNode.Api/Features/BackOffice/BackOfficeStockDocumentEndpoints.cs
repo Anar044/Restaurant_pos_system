@@ -94,6 +94,17 @@ public static class BackOfficeStockDocumentEndpoints
             {
                 supportedTypes = new[] { "RECEIPT" },
                 taxProfile,
+                purchaseDocumentKinds = new[]
+                {
+                    new { code = TaxPolicy.PurchaseDocumentSupplierInvoice, name = "e-Qaimə / накладная поставщика" },
+                    new { code = TaxPolicy.PurchaseDocumentRetailReceipt, name = "Кассовый чек / розничная покупка" },
+                    new { code = TaxPolicy.PurchaseDocumentOther, name = "Другой документ" }
+                },
+                retailVatModes = new[]
+                {
+                    new { code = TaxPolicy.RetailVatNotSpecified, name = "ƏDV в чеке не указан" },
+                    new { code = TaxPolicy.RetailVat18, name = "В чеке указан ƏDV 18%" }
+                },
                 vatPriceModes = new[]
                 {
                     new { code = TaxPolicy.VatPriceIncluded, name = "ƏDV включён в цену" },
@@ -132,6 +143,8 @@ public static class BackOfficeStockDocumentEndpoints
                         ? supplierLookup.GetValueOrDefault(document.SupplierId.Value)
                         : null,
                     document.PurchaseSource,
+                    document.PurchaseDocumentKind,
+                    document.PurchaseReferenceNumber,
                     document.TaxRegimeSnapshot,
                     document.VatPriceMode,
                     document.InputVatCreditStatus,
@@ -276,6 +289,8 @@ public static class BackOfficeStockDocumentEndpoints
                 WarehouseId = request.WarehouseId,
                 SupplierId = request.SupplierId,
                 PurchaseSource = "LOCAL",
+                PurchaseDocumentKind = NormalizePurchaseDocumentKind(request.PurchaseDocumentKind),
+                PurchaseReferenceNumber = NormalizeOptional(request.PurchaseReferenceNumber, 120),
                 TaxRegimeSnapshot = validation.TaxRegime!,
                 VatPriceMode = validation.VatPriceMode!,
                 InputVatCreditStatus = validation.InputVatCreditStatus!,
@@ -313,6 +328,8 @@ public static class BackOfficeStockDocumentEndpoints
                 document.WarehouseId,
                 document.SupplierId,
                 document.DocumentDate,
+                document.PurchaseDocumentKind,
+                document.PurchaseReferenceNumber,
                 document.TaxRegimeSnapshot,
                 document.VatPriceMode,
                 document.InputVatCreditStatus,
@@ -356,6 +373,8 @@ public static class BackOfficeStockDocumentEndpoints
             document.WarehouseId = request.WarehouseId;
             document.SupplierId = request.SupplierId;
             document.PurchaseSource = "LOCAL";
+            document.PurchaseDocumentKind = NormalizePurchaseDocumentKind(request.PurchaseDocumentKind);
+            document.PurchaseReferenceNumber = NormalizeOptional(request.PurchaseReferenceNumber, 120);
             document.TaxRegimeSnapshot = validation.TaxRegime!;
             document.VatPriceMode = validation.VatPriceMode!;
             document.InputVatCreditStatus = validation.InputVatCreditStatus!;
@@ -390,6 +409,8 @@ public static class BackOfficeStockDocumentEndpoints
                 document.WarehouseId,
                 document.SupplierId,
                 document.DocumentDate,
+                document.PurchaseDocumentKind,
+                document.PurchaseReferenceNumber,
                 document.TaxRegimeSnapshot,
                 document.VatPriceMode,
                 document.InputVatCreditStatus,
@@ -591,6 +612,8 @@ public static class BackOfficeStockDocumentEndpoints
                 type = EnumText(document.Type),
                 document.WarehouseId,
                 document.SupplierId,
+                document.PurchaseDocumentKind,
+                document.PurchaseReferenceNumber,
                 document.TaxRegimeSnapshot,
                 document.VatPriceMode,
                 document.InputVatCreditStatus,
@@ -670,23 +693,45 @@ public static class BackOfficeStockDocumentEndpoints
 
         var taxRegime = restaurantTax.TaxRegime?.Trim().ToUpperInvariant()
             ?? TaxPolicy.UnconfiguredRegime;
-        var vatPriceMode = string.IsNullOrWhiteSpace(request.VatPriceMode)
+
+        var purchaseDocumentKind = NormalizePurchaseDocumentKind(request.PurchaseDocumentKind);
+        if (!TaxPolicy.IsSupportedPurchaseDocumentKind(purchaseDocumentKind))
+            return new(null, null, null, null, null,
+                Results.BadRequest(new { message = "Выберите корректный тип документа покупки." }));
+
+        var retailVatMode = string.IsNullOrWhiteSpace(request.RetailVatMode)
+            ? TaxPolicy.RetailVatNotSpecified
+            : request.RetailVatMode.Trim().ToUpperInvariant();
+        if (purchaseDocumentKind == TaxPolicy.PurchaseDocumentRetailReceipt &&
+            !TaxPolicy.IsSupportedRetailVatMode(retailVatMode))
+        {
+            return new(null, null, null, null, null,
+                Results.BadRequest(new { message = "Выберите, указан ли ƏDV в кассовом чеке." }));
+        }
+
+        var vatPriceMode = purchaseDocumentKind == TaxPolicy.PurchaseDocumentRetailReceipt
             ? TaxPolicy.VatPriceIncluded
-            : request.VatPriceMode.Trim().ToUpperInvariant();
+            : string.IsNullOrWhiteSpace(request.VatPriceMode)
+                ? TaxPolicy.VatPriceIncluded
+                : request.VatPriceMode.Trim().ToUpperInvariant();
 
         if (!TaxPolicy.IsSupportedVatPriceMode(vatPriceMode))
             return new(null, null, null, null, null,
                 Results.BadRequest(new { message = "Выберите корректный режим цены ƏDV." }));
 
-        var requestedCreditStatus = string.IsNullOrWhiteSpace(request.InputVatCreditStatus)
-            ? TaxPolicy.InputVatPending
-            : request.InputVatCreditStatus.Trim().ToUpperInvariant();
+        var requestedCreditStatus = purchaseDocumentKind == TaxPolicy.PurchaseDocumentRetailReceipt
+            ? TaxPolicy.InputVatNonCreditable
+            : string.IsNullOrWhiteSpace(request.InputVatCreditStatus)
+                ? TaxPolicy.InputVatPending
+                : request.InputVatCreditStatus.Trim().ToUpperInvariant();
 
         if (!TaxPolicy.IsSupportedInputVatCreditStatus(requestedCreditStatus))
             return new(null, null, null, null, null,
                 Results.BadRequest(new { message = "Выберите корректный статус входного ƏDV." }));
 
-        var eInvoiceNumber = NormalizeOptional(request.EInvoiceNumber, 120);
+        var eInvoiceNumber = purchaseDocumentKind == TaxPolicy.PurchaseDocumentSupplierInvoice
+            ? NormalizeOptional(request.EInvoiceNumber, 120)
+            : null;
 
         var number = NormalizeOptional(request.Number, 80);
         if (number is not null && await db.StockDocuments.AnyAsync(x =>
@@ -715,18 +760,24 @@ public static class BackOfficeStockDocumentEndpoints
 
             var quantity = decimal.Round(sourceLine.Quantity, 3, MidpointRounding.AwayFromZero);
             var unitPrice = Money(sourceLine.UnitPrice);
-            var vatTaxCode = string.IsNullOrWhiteSpace(sourceLine.VatTaxCode)
-                ? TaxPolicy.PurchaseNoVat
-                : sourceLine.VatTaxCode.Trim().ToUpperInvariant();
+            var vatTaxCode = purchaseDocumentKind == TaxPolicy.PurchaseDocumentRetailReceipt
+                ? retailVatMode == TaxPolicy.RetailVat18
+                    ? TaxPolicy.PurchaseVat18
+                    : TaxPolicy.PurchaseNoVat
+                : string.IsNullOrWhiteSpace(sourceLine.VatTaxCode)
+                    ? TaxPolicy.PurchaseNoVat
+                    : sourceLine.VatTaxCode.Trim().ToUpperInvariant();
 
             if (!TaxPolicy.IsSupportedPurchaseVatCode(vatTaxCode))
                 return new(null, null, null, null, null,
                     Results.BadRequest(new { message = "Выберите корректный статус ƏDV для всех строк." }));
 
             var enteredAmount = Money(quantity * unitPrice);
-            var effectiveCreditStatus = taxRegime == TaxPolicy.Vat18Regime
-                ? requestedCreditStatus
-                : TaxPolicy.InputVatNonCreditable;
+            var effectiveCreditStatus = purchaseDocumentKind == TaxPolicy.PurchaseDocumentRetailReceipt
+                ? TaxPolicy.InputVatNonCreditable
+                : taxRegime == TaxPolicy.Vat18Regime
+                    ? requestedCreditStatus
+                    : TaxPolicy.InputVatNonCreditable;
 
             var calculation = TaxPolicy.CalculatePurchaseVat(
                 enteredAmount,
@@ -758,9 +809,11 @@ public static class BackOfficeStockDocumentEndpoints
         var hasVat18 = lines.Any(x => x.VatTaxCode == TaxPolicy.PurchaseVat18);
         var inputVatCreditStatus = !hasVat18
             ? TaxPolicy.InputVatNotApplicable
-            : taxRegime == TaxPolicy.Vat18Regime
-                ? requestedCreditStatus
-                : TaxPolicy.InputVatNonCreditable;
+            : purchaseDocumentKind == TaxPolicy.PurchaseDocumentRetailReceipt
+                ? TaxPolicy.InputVatNonCreditable
+                : taxRegime == TaxPolicy.Vat18Regime
+                    ? requestedCreditStatus
+                    : TaxPolicy.InputVatNonCreditable;
 
         return new(
             lines,
@@ -770,6 +823,11 @@ public static class BackOfficeStockDocumentEndpoints
             eInvoiceNumber,
             null);
     }
+
+    private static string NormalizePurchaseDocumentKind(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? TaxPolicy.PurchaseDocumentSupplierInvoice
+            : value.Trim().ToUpperInvariant();
 
     private static string CreateNumber(string prefix, DateTimeOffset now) =>
         $"{prefix}-{now:yyyyMMdd}-{Guid.NewGuid():N}"[..20].ToUpperInvariant();
@@ -840,6 +898,9 @@ public sealed record UpsertReceiptDocumentRequest(
     DateTimeOffset? DocumentDate,
     Guid WarehouseId,
     Guid SupplierId,
+    string? PurchaseDocumentKind,
+    string? PurchaseReferenceNumber,
+    string? RetailVatMode,
     string? VatPriceMode,
     string? InputVatCreditStatus,
     string? EInvoiceNumber,
