@@ -13,18 +13,20 @@ import { DevicesPage } from './DevicesPage';
 import { EmployeesPage } from './EmployeesPage';
 import { FinancePage } from './FinancePage';
 import { InventoryPage } from './InventoryPage';
-import { WarehouseDocumentsPage } from './WarehouseDocumentsPage';
+import { ReceiptDocumentsPage } from './ReceiptDocumentsPage';
 import { ModifiersPage } from './ModifiersPage';
 import { MoneyPage } from './MoneyPage';
 import { NomenclaturePage } from './NomenclaturePage';
 import { OverviewPage } from './OverviewPage';
 import { GroupsPage } from './GroupsPage';
 import { PrintingPage } from './PrintingPage';
+import { SuppliersPage } from './SuppliersPage';
+import { StockInventoryPage, StockTransfersPage, StockWriteOffsPage } from './StockOperationPages';
 import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'groups' | 'printing' | 'modifiers' | 'nomenclature' | 'inventory' | 'stock-documents' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
+type PageKey = 'overview' | 'groups' | 'printing' | 'modifiers' | 'nomenclature' | 'inventory' | 'stock-receipts' | 'stock-transfers' | 'stock-writeoffs' | 'stock-inventory' | 'suppliers' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -158,20 +160,24 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'overview', label: 'Обзор', icon: '⌂', ready: true },
     { key: 'finance', label: 'Кассы и смены', icon: '₼', ready: true },
     { key: 'money', label: 'Денежный учёт', icon: '◈', ready: true },
+    { key: 'suppliers', label: 'Поставщики', icon: '◫', ready: true },
     { key: 'groups', label: 'Группы, отделения и залы', icon: '▦', ready: true },
     { key: 'printing', label: 'Печать', icon: '▧', ready: true },
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
     { key: 'nomenclature', label: 'Номенклатура', icon: '▤', ready: true },
     { key: 'modifiers', label: 'Группы модификаторов', icon: '±', ready: true },
-    { key: 'inventory', label: 'Остатки на складах', icon: '▥', ready: true },
-    { key: 'stock-documents', label: 'Складские документы', icon: '▣', ready: true },
+    { key: 'inventory', label: 'Склады и остатки', icon: '▥', ready: true },
+    { key: 'stock-receipts', label: 'Приходные накладные', icon: '▣', ready: true },
+    { key: 'stock-transfers', label: 'Перемещения', icon: '⇄', ready: true },
+    { key: 'stock-writeoffs', label: 'Списания', icon: '−', ready: true },
+    { key: 'stock-inventory', label: 'Инвентаризация', icon: '✓', ready: true },
     { key: 'adjustments', label: 'Скидки и надбавки', icon: '%', ready: true },
     { key: 'employees', label: 'Список сотрудников', icon: '◎', ready: true },
     { key: 'roles', label: 'Роли и права', icon: '◉', ready: true },
   ];
 
   const restaurantSettingsItems: PageKey[] = ['groups', 'printing', 'devices'];
-  const catalogItems: PageKey[] = ['nomenclature', 'modifiers', 'inventory', 'stock-documents'];
+  const catalogItems: PageKey[] = ['nomenclature', 'modifiers', 'inventory', 'stock-receipts', 'stock-transfers', 'stock-writeoffs', 'stock-inventory'];
   const employeeItems: PageKey[] = ['employees', 'roles'];
 
   function renderNavItem(key: PageKey, nested = false) {
@@ -211,6 +217,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             {renderNavItem('overview')}
             {renderNavItem('finance')}
             {renderNavItem('money')}
+            {renderNavItem('suppliers')}
           </div>
 
           <div className="nav-section">
@@ -317,8 +324,28 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
               token={session.token}
               canManage={(session.permissions ?? []).includes('inventory.manage')}
             />
-          ) : page === 'stock-documents' ? (
-            <WarehouseDocumentsPage
+          ) : page === 'stock-receipts' ? (
+            <ReceiptDocumentsPage
+              token={session.token}
+              canManage={(session.permissions ?? []).includes('inventory.manage')}
+            />
+          ) : page === 'stock-transfers' ? (
+            <StockTransfersPage
+              token={session.token}
+              canManage={(session.permissions ?? []).includes('inventory.manage')}
+            />
+          ) : page === 'stock-writeoffs' ? (
+            <StockWriteOffsPage
+              token={session.token}
+              canManage={(session.permissions ?? []).includes('inventory.manage')}
+            />
+          ) : page === 'stock-inventory' ? (
+            <StockInventoryPage
+              token={session.token}
+              canManage={(session.permissions ?? []).includes('inventory.manage')}
+            />
+          ) : page === 'suppliers' ? (
+            <SuppliersPage
               token={session.token}
               canManage={(session.permissions ?? []).includes('inventory.manage')}
             />
