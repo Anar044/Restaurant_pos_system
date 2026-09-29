@@ -8,7 +8,13 @@ public static class OrderStockAccounting
     public sealed record ApplyResult(bool Applied, decimal TotalCost, string? Error);
 
     private sealed record ConsumptionKey(Guid WarehouseId, Guid ProductId);
-    private sealed record ProductInfo(Guid Id, string Name, bool TrackStock, Guid? PreparationPlaceTypeId);
+    private sealed record CostBucketKey(Guid WarehouseId, string InventoryAccountCode);
+    private sealed record ProductInfo(
+        Guid Id,
+        string Name,
+        bool TrackStock,
+        Guid? PreparationPlaceTypeId,
+        string? InventoryAccountCode);
     private sealed record BalanceInfo(decimal Quantity, decimal StockValue);
 
     public static async Task<ApplyResult> ApplyOnCloseAsync(
@@ -36,7 +42,8 @@ public static class OrderStockAccounting
                 x.Id,
                 x.Name,
                 x.TrackStock,
-                x.PreparationPlaceTypeId))
+                x.PreparationPlaceTypeId,
+                x.InventoryAccountCode))
             .ToDictionaryAsync(x => x.Id, ct);
 
         var recipeLines = await db.RecipeLines
@@ -116,6 +123,9 @@ public static class OrderStockAccounting
 
             if (!product.TrackStock)
                 return;
+            if (!AccountingLedger.IsSupportedInventoryAccountCode(product.InventoryAccountCode))
+                throw new InvalidOperationException(
+                    $"Для позиции '{product.Name}' не настроен счёт складского учёта.");
 
             var warehouseId = ResolveWarehouse(routeType);
             if (!warehouseId.HasValue)
@@ -195,7 +205,7 @@ public static class OrderStockAccounting
             .GroupBy(x => new ConsumptionKey(x.WarehouseId, x.ProductId))
             .ToDictionary(g => g.Key, g => g.First().UnitCost);
 
-        var warehouseCost = new Dictionary<Guid, decimal>();
+        var warehouseCost = new Dictionary<CostBucketKey, decimal>();
         foreach (var row in consumption)
         {
             var balance = balanceLookup.GetValueOrDefault(row.Key);
@@ -221,8 +231,12 @@ public static class OrderStockAccounting
                 CreatedAt = occurredAt
             });
 
-            warehouseCost[row.Key.WarehouseId] =
-                warehouseCost.GetValueOrDefault(row.Key.WarehouseId) + cost;
+            var inventoryAccountCode =
+                AccountingLedger.NormalizeInventoryAccountCode(
+                    products[row.Key.ProductId].InventoryAccountCode);
+            var costKey = new CostBucketKey(row.Key.WarehouseId, inventoryAccountCode);
+            warehouseCost[costKey] =
+                warehouseCost.GetValueOrDefault(costKey) + cost;
         }
 
         var totalCost = AccountingLedger.Money(warehouseCost.Values.Sum());
@@ -233,8 +247,8 @@ public static class OrderStockAccounting
                 db,
                 restaurantId,
                 AccountingLedger.CostOfGoodsSoldKey,
-                "5.10",
-                "Себестоимость продаж",
+                "701-3",
+                "Satılmış malların (hazır məhsulun) balans dəyəri",
                 LedgerAccountType.Expense,
                 ct);
 
@@ -245,12 +259,12 @@ public static class OrderStockAccounting
 
             foreach (var row in warehouseCost.Where(x => x.Value > 0m))
             {
-                var stockAccount = await AccountingLedger.EnsureWarehouseAccountAsync(
-                    db, restaurantId, row.Key, ct);
+                var stockAccount = await AccountingLedger.EnsureInventoryAccountAsync(
+                    db, restaurantId, row.Key.InventoryAccountCode, ct);
                 ledgerLines.Add(new AccountingLedger.LineDraft(
                     stockAccount,
                     Credit: AccountingLedger.Money(row.Value),
-                    WarehouseId: row.Key));
+                    WarehouseId: row.Key.WarehouseId));
             }
 
             await AccountingLedger.PostAsync(
