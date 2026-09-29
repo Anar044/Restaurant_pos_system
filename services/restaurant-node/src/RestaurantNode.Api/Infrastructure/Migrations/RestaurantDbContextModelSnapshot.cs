@@ -1541,6 +1541,10 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Property<bool>("IsSellable")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("InventoryAccountCode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<decimal>("MinStock")
                         .HasPrecision(18, 3)
                         .HasColumnType("numeric(18,3)");
