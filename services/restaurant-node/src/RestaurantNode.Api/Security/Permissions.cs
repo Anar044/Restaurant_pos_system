@@ -20,6 +20,7 @@ public static class Permissions
     public const string DevicesManage = "devices.manage";
     public const string PricingManage = "pricing.manage";
     public const string InventoryManage = "inventory.manage";
+    public const string FinanceManage = "finance.manage";
 
     public static readonly string[] All =
     [
@@ -39,6 +40,7 @@ public static class Permissions
         EmployeesManage,
         DevicesManage,
         PricingManage,
-        InventoryManage
+        InventoryManage,
+        FinanceManage
     ];
 }
