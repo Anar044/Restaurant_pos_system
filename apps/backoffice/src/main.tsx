@@ -14,6 +14,7 @@ import { EmployeesPage } from './EmployeesPage';
 import { FinancePage } from './FinancePage';
 import { InventoryPage } from './InventoryPage';
 import { ModifiersPage } from './ModifiersPage';
+import { MoneyPage } from './MoneyPage';
 import { NomenclaturePage } from './NomenclaturePage';
 import { OverviewPage } from './OverviewPage';
 import { GroupsPage } from './GroupsPage';
@@ -22,7 +23,7 @@ import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'groups' | 'printing' | 'modifiers' | 'nomenclature' | 'inventory' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance';
+type PageKey = 'overview' | 'groups' | 'printing' | 'modifiers' | 'nomenclature' | 'inventory' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -155,6 +156,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
   const navItems: Array<{ key: PageKey; label: string; icon: string; ready?: boolean }> = [
     { key: 'overview', label: 'Обзор', icon: '⌂', ready: true },
     { key: 'finance', label: 'Кассы и смены', icon: '₼', ready: true },
+    { key: 'money', label: 'Денежный учёт', icon: '◈', ready: true },
     { key: 'groups', label: 'Группы, отделения и залы', icon: '▦', ready: true },
     { key: 'printing', label: 'Печать', icon: '▧', ready: true },
     { key: 'devices', label: 'Оборудование', icon: '◇', ready: true },
@@ -206,6 +208,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
           <div className="nav-section">
             {renderNavItem('overview')}
             {renderNavItem('finance')}
+            {renderNavItem('money')}
           </div>
 
           <div className="nav-section">
@@ -341,6 +344,11 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             <FinancePage
               token={session.token}
               canManageShifts={(session.permissions ?? []).includes('shifts.manage')}
+            />
+          ) : page === 'money' ? (
+            <MoneyPage
+              token={session.token}
+              canManage={(session.permissions ?? []).includes('finance.manage')}
             />
           ) : (
             <ComingSoon page={navItems.find((x) => x.key === page)?.label ?? 'Раздел'} />
