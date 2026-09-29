@@ -386,7 +386,7 @@ public static class BackOfficeInventoryEndpoints
                 })
                 .ToDictionaryAsync(x => x.ProductId, ct);
 
-            foreach (var line in lines.Lines)
+            foreach (var line in lines.Lines!)
             {
                 var balance = sourceBalances.GetValueOrDefault(line.ProductId);
                 var available = balance?.Quantity ?? 0m;
