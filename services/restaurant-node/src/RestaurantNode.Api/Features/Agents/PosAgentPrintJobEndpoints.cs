@@ -243,10 +243,14 @@ public static class PosAgentPrintJobEndpoints
 
         var hallRows = await (
             from hall in db.Halls.AsNoTracking()
+            join restaurantGroup in db.RestaurantGroups.AsNoTracking()
+                on hall.GroupId equals restaurantGroup.Id
+            let effectivePrinterId = hall.PrecheckPrinterId ?? restaurantGroup.DefaultPrecheckPrinterId
             join printer in db.Printers.AsNoTracking()
-                on hall.PrecheckPrinterId equals (Guid?)printer.Id
+                on effectivePrinterId equals (Guid?)printer.Id
             where hall.RestaurantId == restaurantId &&
                   hall.IsActive &&
+                  restaurantGroup.RestaurantId == restaurantId &&
                   printer.RestaurantId == restaurantId &&
                   printer.HostDeviceId == deviceId &&
                   printer.IsConfigured &&
