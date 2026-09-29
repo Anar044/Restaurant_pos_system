@@ -646,6 +646,80 @@ export type CreateStockMovementInput = {
   note: string | null;
 };
 
+export type StockSupplier = {
+  id: string;
+  name: string;
+  type: 'EXTERNAL' | 'INTERNAL';
+  taxId: string | null;
+  phone: string | null;
+  isActive: boolean;
+  createdAt: string;
+};
+
+export type StockDocumentLine = {
+  id: string;
+  productId: string;
+  productName: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+};
+
+export type StockDocument = {
+  id: string;
+  type: 'RECEIPT' | string;
+  status: 'DRAFT' | 'POSTED' | 'CANCELLED';
+  number: string;
+  documentDate: string;
+  warehouseId: string | null;
+  warehouseName: string | null;
+  supplierId: string | null;
+  supplierName: string | null;
+  totalAmount: number;
+  comment: string | null;
+  createdByEmployeeId: string;
+  postedByEmployeeId: string | null;
+  createdAt: string;
+  postedAt: string | null;
+  lines: StockDocumentLine[];
+};
+
+export type StockDocumentWarehouse = {
+  id: string;
+  name: string;
+  isActive: boolean;
+};
+
+export type StockDocumentItem = {
+  id: string;
+  name: string;
+  sku: string | null;
+  unit: string;
+  isActive: boolean;
+};
+
+export type BackOfficeStockDocuments = {
+  supportedTypes: string[];
+  suppliers: StockSupplier[];
+  warehouses: StockDocumentWarehouse[];
+  items: StockDocumentItem[];
+  documents: StockDocument[];
+};
+
+export type UpsertReceiptDocumentInput = {
+  number: string | null;
+  documentDate: string | null;
+  warehouseId: string;
+  supplierId: string;
+  comment: string | null;
+  lines: Array<{
+    productId: string;
+    quantity: number;
+    unitPrice: number;
+  }>;
+};
+
 export type MoneyAccount = {
   id: string;
   name: string;
@@ -1185,6 +1259,63 @@ export async function countInventory(
   return request('/api/v1/backoffice/inventory/inventory-count', {
     method: 'POST',
     body: JSON.stringify(input),
+  }, token);
+}
+
+export async function getBackOfficeStockDocuments(
+  token: string,
+): Promise<BackOfficeStockDocuments> {
+  return request<BackOfficeStockDocuments>('/api/v1/backoffice/stock-documents', {}, token);
+}
+
+export async function createStockSupplier(
+  token: string,
+  input: { name: string; type: 'EXTERNAL' | 'INTERNAL'; taxId: string | null; phone: string | null },
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/stock-documents/suppliers', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateStockSupplier(
+  token: string,
+  supplierId: string,
+  input: { name: string; type: 'EXTERNAL' | 'INTERNAL'; taxId: string | null; phone: string | null; isActive: boolean },
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/stock-documents/suppliers/' + supplierId, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function createReceiptDocument(
+  token: string,
+  input: UpsertReceiptDocumentInput,
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/stock-documents', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function updateReceiptDocument(
+  token: string,
+  documentId: string,
+  input: UpsertReceiptDocumentInput,
+): Promise<{ id: string }> {
+  return request('/api/v1/backoffice/stock-documents/' + documentId, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function postStockDocument(
+  token: string,
+  documentId: string,
+): Promise<{ id: string; status: string; postedAt: string; totalAmount: number }> {
+  return request('/api/v1/backoffice/stock-documents/' + documentId + '/post', {
+    method: 'POST',
   }, token);
 }
 
