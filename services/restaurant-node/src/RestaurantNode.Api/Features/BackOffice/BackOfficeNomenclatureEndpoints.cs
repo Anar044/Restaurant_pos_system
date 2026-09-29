@@ -66,6 +66,13 @@ public static class BackOfficeNomenclatureEndpoints
                     minStock = x.MinStock,
                     trackStock = x.TrackStock,
                     inventoryAccountCode = x.InventoryAccountCode,
+                    taxStatus = x.TaxStatus,
+                    ownAgricultureSameTaxpayer = x.OwnAgricultureSameTaxpayer,
+                    ownAgricultureCriteriaMet = x.OwnAgricultureCriteriaMet,
+                    ownAgricultureUnprocessed = x.OwnAgricultureUnprocessed,
+                    productionUnit = x.ProductionUnit,
+                    originDocument = x.OriginDocument,
+                    productionOrHarvestDate = x.ProductionOrHarvestDate,
                     isSellable = x.IsSellable,
                     isActive = x.IsActive,
                     sortOrder = x.SortOrder,
@@ -101,6 +108,12 @@ public static class BackOfficeNomenclatureEndpoints
                     x.Code,
                     x.Name
                 }),
+                productTaxStatuses = TaxPolicy.ProductTaxStatuses.Select(x => new
+                {
+                    x.Code,
+                    x.Name,
+                    x.Description
+                }),
                 currencyCode = restaurant.CurrencyCode,
                 categories,
                 preparationPlaceTypes,
@@ -133,6 +146,13 @@ public static class BackOfficeNomenclatureEndpoints
                 MinStock = request.MinStock,
                 TrackStock = request.TrackStock,
                 InventoryAccountCode = validation.InventoryAccountCode,
+                TaxStatus = validation.TaxStatus!,
+                OwnAgricultureSameTaxpayer = validation.OwnAgricultureSameTaxpayer,
+                OwnAgricultureCriteriaMet = validation.OwnAgricultureCriteriaMet,
+                OwnAgricultureUnprocessed = validation.OwnAgricultureUnprocessed,
+                ProductionUnit = validation.ProductionUnit,
+                OriginDocument = validation.OriginDocument,
+                ProductionOrHarvestDate = validation.ProductionOrHarvestDate,
                 IsSellable = request.IsSellable,
                 IsActive = true,
                 SortOrder = request.SortOrder
@@ -323,6 +343,13 @@ public static class BackOfficeNomenclatureEndpoints
             item.MinStock = request.MinStock;
             item.TrackStock = request.TrackStock;
             item.InventoryAccountCode = validation.InventoryAccountCode;
+            item.TaxStatus = validation.TaxStatus!;
+            item.OwnAgricultureSameTaxpayer = validation.OwnAgricultureSameTaxpayer;
+            item.OwnAgricultureCriteriaMet = validation.OwnAgricultureCriteriaMet;
+            item.OwnAgricultureUnprocessed = validation.OwnAgricultureUnprocessed;
+            item.ProductionUnit = validation.ProductionUnit;
+            item.OriginDocument = validation.OriginDocument;
+            item.ProductionOrHarvestDate = validation.ProductionOrHarvestDate;
             item.IsSellable = request.IsSellable;
             item.IsActive = request.IsActive;
             item.SortOrder = request.SortOrder;
@@ -394,6 +421,13 @@ public static class BackOfficeNomenclatureEndpoints
                 item.MinStock,
                 item.TrackStock,
                 item.InventoryAccountCode,
+                item.TaxStatus,
+                item.OwnAgricultureSameTaxpayer,
+                item.OwnAgricultureCriteriaMet,
+                item.OwnAgricultureUnprocessed,
+                item.ProductionUnit,
+                item.OriginDocument,
+                item.ProductionOrHarvestDate,
                 item.IsSellable,
                 item.IsActive
             });
@@ -511,6 +545,19 @@ public static class BackOfficeNomenclatureEndpoints
         var inventoryAccountCode = request.TrackStock
             ? request.InventoryAccountCode?.Trim()
             : null;
+        var taxStatus = string.IsNullOrWhiteSpace(request.TaxStatus)
+            ? TaxPolicy.Standard
+            : request.TaxStatus.Trim().ToUpperInvariant();
+        var ownAgriculture = taxStatus == TaxPolicy.VatExemptOwnAgriculture;
+        var productionUnit = ownAgriculture
+            ? NormalizeOptional(request.ProductionUnit, 200)
+            : null;
+        var originDocument = ownAgriculture
+            ? NormalizeOptional(request.OriginDocument, 300)
+            : null;
+        var productionOrHarvestDate = ownAgriculture
+            ? request.ProductionOrHarvestDate
+            : null;
 
         if (name is null)
             return ItemValidationResult.Fail(Results.BadRequest(new { message = "Название обязательно." }));
@@ -522,6 +569,8 @@ public static class BackOfficeNomenclatureEndpoints
             return ItemValidationResult.Fail(Results.BadRequest(new { message = "Минимальный остаток не может быть отрицательным." }));
         if (request.SortOrder < 0)
             return ItemValidationResult.Fail(Results.BadRequest(new { message = "Порядок сортировки не может быть отрицательным." }));
+        if (!TaxPolicy.IsSupportedProductTaxStatus(taxStatus))
+            return ItemValidationResult.Fail(Results.BadRequest(new { message = "Неверный налоговый статус позиции." }));
         if (request.TrackStock && !AccountingLedger.IsSupportedInventoryAccountCode(inventoryAccountCode))
             return ItemValidationResult.Fail(Results.BadRequest(new
             {
@@ -560,7 +609,19 @@ public static class BackOfficeNomenclatureEndpoints
                 return ItemValidationResult.Fail(Results.BadRequest(new { message = "Тип места приготовления не найден." }));
         }
 
-        return ItemValidationResult.Ok(name, sku, type, unit, inventoryAccountCode);
+        return ItemValidationResult.Ok(
+            name,
+            sku,
+            type,
+            unit,
+            inventoryAccountCode,
+            taxStatus,
+            ownAgriculture ? request.OwnAgricultureSameTaxpayer : null,
+            ownAgriculture ? request.OwnAgricultureCriteriaMet : null,
+            ownAgriculture ? request.OwnAgricultureUnprocessed : null,
+            productionUnit,
+            originDocument,
+            productionOrHarvestDate);
     }
 
     private static bool WouldCreateRecipeCycle(
@@ -657,6 +718,13 @@ public static class BackOfficeNomenclatureEndpoints
         string? Type,
         string? Unit,
         string? InventoryAccountCode,
+        string? TaxStatus,
+        bool? OwnAgricultureSameTaxpayer,
+        bool? OwnAgricultureCriteriaMet,
+        bool? OwnAgricultureUnprocessed,
+        string? ProductionUnit,
+        string? OriginDocument,
+        DateOnly? ProductionOrHarvestDate,
         IResult? Error)
     {
         public static ItemValidationResult Ok(
@@ -664,11 +732,31 @@ public static class BackOfficeNomenclatureEndpoints
             string? sku,
             string type,
             string unit,
-            string? inventoryAccountCode) =>
-            new(name, sku, type, unit, inventoryAccountCode, null);
+            string? inventoryAccountCode,
+            string taxStatus,
+            bool? ownAgricultureSameTaxpayer,
+            bool? ownAgricultureCriteriaMet,
+            bool? ownAgricultureUnprocessed,
+            string? productionUnit,
+            string? originDocument,
+            DateOnly? productionOrHarvestDate) =>
+            new(
+                name,
+                sku,
+                type,
+                unit,
+                inventoryAccountCode,
+                taxStatus,
+                ownAgricultureSameTaxpayer,
+                ownAgricultureCriteriaMet,
+                ownAgricultureUnprocessed,
+                productionUnit,
+                originDocument,
+                productionOrHarvestDate,
+                null);
 
         public static ItemValidationResult Fail(IResult error) =>
-            new(null, null, null, null, null, error);
+            new(null, null, null, null, null, null, null, null, null, null, null, null, error);
     }
 }
 
@@ -680,6 +768,13 @@ public sealed record UpsertNomenclatureItemRequest(
     decimal MinStock,
     bool TrackStock,
     string? InventoryAccountCode,
+    string? TaxStatus,
+    bool? OwnAgricultureSameTaxpayer,
+    bool? OwnAgricultureCriteriaMet,
+    bool? OwnAgricultureUnprocessed,
+    string? ProductionUnit,
+    string? OriginDocument,
+    DateOnly? ProductionOrHarvestDate,
     bool IsSellable,
     bool IsActive,
     int SortOrder,
