@@ -155,6 +155,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Device>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<DiningTable>().HasIndex(x => new { x.HallId, x.Name }).IsUnique();
         modelBuilder.Entity<Category>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
+        modelBuilder.Entity<RestaurantGroup>().HasIndex(x => x.DefaultPrecheckPrinterId);
         modelBuilder.Entity<RestaurantGroup>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<RestaurantGroupDevice>().HasKey(x => new { x.GroupId, x.DeviceId });
         modelBuilder.Entity<RestaurantGroupDevice>().HasIndex(x => x.DeviceId).IsUnique();
@@ -288,6 +289,12 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
             .HasOne(x => x.ReceiptPrinter)
             .WithMany()
             .HasForeignKey(x => x.ReceiptPrinterId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<RestaurantGroup>()
+            .HasOne(x => x.DefaultPrecheckPrinter)
+            .WithMany()
+            .HasForeignKey(x => x.DefaultPrecheckPrinterId)
             .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<RestaurantGroupDevice>()
