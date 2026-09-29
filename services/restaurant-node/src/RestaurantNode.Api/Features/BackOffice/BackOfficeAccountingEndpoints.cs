@@ -387,6 +387,15 @@ public static class BackOfficeAccountingEndpoints
                 return parts.Count == 0 ? null : string.Join(" · ", parts);
             }
 
+            string? AnalyticsKind(LedgerLine line) =>
+                line.WarehouseId.HasValue ? "WAREHOUSE" :
+                line.SupplierId.HasValue ? "SUPPLIER" :
+                line.MoneyAccountId.HasValue ? "MONEY_ACCOUNT" :
+                null;
+
+            Guid? AnalyticsId(LedgerLine line) =>
+                line.WarehouseId ?? line.SupplierId ?? line.MoneyAccountId;
+
             var openingDebit = openingTotals?.Debit ?? 0m;
             var openingCredit = openingTotals?.Credit ?? 0m;
             var openingBalance = AccountingLedger.NaturalBalance(
@@ -449,6 +458,8 @@ public static class BackOfficeAccountingEndpoints
                         credit = Money(line.Credit),
                         balanceAfter = Money(runningBalance),
                         analytics = Analytics(line),
+                        analyticsKind = AnalyticsKind(line),
+                        analyticsId = AnalyticsId(line),
                         correspondents
                     });
                 }
