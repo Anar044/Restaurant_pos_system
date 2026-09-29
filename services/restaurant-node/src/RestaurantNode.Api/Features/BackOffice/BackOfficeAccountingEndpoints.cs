@@ -285,14 +285,14 @@ public static class BackOfficeAccountingEndpoints
             AddAudit(db, user, restaurantId, "SUPPLIER_PAYMENT_CREATED", "Supplier", supplier.Id, new
             {
                 supplierId = supplier.Id,
-                supplier.Name,
+                supplierName = supplier.Name,
                 moneyAccountId = moneyAccount.Id,
-                moneyAccount.Name,
+                moneyAccountName = moneyAccount.Name,
                 amount,
                 appliedToDebt,
                 advancePart,
                 outstandingBefore = outstanding,
-                request.Note,
+                note = request.Note,
                 occurredAt,
                 operationId
             });
