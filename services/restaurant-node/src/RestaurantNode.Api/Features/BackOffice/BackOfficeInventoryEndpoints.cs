@@ -51,13 +51,14 @@ public static class BackOfficeInventoryEndpoints
                 {
                     group.Key.WarehouseId,
                     group.Key.ProductId,
-                    Quantity = group.Sum(x => x.QuantityDelta)
+                    Quantity = group.Sum(x => x.QuantityDelta),
+                    StockValue = group.Sum(x => x.CostDelta ?? 0m)
                 })
                 .ToListAsync(ct);
 
             var balanceLookup = balances.ToDictionary(
                 x => (x.WarehouseId, x.ProductId),
-                x => x.Quantity);
+                x => new { x.Quantity, x.StockValue });
 
             var warehouseLookup = warehouses.ToDictionary(x => x.Id, x => x.Name);
             var itemLookup = items.ToDictionary(x => x.Id, x => x);
@@ -82,12 +83,32 @@ public static class BackOfficeInventoryEndpoints
                     isActive = item.IsActive,
                     createdAt = DateTimeOffset.MinValue,
                     totalStock = warehouses.Sum(warehouse =>
-                        balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))),
-                    warehouseBalances = warehouses.Select(warehouse => new
+                        balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))?.Quantity ?? 0m),
+                    totalStockValue = warehouses.Sum(warehouse =>
+                        balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))?.StockValue ?? 0m),
+                    averageCost = (() =>
                     {
-                        warehouseId = warehouse.Id,
-                        warehouseName = warehouse.Name,
-                        quantity = balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))
+                        var quantity = warehouses.Sum(warehouse =>
+                            balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))?.Quantity ?? 0m);
+                        var value = warehouses.Sum(warehouse =>
+                            balanceLookup.GetValueOrDefault((warehouse.Id, item.Id))?.StockValue ?? 0m);
+                        return quantity == 0m ? 0m : decimal.Round(value / quantity, 4, MidpointRounding.AwayFromZero);
+                    })(),
+                    warehouseBalances = warehouses.Select(warehouse =>
+                    {
+                        var balance = balanceLookup.GetValueOrDefault((warehouse.Id, item.Id));
+                        var quantity = balance?.Quantity ?? 0m;
+                        var stockValue = balance?.StockValue ?? 0m;
+                        return new
+                        {
+                            warehouseId = warehouse.Id,
+                            warehouseName = warehouse.Name,
+                            quantity,
+                            stockValue,
+                            averageCost = quantity == 0m
+                                ? 0m
+                                : decimal.Round(stockValue / quantity, 4, MidpointRounding.AwayFromZero)
+                        };
                     })
                 }),
                 recentMovements = movements.Select(movement => new
@@ -106,6 +127,8 @@ public static class BackOfficeInventoryEndpoints
                     operationId = movement.OperationId,
                     type = movement.Type,
                     quantityDelta = movement.QuantityDelta,
+                    unitCost = movement.UnitCost,
+                    costDelta = movement.CostDelta,
                     referenceType = movement.ReferenceType,
                     referenceId = movement.ReferenceId,
                     note = movement.Note,
