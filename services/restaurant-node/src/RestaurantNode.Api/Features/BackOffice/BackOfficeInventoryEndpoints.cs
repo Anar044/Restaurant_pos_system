@@ -262,11 +262,25 @@ public static class BackOfficeInventoryEndpoints
             if (item is null)
                 return Results.BadRequest(new { message = "Позиция номенклатуры не найдена или складской учёт отключён." });
 
-            var currentStock = await db.StockMovements
-                .Where(x => x.RestaurantId == restaurantId &&
-                            x.WarehouseId == request.WarehouseId &&
-                            x.ProductId == request.ProductId)
-                .SumAsync(x => (decimal?)x.QuantityDelta, ct) ?? 0m;
+            var currentBalance = await db.StockMovements
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.WarehouseId == request.WarehouseId &&
+                    x.ProductId == request.ProductId)
+                .GroupBy(_ => 1)
+                .Select(group => new
+                {
+                    Quantity = group.Sum(x => x.QuantityDelta),
+                    StockValue = group.Sum(x => x.CostDelta ?? 0m)
+                })
+                .FirstOrDefaultAsync(ct);
+
+            var currentStock = currentBalance?.Quantity ?? 0m;
+            var currentValue = currentBalance?.StockValue ?? 0m;
+            var averageCost = currentStock == 0m
+                ? 0m
+                : decimal.Round(currentValue / currentStock, 4, MidpointRounding.AwayFromZero);
 
             var delta = type == "RECEIPT" ? request.Quantity : -request.Quantity;
             if (currentStock + delta < 0)
@@ -287,6 +301,8 @@ public static class BackOfficeInventoryEndpoints
                 OperationId = operationId,
                 Type = type,
                 QuantityDelta = delta,
+                UnitCost = averageCost,
+                CostDelta = decimal.Round(delta * averageCost, 4, MidpointRounding.AwayFromZero),
                 Note = NormalizeOptional(request.Note, 500)
             };
 
@@ -358,12 +374,18 @@ public static class BackOfficeInventoryEndpoints
                     x.WarehouseId == request.FromWarehouseId &&
                     productIds.Contains(x.ProductId))
                 .GroupBy(x => x.ProductId)
-                .Select(group => new { ProductId = group.Key, Quantity = group.Sum(x => x.QuantityDelta) })
-                .ToDictionaryAsync(x => x.ProductId, x => x.Quantity, ct);
+                .Select(group => new
+                {
+                    ProductId = group.Key,
+                    Quantity = group.Sum(x => x.QuantityDelta),
+                    StockValue = group.Sum(x => x.CostDelta ?? 0m)
+                })
+                .ToDictionaryAsync(x => x.ProductId, ct);
 
             foreach (var line in lines.Lines)
             {
-                var available = sourceBalances.GetValueOrDefault(line.ProductId);
+                var balance = sourceBalances.GetValueOrDefault(line.ProductId);
+                var available = balance?.Quantity ?? 0m;
                 if (available < line.Quantity)
                 {
                     var product = products[line.ProductId];
@@ -380,6 +402,12 @@ public static class BackOfficeInventoryEndpoints
 
             foreach (var line in lines.Lines)
             {
+                var balance = sourceBalances.GetValueOrDefault(line.ProductId);
+                var averageCost = balance is null || balance.Quantity == 0m
+                    ? 0m
+                    : decimal.Round(balance.StockValue / balance.Quantity, 4, MidpointRounding.AwayFromZero);
+                var transferCost = decimal.Round(line.Quantity * averageCost, 4, MidpointRounding.AwayFromZero);
+
                 db.StockMovements.AddRange(
                     new StockMovement
                     {
@@ -390,6 +418,8 @@ public static class BackOfficeInventoryEndpoints
                         OperationId = operationId,
                         Type = "TRANSFER_OUT",
                         QuantityDelta = -line.Quantity,
+                        UnitCost = averageCost,
+                        CostDelta = -transferCost,
                         ReferenceType = "TRANSFER",
                         ReferenceId = operationId,
                         Note = note,
@@ -404,6 +434,8 @@ public static class BackOfficeInventoryEndpoints
                         OperationId = operationId,
                         Type = "TRANSFER_IN",
                         QuantityDelta = line.Quantity,
+                        UnitCost = averageCost,
+                        CostDelta = transferCost,
                         ReferenceType = "TRANSFER",
                         ReferenceId = operationId,
                         Note = note,
@@ -462,8 +494,13 @@ public static class BackOfficeInventoryEndpoints
                     x.WarehouseId == request.WarehouseId &&
                     productIds.Contains(x.ProductId))
                 .GroupBy(x => x.ProductId)
-                .Select(group => new { ProductId = group.Key, Quantity = group.Sum(x => x.QuantityDelta) })
-                .ToDictionaryAsync(x => x.ProductId, x => x.Quantity, ct);
+                .Select(group => new
+                {
+                    ProductId = group.Key,
+                    Quantity = group.Sum(x => x.QuantityDelta),
+                    StockValue = group.Sum(x => x.CostDelta ?? 0m)
+                })
+                .ToDictionaryAsync(x => x.ProductId, ct);
 
             var operationId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
@@ -472,9 +509,15 @@ public static class BackOfficeInventoryEndpoints
 
             foreach (var line in lines.Lines)
             {
-                var current = balances.GetValueOrDefault(line.ProductId);
+                var balance = balances.GetValueOrDefault(line.ProductId);
+                var current = balance?.Quantity ?? 0m;
+                var currentValue = balance?.StockValue ?? 0m;
+                var averageCost = current == 0m
+                    ? 0m
+                    : decimal.Round(currentValue / current, 4, MidpointRounding.AwayFromZero);
                 var delta = line.CountedQuantity - current;
                 if (delta == 0m) continue;
+                var costDelta = decimal.Round(delta * averageCost, 4, MidpointRounding.AwayFromZero);
 
                 db.StockMovements.Add(new StockMovement
                 {
@@ -485,6 +528,8 @@ public static class BackOfficeInventoryEndpoints
                     OperationId = operationId,
                     Type = delta > 0 ? "INVENTORY_GAIN" : "INVENTORY_LOSS",
                     QuantityDelta = delta,
+                    UnitCost = averageCost,
+                    CostDelta = costDelta,
                     ReferenceType = "INVENTORY",
                     ReferenceId = operationId,
                     Note = note,
@@ -501,7 +546,7 @@ public static class BackOfficeInventoryEndpoints
                 lines = lines.Lines.Select(x => new
                 {
                     x.ProductId,
-                    currentQuantity = balances.GetValueOrDefault(x.ProductId),
+                    currentQuantity = balances.GetValueOrDefault(x.ProductId)?.Quantity ?? 0m,
                     x.CountedQuantity
                 }),
                 note
