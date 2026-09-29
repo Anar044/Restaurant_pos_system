@@ -224,7 +224,8 @@
   margin-bottom: 0;
 }
 
-.account-movements-panel {
+.account-movements-panel,
+.account-analytics-panel {
   background: var(--surface, #fff);
   border: 1px solid var(--border, #e5e7eb);
   border-radius: 16px;
@@ -254,6 +255,24 @@
 .account-movement-legend {
   display: flex;
   gap: 14px;
+}
+
+.analytics-table {
+  min-width: 820px;
+}
+
+.analytic-row {
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.analytic-row:hover,
+.analytic-row.active {
+  background: rgba(56, 91, 120, 0.055);
+}
+
+.analytic-row.active td:first-child strong {
+  color: var(--primary, #315b52);
 }
 
 .movement-table {
