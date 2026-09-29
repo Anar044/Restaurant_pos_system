@@ -545,6 +545,11 @@ export type NomenclatureRecipeLine = {
   quantity: number;
 };
 
+export type InventoryAccountOption = {
+  code: '201-1' | '201-2' | '201-3' | '205' | string;
+  name: string;
+};
+
 export type NomenclatureItem = {
   id: string;
   categoryId: string | null;
@@ -556,6 +561,7 @@ export type NomenclatureItem = {
   unit: string;
   minStock: number;
   trackStock: boolean;
+  inventoryAccountCode: string | null;
   isSellable: boolean;
   isActive: boolean;
   sortOrder: number;
@@ -571,6 +577,7 @@ export type NomenclatureCategoryOption = {
 
 export type BackOfficeNomenclature = {
   supportedTypes: string[];
+  inventoryAccounts: InventoryAccountOption[];
   currencyCode: string;
   categories: NomenclatureCategoryOption[];
   preparationPlaceTypes: PreparationPlaceTypeOption[];
@@ -584,6 +591,7 @@ export type UpsertNomenclatureItemInput = {
   unit: string;
   minStock: number;
   trackStock: boolean;
+  inventoryAccountCode: string | null;
   isSellable: boolean;
   isActive: boolean;
   sortOrder: number;
