@@ -592,6 +592,8 @@ export type InventoryWarehouseBalance = {
   warehouseId: string;
   warehouseName: string;
   quantity: number;
+  stockValue: number;
+  averageCost: number;
 };
 
 export type InventoryNomenclatureItem = {
@@ -603,6 +605,8 @@ export type InventoryNomenclatureItem = {
   isActive: boolean;
   createdAt: string;
   totalStock: number;
+  totalStockValue: number;
+  averageCost: number;
   warehouseBalances: InventoryWarehouseBalance[];
 };
 
@@ -617,6 +621,8 @@ export type InventoryMovement = {
   employeeId: string;
   type: 'RECEIPT' | 'WRITE_OFF' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'INVENTORY_GAIN' | 'INVENTORY_LOSS' | 'SALE' | 'SALE_RETURN';
   quantityDelta: number;
+  unitCost: number | null;
+  costDelta: number | null;
   referenceType: string | null;
   referenceId: string | null;
   note: string | null;
