@@ -5,14 +5,29 @@ namespace RestaurantNode.Api.Infrastructure;
 
 public static class AccountingLedger
 {
+    // Azerbaijan chart of accounts (KOS / IFRS for SMEs based rules).
+    // Restaurant-specific dimensions (warehouse, supplier, cash register, bank account)
+    // are stored on LedgerLine and do not create separate synthetic accounts.
+    public const string InventoryRawMaterialsKey = "AZ_201_1_RAW_MATERIALS";
+    public const string CashKey = "AZ_221_CASH";
+    public const string TransitKey = "AZ_222_TRANSIT";
+    public const string BankKey = "AZ_223_BANK";
+    public const string CashEquivalentKey = "AZ_225_CASH_EQUIVALENTS";
+
     public const string SupplierPayableKey = "SUPPLIER_PAYABLE";
     public const string SupplierAdvanceKey = "SUPPLIER_ADVANCE";
     public const string SalesRevenueKey = "SALES_REVENUE";
-    public const string InventoryGainKey = "INVENTORY_GAIN";
     public const string CostOfGoodsSoldKey = "COGS";
-    public const string WriteOffExpenseKey = "WRITE_OFF_EXPENSE";
-    public const string InventoryLossKey = "INVENTORY_LOSS";
-    public const string CashClearingKey = "CASH_CLEARING";
+
+    public const string OtherOperatingIncomeKey = "AZ_611_10_OTHER_OPERATING_INCOME";
+    public const string OtherOperatingExpenseKey = "AZ_731_10_OTHER_OPERATING_EXPENSE";
+
+    // Keep the existing public names used by stock/shift code, but route them to
+    // the official Azerbaijan accounts.
+    public const string InventoryGainKey = OtherOperatingIncomeKey;
+    public const string WriteOffExpenseKey = OtherOperatingExpenseKey;
+    public const string InventoryLossKey = OtherOperatingExpenseKey;
+    public const string CashClearingKey = CashEquivalentKey;
 
     public sealed record LineDraft(
         LedgerAccount Account,
@@ -27,33 +42,51 @@ public static class AccountingLedger
         Guid restaurantId,
         CancellationToken ct)
     {
-        await EnsureSystemAccountAsync(db, restaurantId, SupplierAdvanceKey, "1.30", "Авансы поставщикам", LedgerAccountType.Asset, ct);
-        await EnsureSystemAccountAsync(db, restaurantId, SupplierPayableKey, "2.10", "Задолженность перед поставщиками", LedgerAccountType.Liability, ct);
-        await EnsureSystemAccountAsync(db, restaurantId, SalesRevenueKey, "4.10", "Выручка от продаж", LedgerAccountType.Income, ct);
-        await EnsureSystemAccountAsync(db, restaurantId, InventoryGainKey, "4.20", "Излишки по инвентаризации", LedgerAccountType.Income, ct);
-        await EnsureSystemAccountAsync(db, restaurantId, CostOfGoodsSoldKey, "5.10", "Себестоимость продаж", LedgerAccountType.Expense, ct);
-        await EnsureSystemAccountAsync(db, restaurantId, WriteOffExpenseKey, "5.20", "Списания и порча", LedgerAccountType.Expense, ct);
-        await EnsureSystemAccountAsync(db, restaurantId, InventoryLossKey, "5.30", "Недостачи по инвентаризации", LedgerAccountType.Expense, ct);
-        await EnsureSystemAccountAsync(db, restaurantId, CashClearingKey, "3.90", "Кассовые внесения и изъятия", LedgerAccountType.Equity, ct);
+        await EnsureSystemAccountAsync(
+            db, restaurantId, InventoryRawMaterialsKey,
+            "201-1", "Xammal", LedgerAccountType.Asset, ct);
 
-        var warehouses = await db.Warehouses
-            .Where(x => x.RestaurantId == restaurantId)
-            .ToListAsync(ct);
-        foreach (var warehouse in warehouses)
-            await EnsureWarehouseAccountAsync(db, restaurantId, warehouse, ct);
+        await EnsureSystemAccountAsync(
+            db, restaurantId, CashKey,
+            "221", "Kassa", LedgerAccountType.Asset, ct);
 
-        var moneyAccounts = await db.MoneyAccounts
-            .Where(x => x.RestaurantId == restaurantId)
-            .ToListAsync(ct);
-        foreach (var moneyAccount in moneyAccounts)
-            await EnsureMoneyAccountAsync(db, restaurantId, moneyAccount, ct);
+        await EnsureSystemAccountAsync(
+            db, restaurantId, TransitKey,
+            "222", "Yolda olan pul köçürmələri", LedgerAccountType.Asset, ct);
 
-        var categories = await db.MoneyCategories
-            .Where(x => x.RestaurantId == restaurantId)
-            .ToListAsync(ct);
-        foreach (var category in categories)
-            await EnsureCategoryAccountAsync(db, restaurantId, category, ct);
+        await EnsureSystemAccountAsync(
+            db, restaurantId, BankKey,
+            "223", "Bank hesablaşma hesabları", LedgerAccountType.Asset, ct);
 
+        await EnsureSystemAccountAsync(
+            db, restaurantId, CashEquivalentKey,
+            "225", "Pul vəsaitlərinin ekvivalentləri", LedgerAccountType.Asset, ct);
+
+        await EnsureSystemAccountAsync(
+            db, restaurantId, SupplierAdvanceKey,
+            "243", "Verilmiş qısamüddətli avanslar", LedgerAccountType.Asset, ct);
+
+        await EnsureSystemAccountAsync(
+            db, restaurantId, SupplierPayableKey,
+            "531", "Malsatan və podratçılara qısamüddətli kreditor borcları",
+            LedgerAccountType.Liability, ct);
+
+        await EnsureSystemAccountAsync(
+            db, restaurantId, SalesRevenueKey,
+            "601-1", "Malların satışı", LedgerAccountType.Income, ct);
+
+        await EnsureSystemAccountAsync(
+            db, restaurantId, OtherOperatingIncomeKey,
+            "611-10", "Digər əməliyyat gəlirləri", LedgerAccountType.Income, ct);
+
+        await EnsureSystemAccountAsync(
+            db, restaurantId, CostOfGoodsSoldKey,
+            "701-3", "Satılmış malların (hazır məhsulun) balans dəyəri",
+            LedgerAccountType.Expense, ct);
+
+        await EnsureSystemAccountAsync(
+            db, restaurantId, OtherOperatingExpenseKey,
+            "731-10", "Digər əməliyyat xərcləri", LedgerAccountType.Expense, ct);
     }
 
     public static async Task<LedgerAccount> EnsureSystemAccountAsync(
@@ -65,29 +98,31 @@ public static class AccountingLedger
         LedgerAccountType type,
         CancellationToken ct)
     {
+        var definition = ResolveOfficialDefinition(systemKey, code, name, type);
+
         var local = db.LedgerAccounts.Local.FirstOrDefault(x =>
-            x.RestaurantId == restaurantId && x.SystemKey == systemKey);
+            x.RestaurantId == restaurantId && x.SystemKey == definition.SystemKey);
         if (local is not null)
         {
-            Sync(local, code, name, type);
+            Sync(local, definition.Code, definition.Name, definition.Type);
             return local;
         }
 
         var account = await db.LedgerAccounts.FirstOrDefaultAsync(x =>
-            x.RestaurantId == restaurantId && x.SystemKey == systemKey, ct);
+            x.RestaurantId == restaurantId && x.SystemKey == definition.SystemKey, ct);
         if (account is not null)
         {
-            Sync(account, code, name, type);
+            Sync(account, definition.Code, definition.Name, definition.Type);
             return account;
         }
 
         account = new LedgerAccount
         {
             RestaurantId = restaurantId,
-            Code = code,
-            Name = name,
-            Type = type,
-            SystemKey = systemKey,
+            Code = definition.Code,
+            Name = definition.Name,
+            Type = definition.Type,
+            SystemKey = definition.SystemKey,
             IsSystem = true,
             IsActive = true
         };
@@ -103,9 +138,9 @@ public static class AccountingLedger
         EnsureSystemAccountAsync(
             db,
             restaurantId,
-            "WAREHOUSE:" + warehouse.Id,
-            "1.10." + ShortId(warehouse.Id),
-            "Склад: " + warehouse.Name,
+            InventoryRawMaterialsKey,
+            "201-1",
+            "Xammal",
             LedgerAccountType.Asset,
             ct);
 
@@ -116,8 +151,10 @@ public static class AccountingLedger
         CancellationToken ct)
     {
         var warehouse = await db.Warehouses
+            .AsNoTracking()
             .FirstOrDefaultAsync(x => x.RestaurantId == restaurantId && x.Id == warehouseId, ct)
             ?? throw new InvalidOperationException("Warehouse was not found for accounting.");
+
         return await EnsureWarehouseAccountAsync(db, restaurantId, warehouse, ct);
     }
 
@@ -125,15 +162,29 @@ public static class AccountingLedger
         RestaurantDbContext db,
         Guid restaurantId,
         MoneyAccount moneyAccount,
-        CancellationToken ct) =>
-        EnsureSystemAccountAsync(
+        CancellationToken ct)
+    {
+        var definition = moneyAccount.Type switch
+        {
+            MoneyAccountType.Cash => new AccountDefinition(
+                CashKey, "221", "Kassa", LedgerAccountType.Asset),
+            MoneyAccountType.Card => new AccountDefinition(
+                TransitKey, "222", "Yolda olan pul köçürmələri", LedgerAccountType.Asset),
+            MoneyAccountType.Bank => new AccountDefinition(
+                BankKey, "223", "Bank hesablaşma hesabları", LedgerAccountType.Asset),
+            _ => new AccountDefinition(
+                CashEquivalentKey, "225", "Pul vəsaitlərinin ekvivalentləri", LedgerAccountType.Asset)
+        };
+
+        return EnsureSystemAccountAsync(
             db,
             restaurantId,
-            "MONEY:" + moneyAccount.Id,
-            MoneyCode(moneyAccount),
-            moneyAccount.Name,
-            LedgerAccountType.Asset,
+            definition.SystemKey,
+            definition.Code,
+            definition.Name,
+            definition.Type,
             ct);
+    }
 
     public static Task<LedgerAccount> EnsureCategoryAccountAsync(
         RestaurantDbContext db,
@@ -145,9 +196,9 @@ public static class AccountingLedger
         return EnsureSystemAccountAsync(
             db,
             restaurantId,
-            (isIncome ? "INCOME_CATEGORY:" : "EXPENSE_CATEGORY:") + category.Id,
-            (isIncome ? "4.90." : "5.90.") + ShortId(category.Id),
-            category.Name,
+            isIncome ? OtherOperatingIncomeKey : OtherOperatingExpenseKey,
+            isIncome ? "611-10" : "731-10",
+            isIncome ? "Digər əməliyyat gəlirləri" : "Digər əməliyyat xərcləri",
             isIncome ? LedgerAccountType.Income : LedgerAccountType.Expense,
             ct);
     }
@@ -342,30 +393,54 @@ public static class AccountingLedger
     public static decimal Money(decimal value) =>
         decimal.Round(value, 4, MidpointRounding.AwayFromZero);
 
+    private static AccountDefinition ResolveOfficialDefinition(
+        string systemKey,
+        string code,
+        string name,
+        LedgerAccountType type) =>
+        systemKey switch
+        {
+            SupplierAdvanceKey => new(
+                SupplierAdvanceKey, "243", "Verilmiş qısamüddətli avanslar", LedgerAccountType.Asset),
+            SupplierPayableKey => new(
+                SupplierPayableKey, "531",
+                "Malsatan və podratçılara qısamüddətli kreditor borcları",
+                LedgerAccountType.Liability),
+            SalesRevenueKey => new(
+                SalesRevenueKey, "601-1", "Malların satışı", LedgerAccountType.Income),
+            CostOfGoodsSoldKey => new(
+                CostOfGoodsSoldKey, "701-3",
+                "Satılmış malların (hazır məhsulun) balans dəyəri",
+                LedgerAccountType.Expense),
+            InventoryRawMaterialsKey => new(
+                InventoryRawMaterialsKey, "201-1", "Xammal", LedgerAccountType.Asset),
+            CashKey => new(
+                CashKey, "221", "Kassa", LedgerAccountType.Asset),
+            TransitKey => new(
+                TransitKey, "222", "Yolda olan pul köçürmələri", LedgerAccountType.Asset),
+            BankKey => new(
+                BankKey, "223", "Bank hesablaşma hesabları", LedgerAccountType.Asset),
+            CashEquivalentKey => new(
+                CashEquivalentKey, "225", "Pul vəsaitlərinin ekvivalentləri", LedgerAccountType.Asset),
+            OtherOperatingIncomeKey => new(
+                OtherOperatingIncomeKey, "611-10", "Digər əməliyyat gəlirləri", LedgerAccountType.Income),
+            OtherOperatingExpenseKey => new(
+                OtherOperatingExpenseKey, "731-10", "Digər əməliyyat xərcləri", LedgerAccountType.Expense),
+            _ => new(systemKey, code, name, type)
+        };
+
     private static void Sync(LedgerAccount account, string code, string name, LedgerAccountType type)
     {
         account.Code = code;
         account.Name = name;
         account.Type = type;
         account.IsSystem = true;
+        account.IsActive = true;
     }
 
-    private static string MoneyCode(MoneyAccount account)
-    {
-        var prefix = account.Type switch
-        {
-            MoneyAccountType.Cash => "1.01.",
-            MoneyAccountType.Bank => "1.02.",
-            MoneyAccountType.Card => "1.03.",
-            _ => "1.09."
-        };
-        return prefix + ShortId(account.Id);
-    }
-
-    private static string ShortId(Guid value) =>
-        // UUIDv7 starts with timestamp bits, so taking the leading characters can
-        // produce identical account codes for entities created close together.
-        // The trailing 12 hex characters come from the random portion and are
-        // stable for the entity while providing enough entropy for account codes.
-        value.ToString("N")[^12..].ToUpperInvariant();
+    private sealed record AccountDefinition(
+        string SystemKey,
+        string Code,
+        string Name,
+        LedgerAccountType Type);
 }
