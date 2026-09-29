@@ -176,6 +176,14 @@ public static class BackOfficeDeviceEndpoints
                     .Take(5)
                     .ToListAsync(ct);
 
+                var groupNames = await db.RestaurantGroups
+                    .AsNoTracking()
+                    .Where(x => x.RestaurantId == restaurantId && x.DefaultPrecheckPrinterId == printerId && x.IsActive)
+                    .Select(x => x.Name)
+                    .OrderBy(x => x)
+                    .Take(5)
+                    .ToListAsync(ct);
+
                 var deviceNames = await db.Devices
                     .AsNoTracking()
                     .Where(x => x.RestaurantId == restaurantId && x.ReceiptPrinterId == printerId && x.IsActive)
@@ -184,13 +192,14 @@ public static class BackOfficeDeviceEndpoints
                     .Take(5)
                     .ToListAsync(ct);
 
-                if (departmentNames.Count > 0 || hallNames.Count > 0 || deviceNames.Count > 0)
+                if (departmentNames.Count > 0 || hallNames.Count > 0 || groupNames.Count > 0 || deviceNames.Count > 0)
                 {
                     return Results.Conflict(new
                     {
-                        message = "The printer cannot be deactivated while active departments, halls or POS devices use it. Remove those assignments first.",
+                        message = "The printer cannot be deactivated while active departments, halls, groups or POS devices use it. Remove those assignments first.",
                         departments = departmentNames,
                         halls = hallNames,
+                        groups = groupNames,
                         devices = deviceNames
                     });
                 }
