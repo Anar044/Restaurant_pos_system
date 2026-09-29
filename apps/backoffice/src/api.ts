@@ -608,14 +608,17 @@ export type InventoryNomenclatureItem = {
 
 export type InventoryMovement = {
   id: string;
+  operationId: string;
   warehouseId: string;
   warehouseName: string;
   productId: string;
   productName: string;
   unit: string;
   employeeId: string;
-  type: 'RECEIPT' | 'WRITE_OFF';
+  type: 'RECEIPT' | 'WRITE_OFF' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'INVENTORY_GAIN' | 'INVENTORY_LOSS' | 'SALE' | 'SALE_RETURN';
   quantityDelta: number;
+  referenceType: string | null;
+  referenceId: string | null;
   note: string | null;
   createdAt: string;
 };
@@ -1104,6 +1107,35 @@ export async function createStockMovement(
   input: CreateStockMovementInput,
 ): Promise<InventoryMovement> {
   return request<InventoryMovement>('/api/v1/backoffice/inventory/movements', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function transferStock(
+  token: string,
+  input: {
+    fromWarehouseId: string;
+    toWarehouseId: string;
+    lines: Array<{ productId: string; quantity: number }>;
+    note: string | null;
+  },
+): Promise<{ operationId: string; lineCount: number }> {
+  return request('/api/v1/backoffice/inventory/transfer', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function countInventory(
+  token: string,
+  input: {
+    warehouseId: string;
+    lines: Array<{ productId: string; countedQuantity: number }>;
+    note: string | null;
+  },
+): Promise<{ operationId: string; lineCount: number; adjustedCount: number }> {
+  return request('/api/v1/backoffice/inventory/inventory-count', {
     method: 'POST',
     body: JSON.stringify(input),
   }, token);
