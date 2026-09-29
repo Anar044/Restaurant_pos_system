@@ -509,6 +509,44 @@ public sealed class MoneyTransaction : Entity
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class LedgerAccount : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public required string Code { get; set; }
+    public required string Name { get; set; }
+    public LedgerAccountType Type { get; set; }
+    public string? SystemKey { get; set; }
+    public bool IsSystem { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class LedgerEntry : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public DateTimeOffset OccurredAt { get; set; } = DateTimeOffset.UtcNow;
+    public required string ReferenceType { get; set; }
+    public Guid ReferenceId { get; set; }
+    public required string Description { get; set; }
+    public Guid? EmployeeId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public List<LedgerLine> Lines { get; set; } = [];
+}
+
+public sealed class LedgerLine : Entity
+{
+    public Guid RestaurantId { get; set; }
+    public Guid EntryId { get; set; }
+    public LedgerEntry? Entry { get; set; }
+    public Guid AccountId { get; set; }
+    public LedgerAccount? Account { get; set; }
+    public decimal Debit { get; set; }
+    public decimal Credit { get; set; }
+    public Guid? SupplierId { get; set; }
+    public Guid? WarehouseId { get; set; }
+    public Guid? MoneyAccountId { get; set; }
+}
+
 public sealed class KitchenTicket : Entity
 {
     public Guid RestaurantId { get; set; }
