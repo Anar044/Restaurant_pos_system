@@ -8,6 +8,7 @@ import {
   getBackOfficeContext,
   loginWithPin,
 } from './api';
+import { AccountingPage } from './AccountingPage';
 import { AdjustmentsPage } from './AdjustmentsPage';
 import { DevicesPage } from './DevicesPage';
 import { EmployeesPage } from './EmployeesPage';
@@ -26,7 +27,7 @@ import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'groups' | 'printing' | 'modifiers' | 'nomenclature' | 'inventory' | 'stock-receipts' | 'stock-transfers' | 'stock-writeoffs' | 'stock-inventory' | 'suppliers' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
+type PageKey = 'overview' | 'accounting' | 'groups' | 'printing' | 'modifiers' | 'nomenclature' | 'inventory' | 'stock-receipts' | 'stock-transfers' | 'stock-writeoffs' | 'stock-inventory' | 'suppliers' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -160,6 +161,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'overview', label: 'Обзор', icon: '⌂', ready: true },
     { key: 'finance', label: 'Кассы и смены', icon: '₼', ready: true },
     { key: 'money', label: 'Денежный учёт', icon: '◈', ready: true },
+    { key: 'accounting', label: 'План счетов', icon: '≡', ready: true },
     { key: 'suppliers', label: 'Поставщики', icon: '◫', ready: true },
     { key: 'groups', label: 'Группы, отделения и залы', icon: '▦', ready: true },
     { key: 'printing', label: 'Печать', icon: '▧', ready: true },
@@ -217,6 +219,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             {renderNavItem('overview')}
             {renderNavItem('finance')}
             {renderNavItem('money')}
+            {renderNavItem('accounting')}
             {renderNavItem('suppliers')}
           </div>
 
@@ -379,6 +382,8 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
               token={session.token}
               canManageShifts={(session.permissions ?? []).includes('shifts.manage')}
             />
+          ) : page === 'accounting' ? (
+            <AccountingPage token={session.token} />
           ) : page === 'money' ? (
             <MoneyPage
               token={session.token}
