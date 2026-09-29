@@ -70,59 +70,6 @@ public static class BackOfficeAccountingEndpoints
 
             var accountLookup = accounts.ToDictionary(x => x.Id);
 
-            var analyticTotals = await (
-                from line in db.LedgerLines.AsNoTracking()
-                join entry in db.LedgerEntries.AsNoTracking() on line.EntryId equals entry.Id
-                where line.RestaurantId == restaurantId &&
-                      line.AccountId == accountId &&
-                      entry.OccurredAt < periodTo &&
-                      (line.SupplierId.HasValue ||
-                       line.WarehouseId.HasValue ||
-                       line.MoneyAccountId.HasValue)
-                group line by new
-                {
-                    line.SupplierId,
-                    line.WarehouseId,
-                    line.MoneyAccountId
-                }
-                into g
-                select new
-                {
-                    g.Key.SupplierId,
-                    g.Key.WarehouseId,
-                    g.Key.MoneyAccountId,
-                    Debit = g.Sum(x => x.Debit),
-                    Credit = g.Sum(x => x.Credit)
-                })
-                .ToListAsync(ct);
-
-            var analyticPeriodTotals = await (
-                from line in db.LedgerLines.AsNoTracking()
-                join entry in db.LedgerEntries.AsNoTracking() on line.EntryId equals entry.Id
-                where line.RestaurantId == restaurantId &&
-                      line.AccountId == accountId &&
-                      entry.OccurredAt >= periodFrom &&
-                      entry.OccurredAt < periodTo &&
-                      (line.SupplierId.HasValue ||
-                       line.WarehouseId.HasValue ||
-                       line.MoneyAccountId.HasValue)
-                group line by new
-                {
-                    line.SupplierId,
-                    line.WarehouseId,
-                    line.MoneyAccountId
-                }
-                into g
-                select new
-                {
-                    g.Key.SupplierId,
-                    g.Key.WarehouseId,
-                    g.Key.MoneyAccountId,
-                    Debit = g.Sum(x => x.Debit),
-                    Credit = g.Sum(x => x.Credit)
-                })
-                .ToListAsync(ct);
-
             var entries = await db.LedgerEntries
                 .AsNoTracking()
                 .Include(x => x.Lines)
@@ -311,6 +258,59 @@ public static class BackOfficeAccountingEndpoints
                     Credit = g.Sum(x => x.Credit)
                 })
                 .FirstOrDefaultAsync(ct);
+
+            var analyticTotals = await (
+                from line in db.LedgerLines.AsNoTracking()
+                join entry in db.LedgerEntries.AsNoTracking() on line.EntryId equals entry.Id
+                where line.RestaurantId == restaurantId &&
+                      line.AccountId == accountId &&
+                      entry.OccurredAt < periodTo &&
+                      (line.SupplierId.HasValue ||
+                       line.WarehouseId.HasValue ||
+                       line.MoneyAccountId.HasValue)
+                group line by new
+                {
+                    line.SupplierId,
+                    line.WarehouseId,
+                    line.MoneyAccountId
+                }
+                into g
+                select new
+                {
+                    g.Key.SupplierId,
+                    g.Key.WarehouseId,
+                    g.Key.MoneyAccountId,
+                    Debit = g.Sum(x => x.Debit),
+                    Credit = g.Sum(x => x.Credit)
+                })
+                .ToListAsync(ct);
+
+            var analyticPeriodTotals = await (
+                from line in db.LedgerLines.AsNoTracking()
+                join entry in db.LedgerEntries.AsNoTracking() on line.EntryId equals entry.Id
+                where line.RestaurantId == restaurantId &&
+                      line.AccountId == accountId &&
+                      entry.OccurredAt >= periodFrom &&
+                      entry.OccurredAt < periodTo &&
+                      (line.SupplierId.HasValue ||
+                       line.WarehouseId.HasValue ||
+                       line.MoneyAccountId.HasValue)
+                group line by new
+                {
+                    line.SupplierId,
+                    line.WarehouseId,
+                    line.MoneyAccountId
+                }
+                into g
+                select new
+                {
+                    g.Key.SupplierId,
+                    g.Key.WarehouseId,
+                    g.Key.MoneyAccountId,
+                    Debit = g.Sum(x => x.Debit),
+                    Credit = g.Sum(x => x.Credit)
+                })
+                .ToListAsync(ct);
 
             var entries = await db.LedgerEntries
                 .AsNoTracking()
