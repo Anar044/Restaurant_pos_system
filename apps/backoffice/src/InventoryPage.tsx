@@ -205,6 +205,8 @@ export function InventoryPage({
                 <tr>
                   <th>Позиция</th>
                   <th>Остаток</th>
+                  <th>Ср. себестоимость</th>
+                  <th>Стоимость</th>
                   <th>Минимум</th>
                   <th>Статус</th>
                   <th />
@@ -213,6 +215,8 @@ export function InventoryPage({
               <tbody>
                 {visibleItems.map((item) => {
                   const current = stockFor(item, selectedWarehouseId);
+                  const averageCost = averageCostFor(item, selectedWarehouseId);
+                  const stockValue = stockValueFor(item, selectedWarehouseId);
                   const low = item.isActive && item.minStock > 0 && current <= item.minStock;
                   return (
                     <tr key={item.id} className={!item.isActive ? 'row-inactive' : ''}>
@@ -227,6 +231,8 @@ export function InventoryPage({
                           {formatQuantity(current)} {unitLabel(item.unit)}
                         </strong>
                       </td>
+                      <td>{formatMoney(averageCost)}</td>
+                      <td><strong>{formatMoney(stockValue)}</strong></td>
                       <td>{formatQuantity(item.minStock)} {unitLabel(item.unit)}</td>
                       <td>
                         <span className={'badge ' + (low ? 'inventory-warning-badge' : item.isActive ? 'success' : 'neutral')}>
@@ -272,7 +278,10 @@ export function InventoryPage({
                   {movement.quantityDelta >= 0 ? '+' : ''}
                   {formatQuantity(movement.quantityDelta)} {unitLabel(movement.unit)}
                 </div>
-                <span>{movement.note || movementTypeLabel(movement.type)}</span>
+                <span>
+                  {movement.note || movementTypeLabel(movement.type)}
+                  {movement.costDelta !== null ? ' · ' + (movement.costDelta >= 0 ? '+' : '') + formatMoney(movement.costDelta) : ''}
+                </span>
               </div>
             ))}
           </div>
@@ -851,6 +860,17 @@ function stockFor(item: InventoryNomenclatureItem, warehouseId: string) {
   return item.warehouseBalances.find((x) => x.warehouseId === warehouseId)?.quantity ?? 0;
 }
 
+function stockValueFor(item: InventoryNomenclatureItem, warehouseId: string) {
+  if (warehouseId === 'ALL') return item.totalStockValue;
+  return item.warehouseBalances.find((x) => x.warehouseId === warehouseId)?.stockValue ?? 0;
+}
+
+function averageCostFor(item: InventoryNomenclatureItem, warehouseId: string) {
+  if (warehouseId === 'ALL') return item.averageCost;
+  return item.warehouseBalances.find((x) => x.warehouseId === warehouseId)?.averageCost ?? 0;
+}
+
+
 function movementTypeLabel(type: string) {
   const labels: Record<string, string> = {
     RECEIPT: 'Приход',
@@ -867,6 +887,13 @@ function movementTypeLabel(type: string) {
 
 function unitLabel(unit: string) {
   return UNIT_OPTIONS.find(([value]) => value === unit)?.[1] ?? unit;
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat('ru-RU', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value) + ' ₼';
 }
 
 function formatQuantity(value: number) {
