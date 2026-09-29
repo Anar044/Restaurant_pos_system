@@ -305,6 +305,8 @@ public sealed class StockDocument : Entity
     public Guid? SupplierId { get; set; }
     public Supplier? Supplier { get; set; }
     public string PurchaseSource { get; set; } = "LOCAL";
+    public string PurchaseDocumentKind { get; set; } = "SUPPLIER_INVOICE";
+    public string? PurchaseReferenceNumber { get; set; }
     public string TaxRegimeSnapshot { get; set; } = "UNCONFIGURED";
     public string VatPriceMode { get; set; } = "INCLUDED";
     public string InputVatCreditStatus { get; set; } = "NOT_APPLICABLE";
