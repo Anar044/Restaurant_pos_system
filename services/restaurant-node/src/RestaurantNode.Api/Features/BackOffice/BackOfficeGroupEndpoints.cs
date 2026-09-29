@@ -100,16 +100,6 @@ public static class BackOfficeGroupEndpoints
                 .Select(x => new { id = x.Id, name = x.Name })
                 .ToListAsync(ct);
 
-            var printers = await db.Printers.AsNoTracking()
-                .Where(x =>
-                    x.RestaurantId == restaurantId &&
-                    x.IsActive &&
-                    x.IsConfigured &&
-                    x.HostDeviceId.HasValue)
-                .OrderBy(x => x.Name)
-                .Select(x => new { id = x.Id, name = x.Name })
-                .ToListAsync(ct);
-
             return Results.Ok(new
             {
                 groups = groups.Select(g => new
@@ -129,8 +119,7 @@ public static class BackOfficeGroupEndpoints
                 halls,
                 types,
                 devices,
-                warehouses,
-                printers
+                warehouses
             });
         });
 
