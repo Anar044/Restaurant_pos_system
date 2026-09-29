@@ -103,6 +103,12 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<AuditEvent>().ToTable("audit_events");
         modelBuilder.Entity<OutboxEvent>().ToTable("outbox_events");
 
+        modelBuilder.Entity<Restaurant>().Property(x => x.TaxRegime)
+            .HasMaxLength(32)
+            .HasDefaultValue(TaxPolicy.UnconfiguredRegime);
+        modelBuilder.Entity<Restaurant>().Property(x => x.VatPriceMode)
+            .HasMaxLength(16)
+            .HasDefaultValue(TaxPolicy.VatPriceIncluded);
         modelBuilder.Entity<Role>().Property(x => x.Permissions).HasColumnType("text[]");
         modelBuilder.Entity<PrintJob>().Property(x => x.PayloadJson).HasColumnType("jsonb");
         modelBuilder.Entity<AuditEvent>().Property(x => x.PayloadJson).HasColumnType("jsonb");
