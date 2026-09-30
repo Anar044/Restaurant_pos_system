@@ -40,13 +40,31 @@ public static class RealizationActAccounting
             })
             .FirstAsync(ct);
 
+        // A cash shift owns the sale through its completed payments, not through
+        // the shift in which the order happened to be opened. Orders may stay open
+        // across shifts, so using OpenedShiftId can make a sale appear in the Z report
+        // while silently missing from realization.
+        var soldOrderIds = await db.Payments
+            .AsNoTracking()
+            .Where(x =>
+                x.RestaurantId == restaurantId &&
+                x.ShiftId == shift.Id &&
+                (x.Status == PaymentStatus.Completed ||
+                 x.Status == PaymentStatus.Refunded))
+            .Select(x => x.OrderId)
+            .Distinct()
+            .ToArrayAsync(ct);
+
+        if (soldOrderIds.Length == 0)
+            return new ShiftResult(0, 0, 0, 0m);
+
         var orders = await db.Orders
             .AsNoTracking()
             .Include(x => x.Items)
                 .ThenInclude(x => x.Modifiers)
             .Where(x =>
                 x.RestaurantId == restaurantId &&
-                x.OpenedShiftId == shift.Id &&
+                soldOrderIds.Contains(x.Id) &&
                 (x.Status == OrderStatus.Closed || x.Status == OrderStatus.Paid))
             .ToListAsync(ct);
 
