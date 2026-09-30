@@ -3,6 +3,7 @@ import {
   type BackOfficeStockDocuments,
   type StockDocument,
   type UpsertReceiptDocumentInput,
+  correctReceiptDocument,
   createReceiptDocument,
   deleteReceiptDocument,
   duplicateReceiptDocument,
@@ -26,6 +27,7 @@ export function ReceiptDocumentsPage({
   const [editor, setEditor] = useState<StockDocument | 'new' | null>(null);
   const [postingId, setPostingId] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [correctingId, setCorrectingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<ReceiptStatusFilter>('ALL');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -111,32 +113,32 @@ export function ReceiptDocumentsPage({
     }
   }
 
-  async function reverseDocument(document: StockDocument, createCorrectionDraft: boolean) {
-    const defaultReason = createCorrectionDraft
-      ? 'Исправление приходной накладной'
-      : 'Отмена приходной накладной';
+  function startCorrection(document: StockDocument) {
+    setError(null);
+    setCorrectingId(document.id);
+    setEditor(document);
+  }
+
+  async function reverseDocument(document: StockDocument) {
     const reason = window.prompt(
-      createCorrectionDraft
-        ? 'Укажите причину исправления. Исходный документ будет сторнирован, а новая копия откроется как черновик.'
-        : 'Укажите причину сторно. Складские движения и бухгалтерские проводки будут отменены.',
-      defaultReason,
+      'Укажите причину сторно. Складские движения и бухгалтерские проводки будут полностью отменены.',
+      'Отмена приходной накладной',
     );
     if (reason === null) return;
 
     if (!window.confirm(
-      createCorrectionDraft
-        ? 'Сторнировать ' + document.number + ' и создать исправленную копию?'
-        : 'Сторнировать ' + document.number + '? Это создаст обратные складские и бухгалтерские движения.',
+      'Полностью сторнировать ' + document.number +
+      '? Используйте «Исправить», если нужно только поменять количество или цену.',
     )) return;
 
-    setActionId((createCorrectionDraft ? 'correct:' : 'reverse:') + document.id);
+    setActionId('reverse:' + document.id);
     setError(null);
     try {
-      const result = await reverseReceiptDocument(token, document.id, {
-        createCorrectionDraft,
+      await reverseReceiptDocument(token, document.id, {
+        createCorrectionDraft: false,
         reason: reason.trim() || null,
       });
-      await reloadDocuments(result.correctionDocumentId ?? undefined);
+      await reloadDocuments();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось сторнировать документ');
     } finally {
@@ -310,14 +312,14 @@ export function ReceiptDocumentsPage({
                             <button
                               className="primary-button compact"
                               disabled={actionId !== null || postingId !== null}
-                              onClick={() => void reverseDocument(document, true)}
+                              onClick={() => startCorrection(document)}
                             >
-                              {actionId === 'correct:' + document.id ? 'Готовим…' : 'Исправить'}
+                              Исправить
                             </button>
                             <button
                               className="text-button danger-text-button"
                               disabled={actionId !== null || postingId !== null}
-                              onClick={() => void reverseDocument(document, false)}
+                              onClick={() => void reverseDocument(document)}
                             >
                               {actionId === 'reverse:' + document.id ? 'Сторнируем…' : 'Сторно'}
                             </button>
@@ -338,9 +340,22 @@ export function ReceiptDocumentsPage({
           token={token}
           data={data}
           document={editor === 'new' ? null : editor}
-          readOnly={!canManage || (editor !== 'new' && editor.status !== 'DRAFT')}
-          onClose={() => setEditor(null)}
-          onSaved={async () => { setEditor(null); await refresh(); }}
+          correctionMode={editor !== 'new' && correctingId === editor.id}
+          readOnly={
+            !canManage ||
+            (editor !== 'new' &&
+              editor.status !== 'DRAFT' &&
+              correctingId !== editor.id)
+          }
+          onClose={() => {
+            setCorrectingId(null);
+            setEditor(null);
+          }}
+          onSaved={async () => {
+            setCorrectingId(null);
+            setEditor(null);
+            await refresh();
+          }}
         />
       )}
     </section>
@@ -351,6 +366,7 @@ function ReceiptEditor({
   token,
   data,
   document,
+  correctionMode,
   readOnly,
   onClose,
   onSaved,
@@ -358,6 +374,7 @@ function ReceiptEditor({
   token: string;
   data: BackOfficeStockDocuments;
   document: StockDocument | null;
+  correctionMode: boolean;
   readOnly: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -549,6 +566,12 @@ function ReceiptEditor({
     setSaving(true);
     setError(null);
     try {
+      if (document && correctionMode) {
+        await correctReceiptDocument(token, document.id, input);
+        await onSaved();
+        return;
+      }
+
       const saved = document
         ? await updateReceiptDocument(token, document.id, input)
         : await createReceiptDocument(token, input);
@@ -585,20 +608,31 @@ function ReceiptEditor({
               )}
             </div>
             <p>
-              {readOnly
-                ? 'Документ проведён. Данные доступны для просмотра, прямое редактирование отключено.'
-                : 'Заполните реквизиты, выберите тип покупки и добавьте позиции.'}
+              {correctionMode
+                ? 'Режим исправления: измените позиции, количество, цену или ƏDV. Система проведёт только разницу.'
+                : readOnly
+                  ? 'Документ проведён. Данные доступны для просмотра, прямое редактирование отключено.'
+                  : 'Заполните реквизиты, выберите тип покупки и добавьте позиции.'}
             </p>
           </div>
           <button type="button" className="close-button" onClick={onClose}>×</button>
         </header>
 
+        {correctionMode && document?.status === 'POSTED' && (
+          <div className="receipt-posted-banner correction">
+            <strong>Исправление проведённого документа</strong>
+            <span>
+              Основные реквизиты зафиксированы. Измените позиции, количество, цену или ƏDV —
+              склад и бухгалтерия получат только разницу между старым и новым вариантом.
+            </span>
+          </div>
+        )}
+
         {readOnly && document?.status === 'POSTED' && (
           <div className="receipt-posted-banner">
-            <strong>Проведённый документ защищён от редактирования</strong>
+            <strong>Проведённый документ защищён от прямого редактирования</strong>
             <span>
-              Он уже изменил складские остатки и бухгалтерские проводки. Для изменения проведённого документа
-              будет использоваться отдельная операция исправления / сторно.
+              Для изменения количества или цены используйте «Исправить». Для полной отмены — «Сторно».
             </span>
           </div>
         )}
@@ -623,13 +657,13 @@ function ReceiptEditor({
                     type="date"
                     value={documentDate}
                     onChange={(e) => setDocumentDate(e.target.value)}
-                    disabled={readOnly}
+                    disabled={readOnly || correctionMode}
                   />
                 </label>
 
                 <label>
                   <span>Склад</span>
-                  <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} disabled={readOnly}>
+                  <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} disabled={readOnly || correctionMode}>
                     <option value="">Выберите склад</option>
                     {activeWarehouses.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                   </select>
@@ -637,7 +671,7 @@ function ReceiptEditor({
 
                 <label>
                   <span>Поставщик / магазин</span>
-                  <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} disabled={readOnly}>
+                  <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} disabled={readOnly || correctionMode}>
                     <option value="">Выберите поставщика</option>
                     {activeSuppliers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                   </select>
@@ -649,7 +683,7 @@ function ReceiptEditor({
                     value={number}
                     onChange={(e) => setNumber(e.target.value)}
                     placeholder="Автоматически"
-                    disabled={readOnly}
+                    disabled={readOnly || correctionMode}
                   />
                 </label>
               </div>
@@ -671,7 +705,7 @@ function ReceiptEditor({
                   <button
                     key={option.code}
                     type="button"
-                    disabled={readOnly}
+                    disabled={readOnly || correctionMode}
                     className={purchaseDocumentKind === option.code ? 'receipt-kind-card active' : 'receipt-kind-card'}
                     onClick={() => changeDocumentKind(option.code)}
                   >
@@ -695,7 +729,7 @@ function ReceiptEditor({
                     onChange={(e) => setPurchaseReferenceNumber(e.target.value)}
                     maxLength={120}
                     placeholder="Необязательно"
-                    disabled={readOnly}
+                    disabled={readOnly || correctionMode}
                   />
                 </label>
 
@@ -707,7 +741,7 @@ function ReceiptEditor({
                         <button
                           type="button"
                           key={option.code}
-                          disabled={readOnly}
+                          disabled={readOnly || correctionMode}
                           className={retailVatMode === option.code ? 'receipt-choice-button active' : 'receipt-choice-button'}
                           onClick={() => setRetailVatMode(option.code)}
                         >
@@ -724,7 +758,7 @@ function ReceiptEditor({
                         <button
                           type="button"
                           key={option.code}
-                          disabled={readOnly}
+                          disabled={readOnly || correctionMode}
                           className={vatPriceMode === option.code ? 'receipt-choice-button active' : 'receipt-choice-button'}
                           onClick={() => setVatPriceMode(option.code)}
                         >
@@ -743,7 +777,7 @@ function ReceiptEditor({
                       onChange={(e) => setEInvoiceNumber(e.target.value)}
                       maxLength={120}
                       placeholder="Необязательно"
-                      disabled={readOnly}
+                      disabled={readOnly || correctionMode}
                     />
                   </label>
                 )}
@@ -780,7 +814,7 @@ function ReceiptEditor({
                     <select
                       value={inputVatCreditStatus}
                       onChange={(e) => setInputVatCreditStatus(e.target.value)}
-                      disabled={readOnly}
+                      disabled={readOnly || correctionMode}
                     >
                       {data.inputVatCreditStatuses.map((x) => (
                         <option key={x.code} value={x.code}>{x.name}</option>
@@ -1003,7 +1037,9 @@ function ReceiptEditor({
 
         <footer className="receipt-workspace-footer">
           <div>
-            {readOnly ? (
+            {correctionMode ? (
+              <span>Будет проведена только разница относительно текущего документа.</span>
+            ) : readOnly ? (
               <span>Режим просмотра</span>
             ) : (
               <span>Черновик можно изменять до проведения.</span>
@@ -1015,7 +1051,18 @@ function ReceiptEditor({
               {readOnly ? 'Закрыть' : 'Отмена'}
             </button>
 
-            {!readOnly && (
+            {!readOnly && correctionMode && (
+              <button
+                type="submit"
+                className="primary-button"
+                value="correct"
+                disabled={saving || !warehouseId || !supplierId}
+              >
+                {saving ? 'Проводим исправление…' : 'Сохранить исправление'}
+              </button>
+            )}
+
+            {!readOnly && !correctionMode && (
               <>
                 <button
                   type="submit"
