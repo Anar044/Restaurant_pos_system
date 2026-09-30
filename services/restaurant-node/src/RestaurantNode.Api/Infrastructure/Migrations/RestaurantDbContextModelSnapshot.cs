@@ -856,10 +856,6 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Property<DateTimeOffset?>("ClosedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("CostMethodSnapshot")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1158,6 +1154,10 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
 
                     b.Property<string>("Comment")
                         .HasColumnType("text");
+
+                    b.Property<string>("CostMethodSnapshot")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
