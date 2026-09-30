@@ -24,6 +24,8 @@ public sealed class Restaurant : Entity
     public string TaxRegime { get; set; } = "UNCONFIGURED";
     public string VatPriceMode { get; set; } = "INCLUDED";
     public bool IntegratedPosTaxReliefEnabled { get; set; }
+    public InventoryCostMethod InventoryCostMethod { get; set; } = InventoryCostMethod.WeightedAverage;
+    public bool AllowNegativeRealization { get; set; } = true;
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
@@ -307,6 +309,10 @@ public sealed class StockDocument : Entity
     public string PurchaseSource { get; set; } = "LOCAL";
     public string PurchaseDocumentKind { get; set; } = "SUPPLIER_INVOICE";
     public string? PurchaseReferenceNumber { get; set; }
+    public string? ReferenceType { get; set; }
+    public Guid? ReferenceId { get; set; }
+    public string? CostMethodSnapshot { get; set; }
+    public string? PostingError { get; set; }
     public string TaxRegimeSnapshot { get; set; } = "UNCONFIGURED";
     public string VatPriceMode { get; set; } = "INCLUDED";
     public string InputVatCreditStatus { get; set; } = "NOT_APPLICABLE";
