@@ -341,6 +341,28 @@ public static class RealizationActAccounting
             return (false, 0m, act.PostingError);
         }
 
+        var olderPendingAct = await db.StockDocuments
+            .AsNoTracking()
+            .Where(x =>
+                x.RestaurantId == restaurantId &&
+                x.Type == StockDocumentType.Realization &&
+                x.Status == StockDocumentStatus.Draft &&
+                x.WarehouseId == act.WarehouseId &&
+                x.Id != act.Id &&
+                (x.DocumentDate < act.DocumentDate ||
+                 (x.DocumentDate == act.DocumentDate && x.CreatedAt < act.CreatedAt)))
+            .OrderBy(x => x.DocumentDate)
+            .ThenBy(x => x.CreatedAt)
+            .Select(x => x.Number)
+            .FirstOrDefaultAsync(ct);
+
+        if (olderPendingAct is not null)
+        {
+            act.PostingError =
+                $"Сначала нужно провести более ранний акт {olderPendingAct} по этому складу.";
+            return (false, 0m, act.PostingError);
+        }
+
         var productIds = act.Lines.Select(x => x.ProductId).Distinct().ToArray();
         var balances = await db.StockMovements
             .AsNoTracking()
