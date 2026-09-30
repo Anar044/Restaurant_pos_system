@@ -356,7 +356,6 @@ public static class BackOfficeStockDocumentEndpoints
                 return Results.Unauthorized();
 
             var document = await db.StockDocuments
-                .Include(x => x.Lines)
                 .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
             if (document is null) return Results.NotFound();
 
@@ -367,6 +366,8 @@ public static class BackOfficeStockDocumentEndpoints
 
             var validation = await ValidateReceiptRequestAsync(db, restaurantId, request, id, ct);
             if (validation.Error is not null) return validation.Error;
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
 
             document.Number = NormalizeOptional(request.Number, 80) ?? document.Number;
             document.DocumentDate = request.DocumentDate ?? document.DocumentDate;
@@ -385,13 +386,16 @@ public static class BackOfficeStockDocumentEndpoints
             document.InventoryCostAmount = Money(validation.Lines!.Sum(x => x.InventoryCostAmount));
             document.TotalAmount = Money(validation.Lines!.Sum(x => x.Amount));
 
-            db.StockDocumentLines.RemoveRange(document.Lines);
-            document.Lines.Clear();
+            await db.StockDocumentLines
+                .Where(x => x.RestaurantId == restaurantId && x.DocumentId == document.Id)
+                .ExecuteDeleteAsync(ct);
+
             foreach (var line in validation.Lines!)
             {
-                document.Lines.Add(new StockDocumentLine
+                db.StockDocumentLines.Add(new StockDocumentLine
                 {
                     RestaurantId = restaurantId,
+                    DocumentId = document.Id,
                     ProductId = line.ProductId,
                     Quantity = line.Quantity,
                     UnitPrice = line.UnitPrice,
@@ -419,9 +423,10 @@ public static class BackOfficeStockDocumentEndpoints
                 document.VatAmount,
                 document.InventoryCostAmount,
                 document.TotalAmount,
-                lineCount = document.Lines.Count
+                lineCount = validation.Lines!.Count
             });
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
 
             return Results.Ok(new { id = document.Id });
         }).RequireAuthorization(Permissions.InventoryManage);
