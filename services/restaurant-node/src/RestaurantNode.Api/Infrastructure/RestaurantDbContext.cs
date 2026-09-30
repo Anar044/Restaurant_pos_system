@@ -109,6 +109,12 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Restaurant>().Property(x => x.VatPriceMode)
             .HasMaxLength(16)
             .HasDefaultValue(TaxPolicy.VatPriceIncluded);
+        modelBuilder.Entity<Restaurant>().Property(x => x.InventoryCostMethod)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(InventoryCostMethod.WeightedAverage);
+        modelBuilder.Entity<Restaurant>().Property(x => x.AllowNegativeRealization)
+            .HasDefaultValue(true);
         modelBuilder.Entity<Role>().Property(x => x.Permissions).HasColumnType("text[]");
         modelBuilder.Entity<PrintJob>().Property(x => x.PayloadJson).HasColumnType("jsonb");
         modelBuilder.Entity<AuditEvent>().Property(x => x.PayloadJson).HasColumnType("jsonb");
@@ -123,6 +129,9 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Supplier>().Property(x => x.Type).HasConversion<string>();
         modelBuilder.Entity<StockDocument>().Property(x => x.Type).HasConversion<string>();
         modelBuilder.Entity<StockDocument>().Property(x => x.Status).HasConversion<string>();
+        modelBuilder.Entity<StockDocument>().Property(x => x.ReferenceType).HasMaxLength(40);
+        modelBuilder.Entity<StockDocument>().Property(x => x.CostMethodSnapshot).HasMaxLength(32);
+        modelBuilder.Entity<StockDocument>().Property(x => x.PostingError).HasMaxLength(500);
         modelBuilder.Entity<Order>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<OrderItem>().Property(x => x.Status).HasConversion<string>();
         modelBuilder.Entity<OrderAdjustment>().Property(x => x.Type).HasConversion<string>();
@@ -236,6 +245,7 @@ public sealed class RestaurantDbContext(DbContextOptions<RestaurantDbContext> op
         modelBuilder.Entity<Supplier>().HasIndex(x => new { x.RestaurantId, x.Name }).IsUnique();
         modelBuilder.Entity<StockDocument>().HasIndex(x => new { x.RestaurantId, x.Number }).IsUnique();
         modelBuilder.Entity<StockDocument>().HasIndex(x => new { x.RestaurantId, x.Type, x.Status, x.DocumentDate });
+        modelBuilder.Entity<StockDocument>().HasIndex(x => new { x.RestaurantId, x.ReferenceType, x.ReferenceId });
         modelBuilder.Entity<StockDocumentLine>().HasIndex(x => new { x.DocumentId, x.ProductId });
         modelBuilder.Entity<StockMovement>().HasIndex(x => new { x.RestaurantId, x.WarehouseId, x.ProductId, x.CreatedAt });
         modelBuilder.Entity<StockMovement>().HasIndex(x => new { x.RestaurantId, x.OperationId });
