@@ -14,6 +14,7 @@ import { DevicesPage } from './DevicesPage';
 import { EmployeesPage } from './EmployeesPage';
 import { FinancePage } from './FinancePage';
 import { InventoryPage } from './InventoryPage';
+import { InventoryAccountingPage } from './InventoryAccountingPage';
 import { ReceiptDocumentsPage } from './ReceiptDocumentsPage';
 import { ModifiersPage } from './ModifiersPage';
 import { MoneyPage } from './MoneyPage';
@@ -28,7 +29,7 @@ import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'accounting' | 'groups' | 'printing' | 'taxes' | 'modifiers' | 'nomenclature' | 'inventory' | 'stock-receipts' | 'stock-transfers' | 'stock-writeoffs' | 'stock-inventory' | 'suppliers' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
+type PageKey = 'overview' | 'accounting' | 'groups' | 'printing' | 'taxes' | 'modifiers' | 'nomenclature' | 'inventory' | 'stock-receipts' | 'stock-realization' | 'stock-transfers' | 'stock-writeoffs' | 'stock-inventory' | 'suppliers' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -172,6 +173,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'modifiers', label: 'Группы модификаторов', icon: '±', ready: true },
     { key: 'inventory', label: 'Склады и остатки', icon: '▥', ready: true },
     { key: 'stock-receipts', label: 'Приходные накладные', icon: '▣', ready: true },
+    { key: 'stock-realization', label: 'Акты реализации', icon: '▧', ready: true },
     { key: 'stock-transfers', label: 'Перемещения', icon: '⇄', ready: true },
     { key: 'stock-writeoffs', label: 'Списания', icon: '−', ready: true },
     { key: 'stock-inventory', label: 'Инвентаризация', icon: '✓', ready: true },
@@ -181,7 +183,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
   ];
 
   const restaurantSettingsItems: PageKey[] = ['groups', 'printing', 'taxes', 'devices'];
-  const catalogItems: PageKey[] = ['nomenclature', 'modifiers', 'inventory', 'stock-receipts', 'stock-transfers', 'stock-writeoffs', 'stock-inventory'];
+  const catalogItems: PageKey[] = ['nomenclature', 'modifiers', 'inventory', 'stock-receipts', 'stock-realization', 'stock-transfers', 'stock-writeoffs', 'stock-inventory'];
   const employeeItems: PageKey[] = ['employees', 'roles'];
 
   function renderNavItem(key: PageKey, nested = false) {
@@ -331,6 +333,11 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             />
           ) : page === 'stock-receipts' ? (
             <ReceiptDocumentsPage
+              token={session.token}
+              canManage={(session.permissions ?? []).includes('inventory.manage')}
+            />
+          ) : page === 'stock-realization' ? (
+            <InventoryAccountingPage
               token={session.token}
               canManage={(session.permissions ?? []).includes('inventory.manage')}
             />
