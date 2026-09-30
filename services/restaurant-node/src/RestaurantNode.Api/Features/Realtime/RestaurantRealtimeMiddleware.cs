@@ -82,11 +82,24 @@ public sealed class RestaurantRealtimeMiddleware(RequestDelegate next)
 
             context.Response.Clear();
             context.Response.StatusCode = StatusCodes.Status409Conflict;
-            await context.Response.WriteAsJsonAsync(new
+
+            if (isOrderRoute)
             {
-                code = "ORDER_VERSION_CONFLICT",
-                message = "Order was changed on another terminal. Refresh the order and try again."
-            }, context.RequestAborted);
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    code = "ORDER_VERSION_CONFLICT",
+                    message = "Order was changed on another terminal. Refresh the order and try again."
+                }, context.RequestAborted);
+            }
+            else
+            {
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    code = "DATA_CONCURRENCY_CONFLICT",
+                    message = "Данные были изменены другим пользователем. Обновите страницу и повторите попытку."
+                }, context.RequestAborted);
+            }
+
             return;
         }
 
