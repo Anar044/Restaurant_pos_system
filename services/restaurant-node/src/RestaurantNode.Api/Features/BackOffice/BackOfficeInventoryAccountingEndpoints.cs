@@ -15,6 +15,63 @@ public static class BackOfficeInventoryAccountingEndpoints
         var group = app.MapGroup("/api/v1/backoffice/inventory-accounting")
             .RequireAuthorization(Permissions.BackOfficeRead);
 
+        group.MapGet("/settings", async (
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out _))
+                return Results.Unauthorized();
+
+            var restaurant = await db.Restaurants
+                .AsNoTracking()
+                .Where(x => x.Id == restaurantId)
+                .Select(x => new
+                {
+                    x.InventoryCostMethod,
+                    x.AllowNegativeRealization
+                })
+                .FirstOrDefaultAsync(ct);
+
+            if (restaurant is null)
+                return Results.NotFound();
+
+            var negativeBalanceCount = await db.StockMovements
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId)
+                .GroupBy(x => new { x.WarehouseId, x.ProductId })
+                .Select(group => group.Sum(x => x.QuantityDelta))
+                .Where(quantity => quantity < 0m)
+                .CountAsync(ct);
+
+            return Results.Ok(new
+            {
+                settings = new
+                {
+                    costMethod = EnumText(restaurant.InventoryCostMethod),
+                    allowNegativeRealization =
+                        restaurant.InventoryCostMethod == InventoryCostMethod.WeightedAverage &&
+                        restaurant.AllowNegativeRealization
+                },
+                costMethods = new[]
+                {
+                    new
+                    {
+                        code = "WEIGHTED_AVERAGE",
+                        name = "Средневзвешенная",
+                        description = "Продажи могут уходить в минус. Себестоимость отрицательного остатка корректируется после последующего прихода."
+                    },
+                    new
+                    {
+                        code = "FIFO",
+                        name = "FIFO",
+                        description = "Сначала списываются самые ранние приходные партии. Если остатка недостаточно, акт реализации ожидает поступления."
+                    }
+                },
+                negativeBalanceCount
+            });
+        });
+
         group.MapGet("", async (
             ClaimsPrincipal user,
             RestaurantDbContext db,
