@@ -58,12 +58,22 @@ namespace RestaurantNode.Api.Infrastructure.Migrations
                 name: "IX_stock_documents_RestaurantId_ReferenceType_ReferenceId",
                 table: "stock_documents",
                 columns: new[] { "RestaurantId", "ReferenceType", "ReferenceId" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_stock_documents_RestaurantId_Type_ReferenceType_ReferenceId_WarehouseId",
+                table: "stock_documents",
+                columns: new[] { "RestaurantId", "Type", "ReferenceType", "ReferenceId", "WarehouseId" },
+                unique: true);
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
                 name: "IX_stock_documents_RestaurantId_ReferenceType_ReferenceId",
+                table: "stock_documents");
+
+            migrationBuilder.DropIndex(
+                name: "IX_stock_documents_RestaurantId_Type_ReferenceType_ReferenceId_WarehouseId",
                 table: "stock_documents");
 
             migrationBuilder.DropColumn(name: "AllowNegativeRealization", table: "restaurants");
