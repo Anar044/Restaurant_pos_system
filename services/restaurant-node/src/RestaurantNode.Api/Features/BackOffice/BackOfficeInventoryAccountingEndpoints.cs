@@ -414,9 +414,11 @@ public static class BackOfficeInventoryAccountingEndpoints
                 {
                     pending++;
                 }
+
+                // Make each result visible before the next FIFO act is evaluated.
+                await db.SaveChangesAsync(ct);
             }
 
-            await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
 
             return Results.Ok(new
