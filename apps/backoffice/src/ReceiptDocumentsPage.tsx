@@ -69,7 +69,13 @@ export function ReceiptDocumentsPage({
 
     if (openDocumentId) {
       const document = next.documents.find((x) => x.id === openDocumentId);
-      if (document) setEditor(document);
+      if (!document) {
+        throw new Error('Документ создан, но не найден после обновления журнала. Нажмите «Обновить» и повторите открытие.');
+      }
+
+      setStatusFilter('DRAFT');
+      setSearch('');
+      setEditor(document);
     }
   }
 
@@ -96,6 +102,7 @@ export function ReceiptDocumentsPage({
     setError(null);
     try {
       const result = await duplicateReceiptDocument(token, document.id);
+      setEditor(null);
       await reloadDocuments(result.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось дублировать документ');
