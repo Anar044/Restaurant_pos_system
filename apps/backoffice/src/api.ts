@@ -862,6 +862,19 @@ export type InventoryAccountingData = {
   acts: InventoryAccountingAct[];
 };
 
+export type InventoryAccountingSettingsData = {
+  settings: {
+    costMethod: 'WEIGHTED_AVERAGE' | 'FIFO' | string;
+    allowNegativeRealization: boolean;
+  };
+  costMethods: Array<{
+    code: 'WEIGHTED_AVERAGE' | 'FIFO' | string;
+    name: string;
+    description: string;
+  }>;
+  negativeBalanceCount: number;
+};
+
 export type UpsertReceiptDocumentInput = {
   number: string | null;
   documentDate: string | null;
@@ -1575,6 +1588,16 @@ export async function getInventoryAccounting(
 ): Promise<InventoryAccountingData> {
   return request<InventoryAccountingData>(
     '/api/v1/backoffice/inventory-accounting',
+    { cache: 'no-store' },
+    token,
+  );
+}
+
+export async function getInventoryAccountingSettings(
+  token: string,
+): Promise<InventoryAccountingSettingsData> {
+  return request<InventoryAccountingSettingsData>(
+    '/api/v1/backoffice/inventory-accounting/settings',
     { cache: 'no-store' },
     token,
   );
