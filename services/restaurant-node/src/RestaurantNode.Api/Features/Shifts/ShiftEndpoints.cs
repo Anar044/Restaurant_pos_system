@@ -356,6 +356,16 @@ public static class ShiftEndpoints
             shift.ClosedAt = DateTimeOffset.UtcNow;
             shift.Status = ShiftStatus.Closed;
 
+            // Sales are converted into warehouse realization acts at shift close.
+            // FIFO may leave an act in Draft when stock is insufficient; this does
+            // not cancel the cash shift close.
+            var realization = await RealizationActAccounting.CreateAndPostForShiftAsync(
+                db,
+                shift,
+                restaurantId,
+                employeeId,
+                ct);
+
             db.AuditEvents.Add(Audit(
                 restaurantId,
                 employeeId,
@@ -375,7 +385,14 @@ public static class ShiftEndpoints
                     report.Refunds,
                     report.NetSales,
                     report.OrdersCount,
-                    report.Payments
+                    report.Payments,
+                    realization = new
+                    {
+                        realization.CreatedActs,
+                        realization.PostedActs,
+                        realization.PendingActs,
+                        realization.TotalCost
+                    }
                 }));
             db.OutboxEvents.Add(Outbox(
                 restaurantId,
@@ -390,7 +407,14 @@ public static class ShiftEndpoints
                     closingCash,
                     report.ExpectedCash,
                     difference,
-                    closingNote
+                    closingNote,
+                    realization = new
+                    {
+                        realization.CreatedActs,
+                        realization.PostedActs,
+                        realization.PendingActs,
+                        realization.TotalCost
+                    }
                 }));
 
             await db.SaveChangesAsync(ct);
@@ -420,7 +444,14 @@ public static class ShiftEndpoints
                 shift = ToDto(shift),
                 expectedCash = closedReport.ExpectedCash,
                 difference = closedReport.CashDifference,
-                report = closedReport
+                report = closedReport,
+                realization = new
+                {
+                    realization.CreatedActs,
+                    realization.PostedActs,
+                    realization.PendingActs,
+                    realization.TotalCost
+                }
             });
         }).RequireAuthorization("shifts.manage");
 
