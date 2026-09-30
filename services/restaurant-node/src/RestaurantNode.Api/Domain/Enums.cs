@@ -22,5 +22,6 @@ public enum MoneyDirection { Income, Expense }
 public enum LedgerAccountType { Asset, Liability, Equity, Income, Expense }
 
 public enum SupplierType { External, Internal }
-public enum StockDocumentType { Receipt, WriteOff, Transfer, Inventory }
+public enum StockDocumentType { Receipt, WriteOff, Transfer, Inventory, Realization }
 public enum StockDocumentStatus { Draft, Posted, Cancelled }
+public enum InventoryCostMethod { WeightedAverage, Fifo }
