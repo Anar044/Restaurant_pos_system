@@ -1128,6 +1128,17 @@ public static class BackOfficeStockDocumentEndpoints
                 });
             }
 
+            var negativeCostCorrection =
+                await WeightedAverageNegativeStockAccounting.ApplyReceiptAsync(
+                    db,
+                    restaurantId,
+                    employeeId,
+                    document.WarehouseId.Value,
+                    document.Id,
+                    document.DocumentDate,
+                    document.Lines,
+                    ct);
+
             if (document.TotalAmount > 0m)
             {
                 await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
@@ -1241,10 +1252,78 @@ public static class BackOfficeStockDocumentEndpoints
                 document.InventoryCostAmount,
                 document.TotalAmount,
                 lineCount = document.Lines.Count,
-                document.PostedAt
+                document.PostedAt,
+                negativeStockCostCorrection = new
+                {
+                    negativeCostCorrection.AdjustedProducts,
+                    negativeCostCorrection.CogsAdjustment
+                }
             });
 
+            // Persist the receipt first so pending realization acts in the same
+            // transaction can see the newly available stock and FIFO layers.
             await db.SaveChangesAsync(ct);
+
+            var inventorySettings = await db.Restaurants
+                .AsNoTracking()
+                .Where(x => x.Id == restaurantId)
+                .Select(x => new
+                {
+                    x.InventoryCostMethod,
+                    x.AllowNegativeRealization
+                })
+                .FirstAsync(ct);
+
+            var pendingActs = await db.StockDocuments
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.Type == StockDocumentType.Realization &&
+                    x.Status == StockDocumentStatus.Draft)
+                .Include(x => x.Lines)
+                .OrderBy(x => x.DocumentDate)
+                .ThenBy(x => x.CreatedAt)
+                .ToListAsync(ct);
+
+            var retriedActs = 0;
+            var autoPostedActs = 0;
+            foreach (var act in pendingActs)
+            {
+                act.CostMethodSnapshot = inventorySettings.InventoryCostMethod.ToString();
+
+                var retry = await RealizationActAccounting.TryPostActAsync(
+                    db,
+                    act,
+                    restaurantId,
+                    employeeId,
+                    inventorySettings.InventoryCostMethod,
+                    inventorySettings.AllowNegativeRealization,
+                    ct);
+
+                retriedActs++;
+                if (retry.Posted)
+                {
+                    autoPostedActs++;
+                    AddAudit(
+                        db,
+                        user,
+                        restaurantId,
+                        "REALIZATION_ACT_AUTO_POSTED_AFTER_RECEIPT",
+                        "StockDocument",
+                        act.Id,
+                        new
+                        {
+                            act.Number,
+                            receiptDocumentId = document.Id,
+                            costMethod = EnumText(inventorySettings.InventoryCostMethod),
+                            totalCost = retry.TotalCost
+                        });
+                }
+
+                // Each posted act must become visible before evaluating the next
+                // FIFO act, otherwise two acts could consume the same layer.
+                await db.SaveChangesAsync(ct);
+            }
+
             await tx.CommitAsync(ct);
 
             return Results.Ok(new
@@ -1252,7 +1331,18 @@ public static class BackOfficeStockDocumentEndpoints
                 id = document.Id,
                 status = EnumText(document.Status),
                 document.PostedAt,
-                document.TotalAmount
+                document.TotalAmount,
+                negativeStockCostCorrection = new
+                {
+                    negativeCostCorrection.AdjustedProducts,
+                    negativeCostCorrection.CogsAdjustment
+                },
+                realizationRetry = new
+                {
+                    retriedActs,
+                    postedActs = autoPostedActs,
+                    pendingActs = retriedActs - autoPostedActs
+                }
             });
         }).RequireAuthorization(Permissions.InventoryManage);
 
