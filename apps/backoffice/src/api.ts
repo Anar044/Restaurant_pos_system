@@ -1597,6 +1597,17 @@ export async function duplicateReceiptDocument(
   }, token);
 }
 
+export async function correctReceiptDocument(
+  token: string,
+  documentId: string,
+  input: UpsertReceiptDocumentInput,
+): Promise<{ id: string; status: string; correctionOperationId: string; totalAmount: number }> {
+  return request('/api/v1/backoffice/stock-documents/' + documentId + '/correct', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
 export async function reverseReceiptDocument(
   token: string,
   documentId: string,
