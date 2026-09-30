@@ -856,6 +856,10 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Property<DateTimeOffset?>("ClosedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("CostMethodSnapshot")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1710,6 +1714,18 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                     b.Property<bool>("IntegratedPosTaxReliefEnabled")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("AllowNegativeRealization")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("InventoryCostMethod")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("WeightedAverage");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -1874,6 +1890,17 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                         .HasColumnType("character varying(16)")
                         .HasDefaultValue("LOCAL");
 
+                    b.Property<string>("PostingError")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("ReferenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReferenceType")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
                     b.Property<Guid>("RestaurantId")
                         .HasColumnType("uuid");
 
@@ -1930,6 +1957,8 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
                         .IsUnique();
 
                     b.HasIndex("RestaurantId", "Type", "Status", "DocumentDate");
+
+                    b.HasIndex("RestaurantId", "ReferenceType", "ReferenceId");
 
                     b.ToTable("stock_documents", (string)null);
                 });
