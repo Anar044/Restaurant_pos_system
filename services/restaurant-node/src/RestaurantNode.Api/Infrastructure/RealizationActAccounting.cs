@@ -47,7 +47,7 @@ public static class RealizationActAccounting
             .Where(x =>
                 x.RestaurantId == restaurantId &&
                 x.OpenedShiftId == shift.Id &&
-                x.Status == OrderStatus.Closed)
+                (x.Status == OrderStatus.Closed || x.Status == OrderStatus.Paid))
             .ToListAsync(ct);
 
         if (orders.Count == 0)
