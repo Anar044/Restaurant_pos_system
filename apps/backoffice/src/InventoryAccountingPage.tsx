@@ -5,7 +5,6 @@ import {
   getInventoryAccounting,
   postRealizationAct,
   retryPendingRealizationActs,
-  updateInventoryAccountingSettings,
 } from './api';
 import './inventory-accounting.css';
 
@@ -19,12 +18,9 @@ export function InventoryAccountingPage({
   canManage: boolean;
 }) {
   const [data, setData] = useState<InventoryAccountingData | null>(null);
-  const [costMethod, setCostMethod] = useState('WEIGHTED_AVERAGE');
-  const [allowNegativeRealization, setAllowNegativeRealization] = useState(true);
   const [filter, setFilter] = useState<ActFilter>('ALL');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [postingId, setPostingId] = useState<string | null>(null);
-  const [savingSettings, setSavingSettings] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -34,12 +30,9 @@ export function InventoryAccountingPage({
     setLoading(true);
     setError(null);
     try {
-      const next = await getInventoryAccounting(token);
-      setData(next);
-      setCostMethod(next.settings.costMethod);
-      setAllowNegativeRealization(next.settings.allowNegativeRealization);
+      setData(await getInventoryAccounting(token));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить складской учёт');
+      setError(e instanceof Error ? e.message : 'Не удалось загрузить акты реализации');
     } finally {
       setLoading(false);
     }
@@ -48,29 +41,6 @@ export function InventoryAccountingPage({
   useEffect(() => {
     void load();
   }, [token]);
-
-  async function saveSettings() {
-    if (!canManage || savingSettings) return;
-
-    setSavingSettings(true);
-    setNotice(null);
-    setError(null);
-    try {
-      const result = await updateInventoryAccountingSettings(token, {
-        costMethod,
-        allowNegativeRealization:
-          costMethod === 'WEIGHTED_AVERAGE' && allowNegativeRealization,
-      });
-      setCostMethod(result.costMethod);
-      setAllowNegativeRealization(result.allowNegativeRealization);
-      setNotice('Настройки себестоимости сохранены.');
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось сохранить настройки');
-    } finally {
-      setSavingSettings(false);
-    }
-  }
 
   async function postAct(act: InventoryAccountingAct) {
     if (!canManage || postingId) return;
@@ -135,7 +105,7 @@ export function InventoryAccountingPage({
   if (!data) {
     return (
       <div className="empty-state">
-        <strong>Складской учёт не загружен</strong>
+        <strong>Акты реализации не загружены</strong>
         <span>{error ?? 'Попробуйте ещё раз.'}</span>
         <button className="secondary-button" onClick={() => void load()}>Повторить</button>
       </div>
@@ -147,10 +117,10 @@ export function InventoryAccountingPage({
       <div className="page-heading">
         <div>
           <div className="eyebrow">НОМЕНКЛАТУРА И СКЛАД</div>
-          <h1>Акты реализации и себестоимость</h1>
+          <h1>Акты реализации</h1>
           <p>
-            Продажи кассовой смены списываются со склада через отдельный акт реализации.
-            Здесь выбирается метод расчёта себестоимости и контролируются непроведённые акты.
+            Здесь отображаются акты, автоматически сформированные по продажам закрытых
+            кассовых смен.
           </p>
         </div>
         <div className="heading-actions">
@@ -163,92 +133,11 @@ export function InventoryAccountingPage({
       {error && <div className="global-error"><span>{error}</span></div>}
       {notice && <div className="inventory-accounting-notice">{notice}</div>}
 
-      <div className="inventory-accounting-settings">
-        <div className="inventory-accounting-settings-head">
-          <div>
-            <span className="eyebrow">МЕТОД СЕБЕСТОИМОСТИ</span>
-            <h2>Как списывать товары при продаже</h2>
-          </div>
-          {canManage && (
-            <button
-              className="primary-button"
-              onClick={() => void saveSettings()}
-              disabled={savingSettings}
-            >
-              {savingSettings ? 'Сохраняем…' : 'Сохранить'}
-            </button>
-          )}
-        </div>
-
-        <div className="cost-method-grid">
-          {data.costMethods.map((method) => (
-            <button
-              type="button"
-              key={method.code}
-              className={
-                'cost-method-card ' +
-                (costMethod === method.code ? 'active' : '')
-              }
-              disabled={!canManage}
-              onClick={() => {
-                setCostMethod(method.code);
-                if (method.code === 'FIFO') setAllowNegativeRealization(false);
-              }}
-            >
-              <strong>{method.name}</strong>
-              <span>{method.description}</span>
-              {costMethod === method.code && <small>Выбрано</small>}
-            </button>
-          ))}
-        </div>
-
-        <label className="negative-stock-toggle">
-          <input
-            type="checkbox"
-            checked={costMethod === 'WEIGHTED_AVERAGE' && allowNegativeRealization}
-            disabled={!canManage || costMethod !== 'WEIGHTED_AVERAGE'}
-            onChange={(e) => setAllowNegativeRealization(e.target.checked)}
-          />
-          <div>
-            <strong>Разрешать актам реализации уходить в отрицательный остаток</strong>
-            <span>
-              Доступно для средневзвешенной себестоимости. При FIFO отрицательные остатки запрещены.
-            </span>
-          </div>
-        </label>
-      </div>
-
-      {data.negativeBalances.length > 0 && (
-        <div className="negative-stock-panel">
-          <div className="negative-stock-panel-head">
-            <div>
-              <strong>Отрицательные остатки</strong>
-              <span>
-                {data.negativeBalances.length} позиций требуют внимания.
-                Перед переходом на FIFO их нужно закрыть приходом или инвентаризацией.
-              </span>
-            </div>
-          </div>
-
-          <div className="negative-stock-list">
-            {data.negativeBalances.slice(0, 12).map((row) => (
-              <div key={row.warehouseId + ':' + row.productId}>
-                <span>{row.productName}</span>
-                <small>{row.warehouseName ?? 'Склад'}</small>
-                <strong>{quantity(row.quantity)} {row.unit}</strong>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="realization-journal">
         <div className="realization-journal-head">
           <div>
-            <h2>Акты реализации</h2>
-            <p>
-              Один акт формируется по складу из продаж закрытой кассовой смены.
-            </p>
+            <h2>Журнал актов</h2>
+            <p>Один акт формируется по складу из продаж закрытой кассовой смены.</p>
           </div>
           {canManage && (
             <button
@@ -280,8 +169,8 @@ export function InventoryAccountingPage({
 
         {acts.length === 0 ? (
           <div className="empty-state compact">
-            <strong>Актов в этом разделе пока нет</strong>
-            <span>Они появятся после закрытия кассовой смены с продажами.</span>
+            <strong>Актов реализации пока нет</strong>
+            <span>Они появятся автоматически после закрытия кассовой смены с продажами.</span>
           </div>
         ) : (
           <div className="realization-table-wrap">
