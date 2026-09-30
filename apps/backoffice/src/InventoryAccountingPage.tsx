@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   type InventoryAccountingAct,
   type InventoryAccountingData,
@@ -302,8 +302,8 @@ export function InventoryAccountingPage({
                 {acts.map((act) => {
                   const expanded = expandedId === act.id;
                   return (
-                    <>
-                      <tr key={act.id}>
+                    <Fragment key={act.id}>
+                      <tr>
                         <td>
                           <button
                             type="button"
@@ -359,7 +359,7 @@ export function InventoryAccountingPage({
                       </tr>
 
                       {expanded && (
-                        <tr key={act.id + ':details'} className="realization-details-row">
+                        <tr className="realization-details-row">
                           <td colSpan={8}>
                             <div className="realization-details">
                               <div className="realization-details-title">
@@ -380,7 +380,7 @@ export function InventoryAccountingPage({
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>
