@@ -1521,7 +1521,11 @@ export async function countInventory(
 export async function getBackOfficeStockDocuments(
   token: string,
 ): Promise<BackOfficeStockDocuments> {
-  return request<BackOfficeStockDocuments>('/api/v1/backoffice/stock-documents', {}, token);
+  return request<BackOfficeStockDocuments>(
+    '/api/v1/backoffice/stock-documents',
+    { cache: 'no-store' },
+    token,
+  );
 }
 
 export async function createStockSupplier(
