@@ -488,8 +488,8 @@ public static class BackOfficeStockDocumentEndpoints
             AddAudit(db, user, restaurantId, "STOCK_DOCUMENT_DUPLICATED", "StockDocument", copy.Id, new
             {
                 sourceDocumentId = source.Id,
-                source.Number,
-                copy.Number
+                sourceNumber = source.Number,
+                copyNumber = copy.Number
             });
             await db.SaveChangesAsync(ct);
 
