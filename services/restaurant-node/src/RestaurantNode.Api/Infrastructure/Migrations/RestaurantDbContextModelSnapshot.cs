@@ -1960,6 +1960,9 @@ modelBuilder.Entity("RestaurantNode.Api.Domain.StockMovement", b =>
 
                     b.HasIndex("RestaurantId", "ReferenceType", "ReferenceId");
 
+                    b.HasIndex("RestaurantId", "Type", "ReferenceType", "ReferenceId", "WarehouseId")
+                        .IsUnique();
+
                     b.ToTable("stock_documents", (string)null);
                 });
 
