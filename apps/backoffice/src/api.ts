@@ -810,6 +810,58 @@ export type BackOfficeStockDocuments = {
   documents: StockDocument[];
 };
 
+export type InventoryAccountingActLine = {
+  id: string;
+  productId: string;
+  productName: string;
+  unit: string;
+  quantity: number;
+  unitCost: number;
+  cost: number;
+};
+
+export type InventoryAccountingAct = {
+  id: string;
+  number: string;
+  status: 'DRAFT' | 'POSTED' | 'CANCELLED' | string;
+  documentDate: string;
+  warehouseId: string | null;
+  warehouseName: string | null;
+  shiftId: string | null;
+  deviceId: string | null;
+  deviceName: string | null;
+  shiftOpenedAt: string | null;
+  shiftClosedAt: string | null;
+  costMethod: 'WEIGHTED_AVERAGE' | 'FIFO' | string;
+  postingError: string | null;
+  totalAmount: number;
+  createdAt: string;
+  postedAt: string | null;
+  lines: InventoryAccountingActLine[];
+};
+
+export type InventoryAccountingData = {
+  settings: {
+    costMethod: 'WEIGHTED_AVERAGE' | 'FIFO' | string;
+    allowNegativeRealization: boolean;
+  };
+  costMethods: Array<{
+    code: 'WEIGHTED_AVERAGE' | 'FIFO' | string;
+    name: string;
+    description: string;
+  }>;
+  negativeBalances: Array<{
+    warehouseId: string;
+    warehouseName: string | null;
+    productId: string;
+    productName: string;
+    unit: string;
+    quantity: number;
+    stockValue: number;
+  }>;
+  acts: InventoryAccountingAct[];
+};
+
 export type UpsertReceiptDocumentInput = {
   number: string | null;
   documentDate: string | null;
@@ -1515,6 +1567,60 @@ export async function countInventory(
   return request('/api/v1/backoffice/inventory/inventory-count', {
     method: 'POST',
     body: JSON.stringify(input),
+  }, token);
+}
+
+export async function getInventoryAccounting(
+  token: string,
+): Promise<InventoryAccountingData> {
+  return request<InventoryAccountingData>(
+    '/api/v1/backoffice/inventory-accounting',
+    { cache: 'no-store' },
+    token,
+  );
+}
+
+export async function updateInventoryAccountingSettings(
+  token: string,
+  input: {
+    costMethod: string;
+    allowNegativeRealization: boolean;
+  },
+): Promise<{
+  costMethod: string;
+  allowNegativeRealization: boolean;
+}> {
+  return request('/api/v1/backoffice/inventory-accounting/settings', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function postRealizationAct(
+  token: string,
+  actId: string,
+): Promise<{
+  id: string;
+  status: string;
+  totalCost?: number;
+  totalAmount?: number;
+  postedAt: string | null;
+}> {
+  return request('/api/v1/backoffice/inventory-accounting/acts/' + actId + '/post', {
+    method: 'POST',
+  }, token);
+}
+
+export async function retryPendingRealizationActs(
+  token: string,
+): Promise<{
+  checkedActs: number;
+  postedActs: number;
+  pendingActs: number;
+  totalCost: number;
+}> {
+  return request('/api/v1/backoffice/inventory-accounting/acts/retry-pending', {
+    method: 'POST',
   }, token);
 }
 
