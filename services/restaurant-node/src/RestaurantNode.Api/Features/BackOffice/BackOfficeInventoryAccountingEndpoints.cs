@@ -301,7 +301,7 @@ public static class BackOfficeInventoryAccountingEndpoints
                 costMethod = EnumText(restaurant.InventoryCostMethod),
                 allowNegativeRealization = restaurant.AllowNegativeRealization
             });
-        }).RequireAuthorization(Permissions.InventoryManage);
+        }).RequireAuthorization(Permissions.RestaurantManage);
 
         group.MapPost("/acts/{id:guid}/post", async (
             Guid id,
