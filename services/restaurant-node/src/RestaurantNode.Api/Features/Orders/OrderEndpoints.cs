@@ -2076,22 +2076,10 @@ public static class OrderEndpoints
                 return Results.Conflict(new { message = "Only a fully paid order can be closed." });
 
             var closedAt = DateTimeOffset.UtcNow;
-            var stockAccounting = await OrderStockAccounting.ApplyOnCloseAsync(
-                db,
-                order,
-                restaurantId,
-                employeeId,
-                closedAt,
-                ct);
-            if (stockAccounting.Error is not null)
-            {
-                return Results.Conflict(new
-                {
-                    message = stockAccounting.Error,
-                    code = "STOCK_ACCOUNTING_NOT_CONFIGURED"
-                });
-            }
 
+            // Stock and COGS are intentionally deferred to the realization act
+            // generated for the POS shift. Closing a paid order must never be
+            // blocked by stock availability.
             order.Status = OrderStatus.Closed;
             order.ClosedAt = closedAt;
             order.UpdatedAt = closedAt;
@@ -2109,7 +2097,7 @@ public static class OrderEndpoints
                     order.DisplayNumber,
                     order.Total,
                     order.PaidTotal,
-                    stockCost = stockAccounting.TotalCost,
+                    stockAccounting = "DEFERRED_TO_REALIZATION_ACT",
                     order.ClosedAt
                 }));
             db.OutboxEvents.Add(Outbox(
