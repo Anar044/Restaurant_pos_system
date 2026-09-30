@@ -501,6 +501,379 @@ public static class BackOfficeStockDocumentEndpoints
             return Results.Ok(new { id = copy.Id });
         }).RequireAuthorization(Permissions.InventoryManage);
 
+        group.MapPut("/{id:guid}/correct", async (
+            Guid id,
+            UpsertReceiptDocumentRequest request,
+            ClaimsPrincipal user,
+            RestaurantDbContext db,
+            CancellationToken ct) =>
+        {
+            if (!TryClaims(user, out var restaurantId, out var employeeId))
+                return Results.Unauthorized();
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            var document = await db.StockDocuments
+                .FirstOrDefaultAsync(x => x.Id == id && x.RestaurantId == restaurantId, ct);
+            if (document is null) return Results.NotFound();
+            if (document.Type != StockDocumentType.Receipt)
+                return Results.BadRequest(new { message = "Исправление сейчас поддерживается только для приходной накладной." });
+            if (document.Status != StockDocumentStatus.Posted)
+                return Results.Conflict(new { message = "Исправлять можно только проведённый документ." });
+            if (!document.WarehouseId.HasValue || !document.SupplierId.HasValue)
+                return Results.BadRequest(new { message = "У документа не указан склад или поставщик." });
+
+            var oldLines = await db.StockDocumentLines
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && x.DocumentId == document.Id)
+                .ToListAsync(ct);
+
+            var correctionRequest = request with
+            {
+                Number = document.Number,
+                DocumentDate = document.DocumentDate,
+                WarehouseId = document.WarehouseId.Value,
+                SupplierId = document.SupplierId.Value,
+                PurchaseDocumentKind = document.PurchaseDocumentKind,
+                VatPriceMode = document.VatPriceMode,
+                InputVatCreditStatus = document.InputVatCreditStatus,
+                RetailVatMode = document.PurchaseDocumentKind == TaxPolicy.PurchaseDocumentRetailReceipt
+                    ? oldLines.Any(x => x.VatTaxCode == TaxPolicy.PurchaseVat18)
+                        ? TaxPolicy.RetailVat18
+                        : TaxPolicy.RetailVatNotSpecified
+                    : null
+            };
+
+            var validation = await ValidateReceiptRequestAsync(
+                db,
+                restaurantId,
+                correctionRequest,
+                document.Id,
+                document.TaxRegimeSnapshot,
+                ct);
+            if (validation.Error is not null) return validation.Error;
+
+            var newLines = validation.Lines!;
+            var productIds = oldLines.Select(x => x.ProductId)
+                .Concat(newLines.Select(x => x.ProductId))
+                .Distinct()
+                .ToArray();
+
+            var products = await db.Products
+                .AsNoTracking()
+                .Where(x => x.RestaurantId == restaurantId && productIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.InventoryAccountCode })
+                .ToDictionaryAsync(x => x.Id, ct);
+            if (products.Count != productIds.Length ||
+                products.Values.Any(x => !AccountingLedger.IsSupportedInventoryAccountCode(x.InventoryAccountCode)))
+            {
+                return Results.BadRequest(new { message = "Для одной или нескольких позиций не настроен корректный счёт складского учёта." });
+            }
+
+            var operationId = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow;
+            var oldByProduct = oldLines.ToDictionary(x => x.ProductId);
+            var newByProduct = newLines.ToDictionary(x => x.ProductId);
+
+            foreach (var productId in productIds)
+            {
+                oldByProduct.TryGetValue(productId, out var oldLine);
+                newByProduct.TryGetValue(productId, out var newLine);
+
+                var oldQuantity = oldLine?.Quantity ?? 0m;
+                var newQuantity = newLine?.Quantity ?? 0m;
+                var oldInventoryCost = oldLine?.InventoryCostAmount ?? 0m;
+                var newInventoryCost = newLine?.InventoryCostAmount ?? 0m;
+                var quantityDelta = decimal.Round(newQuantity - oldQuantity, 3, MidpointRounding.AwayFromZero);
+                var costDelta = Money(newInventoryCost - oldInventoryCost);
+
+                if (quantityDelta == 0m && costDelta == 0m)
+                    continue;
+
+                decimal? unitCost = null;
+                if (newQuantity > 0m)
+                    unitCost = Money(newInventoryCost / newQuantity);
+                else if (oldQuantity > 0m)
+                    unitCost = Money(oldInventoryCost / oldQuantity);
+
+                db.StockMovements.Add(new StockMovement
+                {
+                    RestaurantId = restaurantId,
+                    WarehouseId = document.WarehouseId.Value,
+                    ProductId = productId,
+                    EmployeeId = employeeId,
+                    OperationId = operationId,
+                    Type = "RECEIPT_CORRECTION",
+                    QuantityDelta = quantityDelta,
+                    UnitCost = unitCost,
+                    CostDelta = costDelta,
+                    ReferenceType = "STOCK_DOCUMENT_CORRECTION",
+                    ReferenceId = document.Id,
+                    Note = $"Исправление приходной {document.Number}",
+                    CreatedAt = now
+                });
+            }
+
+            await AccountingLedger.EnsureFoundationAsync(db, restaurantId, ct);
+            var payableAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                db, restaurantId, AccountingLedger.SupplierPayableKey,
+                "531", "Malsatan və podratçılara qısamüddətli kreditor borcları",
+                LedgerAccountType.Liability, ct);
+            var advanceAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                db, restaurantId, AccountingLedger.SupplierAdvanceKey,
+                "243", "Verilmiş qısamüddətli avanslar",
+                LedgerAccountType.Asset, ct);
+
+            var ledgerLines = new List<AccountingLedger.LineDraft>();
+            var inventoryCodes = productIds
+                .Select(productId => products[productId].InventoryAccountCode!)
+                .Distinct()
+                .ToArray();
+
+            foreach (var inventoryCode in inventoryCodes)
+            {
+                var oldAmount = Money(oldLines
+                    .Where(line => products[line.ProductId].InventoryAccountCode == inventoryCode)
+                    .Sum(line => line.InventoryCostAmount));
+                var newAmount = Money(newLines
+                    .Where(line => products[line.ProductId].InventoryAccountCode == inventoryCode)
+                    .Sum(line => line.InventoryCostAmount));
+                var delta = Money(newAmount - oldAmount);
+                if (delta == 0m) continue;
+
+                var inventoryAccount = await AccountingLedger.EnsureInventoryAccountAsync(
+                    db, restaurantId, inventoryCode, ct);
+                ledgerLines.Add(delta > 0m
+                    ? new AccountingLedger.LineDraft(
+                        inventoryAccount,
+                        Debit: delta,
+                        WarehouseId: document.WarehouseId.Value)
+                    : new AccountingLedger.LineDraft(
+                        inventoryAccount,
+                        Credit: -delta,
+                        WarehouseId: document.WarehouseId.Value));
+            }
+
+            var oldRecoverableVat = TaxPolicy.IsInputVatRecognizedAsRecoverable(
+                document.TaxRegimeSnapshot,
+                document.InputVatCreditStatus)
+                ? Money(document.VatAmount)
+                : 0m;
+            var newVatAmount = Money(newLines.Sum(x => x.VatAmount));
+            var newRecoverableVat = TaxPolicy.IsInputVatRecognizedAsRecoverable(
+                document.TaxRegimeSnapshot,
+                validation.InputVatCreditStatus!)
+                ? newVatAmount
+                : 0m;
+            var vatDelta = Money(newRecoverableVat - oldRecoverableVat);
+            if (vatDelta != 0m)
+            {
+                var vatAccount = await AccountingLedger.EnsureSystemAccountAsync(
+                    db,
+                    restaurantId,
+                    AccountingLedger.VatRecoverableKey,
+                    "241-1",
+                    "Əvəzləşdirilən əlavə dəyər vergisi",
+                    LedgerAccountType.Asset,
+                    ct);
+                ledgerLines.Add(vatDelta > 0m
+                    ? new AccountingLedger.LineDraft(
+                        vatAccount,
+                        Debit: vatDelta,
+                        SupplierId: document.SupplierId.Value)
+                    : new AccountingLedger.LineDraft(
+                        vatAccount,
+                        Credit: -vatDelta,
+                        SupplierId: document.SupplierId.Value));
+            }
+
+            var oldTotal = Money(document.TotalAmount);
+            var newTotal = Money(newLines.Sum(x => x.Amount));
+            var totalDelta = Money(newTotal - oldTotal);
+            if (totalDelta != 0m)
+            {
+                ledgerLines.Add(totalDelta > 0m
+                    ? new AccountingLedger.LineDraft(
+                        payableAccount,
+                        Credit: totalDelta,
+                        SupplierId: document.SupplierId.Value)
+                    : new AccountingLedger.LineDraft(
+                        payableAccount,
+                        Debit: -totalDelta,
+                        SupplierId: document.SupplierId.Value));
+            }
+
+            var correctionReferenceType = $"STOCK_RECEIPT_CORRECTION:{document.Id:N}";
+            var relatedEntries = await db.LedgerEntries
+                .AsNoTracking()
+                .Include(x => x.Lines)
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    ((x.ReferenceType == "STOCK_RECEIPT" && x.ReferenceId == document.Id) ||
+                     x.ReferenceType == correctionReferenceType))
+                .ToListAsync(ct);
+
+            var currentlyAppliedAdvance = Money(relatedEntries
+                .SelectMany(x => x.Lines)
+                .Where(x =>
+                    x.AccountId == advanceAccount.Id &&
+                    x.SupplierId == document.SupplierId.Value)
+                .Sum(x => x.Credit - x.Debit));
+
+            var advanceTotals = await db.LedgerLines
+                .AsNoTracking()
+                .Where(x =>
+                    x.RestaurantId == restaurantId &&
+                    x.SupplierId == document.SupplierId.Value &&
+                    x.AccountId == advanceAccount.Id)
+                .GroupBy(_ => 1)
+                .Select(g => new
+                {
+                    Debit = g.Sum(x => x.Debit),
+                    Credit = g.Sum(x => x.Credit)
+                })
+                .FirstOrDefaultAsync(ct);
+            var availableAdvance = Money(Math.Max(
+                0m,
+                (advanceTotals?.Debit ?? 0m) - (advanceTotals?.Credit ?? 0m)));
+
+            decimal desiredAppliedAdvance;
+            if (newTotal >= oldTotal)
+            {
+                var additionalNeed = Money(newTotal - oldTotal);
+                desiredAppliedAdvance = Money(
+                    currentlyAppliedAdvance + Math.Min(additionalNeed, availableAdvance));
+            }
+            else
+            {
+                desiredAppliedAdvance = Money(Math.Min(currentlyAppliedAdvance, newTotal));
+            }
+
+            var appliedAdvanceDelta = Money(desiredAppliedAdvance - currentlyAppliedAdvance);
+            if (appliedAdvanceDelta > 0m)
+            {
+                ledgerLines.Add(new AccountingLedger.LineDraft(
+                    payableAccount,
+                    Debit: appliedAdvanceDelta,
+                    SupplierId: document.SupplierId.Value));
+                ledgerLines.Add(new AccountingLedger.LineDraft(
+                    advanceAccount,
+                    Credit: appliedAdvanceDelta,
+                    SupplierId: document.SupplierId.Value));
+            }
+            else if (appliedAdvanceDelta < 0m)
+            {
+                var restoreAdvance = -appliedAdvanceDelta;
+                ledgerLines.Add(new AccountingLedger.LineDraft(
+                    advanceAccount,
+                    Debit: restoreAdvance,
+                    SupplierId: document.SupplierId.Value));
+                ledgerLines.Add(new AccountingLedger.LineDraft(
+                    payableAccount,
+                    Credit: restoreAdvance,
+                    SupplierId: document.SupplierId.Value));
+            }
+
+            if (ledgerLines.Count > 0)
+            {
+                await AccountingLedger.PostAsync(
+                    db,
+                    restaurantId,
+                    correctionReferenceType,
+                    operationId,
+                    now,
+                    $"Исправление приходной накладной {document.Number}",
+                    employeeId,
+                    ledgerLines,
+                    ct);
+            }
+
+            var before = new
+            {
+                document.NetAmount,
+                document.VatAmount,
+                document.InventoryCostAmount,
+                document.TotalAmount,
+                lines = oldLines.Select(x => new
+                {
+                    x.ProductId,
+                    x.Quantity,
+                    x.UnitPrice,
+                    x.VatTaxCode,
+                    x.NetAmount,
+                    x.VatAmount,
+                    x.InventoryCostAmount,
+                    x.Amount
+                }).ToArray()
+            };
+
+            document.PurchaseReferenceNumber = NormalizeOptional(request.PurchaseReferenceNumber, 120);
+            document.EInvoiceNumber = validation.EInvoiceNumber;
+            document.InputVatCreditStatus = validation.InputVatCreditStatus!;
+            document.Comment = NormalizeOptional(request.Comment, 500);
+            document.NetAmount = Money(newLines.Sum(x => x.NetAmount));
+            document.VatAmount = newVatAmount;
+            document.InventoryCostAmount = Money(newLines.Sum(x => x.InventoryCostAmount));
+            document.TotalAmount = newTotal;
+
+            await db.StockDocumentLines
+                .Where(x => x.RestaurantId == restaurantId && x.DocumentId == document.Id)
+                .ExecuteDeleteAsync(ct);
+
+            foreach (var line in newLines)
+            {
+                db.StockDocumentLines.Add(new StockDocumentLine
+                {
+                    RestaurantId = restaurantId,
+                    DocumentId = document.Id,
+                    ProductId = line.ProductId,
+                    Quantity = line.Quantity,
+                    UnitPrice = line.UnitPrice,
+                    VatTaxCode = line.VatTaxCode,
+                    NetAmount = line.NetAmount,
+                    VatAmount = line.VatAmount,
+                    InventoryCostAmount = line.InventoryCostAmount,
+                    Amount = line.Amount
+                });
+            }
+
+            AddAudit(db, user, restaurantId, "STOCK_DOCUMENT_CORRECTED", "StockDocument", document.Id, new
+            {
+                document.Number,
+                correctionOperationId = operationId,
+                before,
+                after = new
+                {
+                    document.NetAmount,
+                    document.VatAmount,
+                    document.InventoryCostAmount,
+                    document.TotalAmount,
+                    lines = newLines.Select(x => new
+                    {
+                        x.ProductId,
+                        x.Quantity,
+                        x.UnitPrice,
+                        x.VatTaxCode,
+                        x.NetAmount,
+                        x.VatAmount,
+                        x.InventoryCostAmount,
+                        x.Amount
+                    }).ToArray()
+                }
+            });
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+
+            return Results.Ok(new
+            {
+                id = document.Id,
+                status = EnumText(document.Status),
+                correctionOperationId = operationId,
+                document.TotalAmount
+            });
+        }).RequireAuthorization(Permissions.InventoryManage);
+
         group.MapPost("/{id:guid}/reverse", async (
             Guid id,
             ReverseReceiptDocumentRequest request,
@@ -992,11 +1365,26 @@ public static class BackOfficeStockDocumentEndpoints
         string? EInvoiceNumber,
         IResult? Error);
 
+    private static Task<ReceiptValidation> ValidateReceiptRequestAsync(
+        RestaurantDbContext db,
+        Guid restaurantId,
+        UpsertReceiptDocumentRequest request,
+        Guid? documentId,
+        CancellationToken ct) =>
+        ValidateReceiptRequestAsync(
+            db,
+            restaurantId,
+            request,
+            documentId,
+            null,
+            ct);
+
     private static async Task<ReceiptValidation> ValidateReceiptRequestAsync(
         RestaurantDbContext db,
         Guid restaurantId,
         UpsertReceiptDocumentRequest request,
         Guid? documentId,
+        string? taxRegimeOverride,
         CancellationToken ct)
     {
         if (request.WarehouseId == Guid.Empty)
@@ -1018,14 +1406,22 @@ public static class BackOfficeStockDocumentEndpoints
         if (!supplierExists)
             return new(null, null, null, null, null, Results.BadRequest(new { message = "Активный поставщик не найден." }));
 
-        var restaurantTax = await db.Restaurants
-            .AsNoTracking()
-            .Where(x => x.Id == restaurantId)
-            .Select(x => new { x.TaxRegime })
-            .FirstAsync(ct);
+        string taxRegime;
+        if (!string.IsNullOrWhiteSpace(taxRegimeOverride))
+        {
+            taxRegime = taxRegimeOverride.Trim().ToUpperInvariant();
+        }
+        else
+        {
+            var restaurantTax = await db.Restaurants
+                .AsNoTracking()
+                .Where(x => x.Id == restaurantId)
+                .Select(x => new { x.TaxRegime })
+                .FirstAsync(ct);
 
-        var taxRegime = restaurantTax.TaxRegime?.Trim().ToUpperInvariant()
-            ?? TaxPolicy.UnconfiguredRegime;
+            taxRegime = restaurantTax.TaxRegime?.Trim().ToUpperInvariant()
+                ?? TaxPolicy.UnconfiguredRegime;
+        }
 
         var purchaseDocumentKind = NormalizePurchaseDocumentKind(request.PurchaseDocumentKind);
         if (!TaxPolicy.IsSupportedPurchaseDocumentKind(purchaseDocumentKind))
