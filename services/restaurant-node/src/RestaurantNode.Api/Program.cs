@@ -115,6 +115,7 @@ app.MapBackOfficeAdjustmentEndpoints();
 app.MapBackOfficeInventoryEndpoints();
 app.MapBackOfficeInventoryAccountingEndpoints();
 app.MapBackOfficeStockDocumentEndpoints();
+app.MapBackOfficeProcurementEndpoints();
 app.MapBackOfficeNomenclatureEndpoints();
 app.MapBackOfficeTaxEndpoints();
 app.MapBackOfficeGroupEndpoints();
