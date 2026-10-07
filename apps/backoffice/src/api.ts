@@ -1944,3 +1944,218 @@ export async function refundPayment(
     body: JSON.stringify(input),
   }, token);
 }
+
+
+export type ProcurementNeed = {
+  id: string;
+  name: string;
+  sku: string | null;
+  unit: string;
+  minStock: number;
+  currentStock: number;
+  shortage: number;
+  lastPurchasePrice: number | null;
+  estimatedAmount: number;
+};
+
+export type ProcurementCatalogItem = {
+  id: string;
+  name: string;
+  sku: string | null;
+  unit: string;
+  minStock: number;
+  isActive: boolean;
+  currentStock: number;
+  lastPurchasePrice: number | null;
+};
+
+export type ProcurementDocumentLine = {
+  id: string;
+  productId: string;
+  productName: string;
+  sku: string | null;
+  unit: string;
+  quantity: number;
+  expectedUnitPrice?: number;
+  unitPrice?: number;
+  amount: number;
+  receivedQuantity?: number;
+  remainingQuantity?: number;
+};
+
+export type PurchaseRequisition = {
+  id: string;
+  number: string;
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'CANCELLED' | string;
+  documentDate: string;
+  warehouseId: string | null;
+  warehouseName: string | null;
+  comment: string | null;
+  totalAmount: number;
+  createdByEmployeeId: string;
+  createdAt: string;
+  lines: ProcurementDocumentLine[];
+};
+
+export type PurchaseOrderReceipt = {
+  id: string;
+  number: string;
+  status: string;
+  documentDate: string;
+  totalAmount: number;
+  postedAt: string | null;
+};
+
+export type PurchaseOrder = {
+  id: string;
+  number: string;
+  status: string;
+  effectiveStatus: string;
+  documentDate: string;
+  warehouseId: string | null;
+  warehouseName: string | null;
+  supplierId: string | null;
+  supplierName: string | null;
+  requisitionId: string | null;
+  comment: string | null;
+  totalAmount: number;
+  orderedQuantity: number;
+  receivedQuantity: number;
+  completionPercent: number;
+  matchStatus: 'OPEN' | 'PARTIAL' | 'MATCHED' | 'PRICE_MISMATCH' | string;
+  priceMismatchCount: number;
+  createdByEmployeeId: string;
+  createdAt: string;
+  lines: ProcurementDocumentLine[];
+  receipts: PurchaseOrderReceipt[];
+};
+
+export type BackOfficeProcurement = {
+  stats: {
+    shortageItems: number;
+    shortageEstimatedAmount: number;
+    pendingApprovals: number;
+    activeOrders: number;
+    activeOrderAmount: number;
+  };
+  warehouses: Array<{ id: string; name: string; isActive: boolean }>;
+  suppliers: Array<{
+    id: string;
+    name: string;
+    isActive: boolean;
+    taxId: string | null;
+    phone: string | null;
+  }>;
+  items: ProcurementCatalogItem[];
+  needs: ProcurementNeed[];
+  requisitions: PurchaseRequisition[];
+  orders: PurchaseOrder[];
+};
+
+export type ProcurementLineInput = {
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+};
+
+export async function getBackOfficeProcurement(
+  token: string,
+): Promise<BackOfficeProcurement> {
+  return request<BackOfficeProcurement>(
+    '/api/v1/backoffice/procurement',
+    { cache: 'no-store' },
+    token,
+  );
+}
+
+export async function createPurchaseRequisition(
+  token: string,
+  input: {
+    warehouseId: string;
+    comment: string | null;
+    lines: ProcurementLineInput[];
+  },
+): Promise<{ id: string; number: string; status: string }> {
+  return request('/api/v1/backoffice/procurement/requisitions', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function submitPurchaseRequisition(
+  token: string,
+  id: string,
+): Promise<{ id: string; status: string }> {
+  return request('/api/v1/backoffice/procurement/requisitions/' + id + '/submit', {
+    method: 'POST',
+  }, token);
+}
+
+export async function approvePurchaseRequisition(
+  token: string,
+  id: string,
+): Promise<{ id: string; status: string }> {
+  return request('/api/v1/backoffice/procurement/requisitions/' + id + '/approve', {
+    method: 'POST',
+  }, token);
+}
+
+export async function cancelPurchaseRequisition(
+  token: string,
+  id: string,
+): Promise<{ id: string; status: string }> {
+  return request('/api/v1/backoffice/procurement/requisitions/' + id + '/cancel', {
+    method: 'POST',
+  }, token);
+}
+
+export async function createPurchaseOrder(
+  token: string,
+  input: {
+    requisitionId: string;
+    supplierId: string;
+    comment: string | null;
+    lines: ProcurementLineInput[];
+  },
+): Promise<{ id: string; number: string; status: string }> {
+  return request('/api/v1/backoffice/procurement/orders', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }, token);
+}
+
+export async function sendPurchaseOrder(
+  token: string,
+  id: string,
+): Promise<{ id: string; status: string }> {
+  return request('/api/v1/backoffice/procurement/orders/' + id + '/send', {
+    method: 'POST',
+  }, token);
+}
+
+export async function confirmPurchaseOrder(
+  token: string,
+  id: string,
+): Promise<{ id: string; status: string }> {
+  return request('/api/v1/backoffice/procurement/orders/' + id + '/confirm', {
+    method: 'POST',
+  }, token);
+}
+
+export async function cancelPurchaseOrder(
+  token: string,
+  id: string,
+): Promise<{ id: string; status: string }> {
+  return request('/api/v1/backoffice/procurement/orders/' + id + '/cancel', {
+    method: 'POST',
+  }, token);
+}
+
+export async function createPurchaseOrderReceiptDraft(
+  token: string,
+  id: string,
+): Promise<{ id: string; existing: boolean; number: string }> {
+  return request('/api/v1/backoffice/procurement/orders/' + id + '/receipt-draft', {
+    method: 'POST',
+  }, token);
+}
