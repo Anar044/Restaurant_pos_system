@@ -316,11 +316,12 @@ public static class BackOfficeProcurementEndpoints
                 .ThenBy(x => x.Name)
                 .ToList();
 
-            var activeOrderStatuses = new[]
+            var activeOrderStatusCodes = new HashSet<string>
             {
-                StockDocumentStatus.Approved,
-                StockDocumentStatus.Sent,
-                StockDocumentStatus.Confirmed
+                "APPROVED",
+                "SENT",
+                "CONFIRMED",
+                "PARTIALLY_RECEIVED"
             };
 
             var stats = new
@@ -330,13 +331,9 @@ public static class BackOfficeProcurementEndpoints
                 pendingApprovals = procurementDocuments.Count(x =>
                     x.Type == StockDocumentType.PurchaseRequisition &&
                     x.Status == StockDocumentStatus.PendingApproval),
-                activeOrders = procurementDocuments.Count(x =>
-                    x.Type == StockDocumentType.PurchaseOrder &&
-                    activeOrderStatuses.Contains(x.Status)),
-                activeOrderAmount = Money(procurementDocuments
-                    .Where(x =>
-                        x.Type == StockDocumentType.PurchaseOrder &&
-                        activeOrderStatuses.Contains(x.Status))
+                activeOrders = orders.Count(x => activeOrderStatusCodes.Contains(x.effectiveStatus)),
+                activeOrderAmount = Money(orders
+                    .Where(x => activeOrderStatusCodes.Contains(x.effectiveStatus))
                     .Sum(x => x.TotalAmount))
             };
 
@@ -737,8 +734,18 @@ public static class BackOfficeProcurementEndpoints
             if (hasPostedReceipt)
                 return Results.Conflict(new { message = "Нельзя отменить заказ после фактической приёмки товара." });
 
+            var requisitionId = order.ReferenceType == PurchaseRequisitionReference
+                ? order.ReferenceId
+                : null;
+
             order.Status = StockDocumentStatus.Cancelled;
-            AddAudit(db, user, restaurantId, "PURCHASE_ORDER_CANCELLED", "StockDocument", order.Id, new { order.Number });
+            order.ReferenceType = "CANCELLED_PURCHASE_REQUISITION";
+
+            AddAudit(db, user, restaurantId, "PURCHASE_ORDER_CANCELLED", "StockDocument", order.Id, new
+            {
+                order.Number,
+                requisitionId
+            });
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { id = order.Id, status = EnumText(order.Status) });
         }).RequireAuthorization(Permissions.InventoryManage);
