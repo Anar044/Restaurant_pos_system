@@ -24,13 +24,14 @@ import { OverviewPage } from './OverviewPage';
 import { GroupsPage } from './GroupsPage';
 import { PrintingPage } from './PrintingPage';
 import { SuppliersPage } from './SuppliersPage';
+import { ProcurementPage } from './ProcurementPage';
 import { TaxSettingsPage } from './TaxSettingsPage';
 import { StockInventoryPage, StockTransfersPage, StockWriteOffsPage } from './StockOperationPages';
 import './styles.css';
 
 const SESSION_KEY = 'restaurant_backoffice_session';
 
-type PageKey = 'overview' | 'accounting' | 'groups' | 'printing' | 'taxes' | 'inventory-settings' | 'modifiers' | 'nomenclature' | 'inventory' | 'stock-receipts' | 'stock-realization' | 'stock-transfers' | 'stock-writeoffs' | 'stock-inventory' | 'suppliers' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
+type PageKey = 'overview' | 'procurement' | 'accounting' | 'groups' | 'printing' | 'taxes' | 'inventory-settings' | 'modifiers' | 'nomenclature' | 'inventory' | 'stock-receipts' | 'stock-realization' | 'stock-transfers' | 'stock-writeoffs' | 'stock-inventory' | 'suppliers' | 'adjustments' | 'employees' | 'roles' | 'devices' | 'finance' | 'money';
 
 function loadStoredSession(): AuthSession | null {
   try {
@@ -166,6 +167,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
     { key: 'money', label: 'Денежный учёт', icon: '◈', ready: true },
     { key: 'accounting', label: 'План счетов', icon: '≡', ready: true },
     { key: 'suppliers', label: 'Поставщики', icon: '◫', ready: true },
+    { key: 'procurement', label: 'Закупки', icon: '▣', ready: true },
     { key: 'groups', label: 'Группы, отделения и залы', icon: '▦', ready: true },
     { key: 'printing', label: 'Печать', icon: '▧', ready: true },
     { key: 'taxes', label: 'Налоги', icon: '%', ready: true },
@@ -227,6 +229,7 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
             {renderNavItem('money')}
             {renderNavItem('accounting')}
             {renderNavItem('suppliers')}
+            {renderNavItem('procurement')}
           </div>
 
           <div className="nav-section">
@@ -363,6 +366,12 @@ function BackOffice({ session, onLogout }: { session: AuthSession; onLogout: () 
               token={session.token}
               canManage={(session.permissions ?? []).includes('inventory.manage')}
               canPay={(session.permissions ?? []).includes('finance.manage')}
+            />
+          ) : page === 'procurement' ? (
+            <ProcurementPage
+              token={session.token}
+              canManage={(session.permissions ?? []).includes('inventory.manage')}
+              onOpenReceipts={() => setPage('stock-receipts')}
             />
           ) : page === 'adjustments' ? (
             <AdjustmentsPage
